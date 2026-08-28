@@ -17,22 +17,31 @@ When a task is scoped to one of `hono-app/` or `nextjs-app/`, that directory's o
 
 ## 言語方針 (Language Policy)
 
-本プロジェクトは**日本語を基本言語**として運用します。以下の文書とコードは日本語で記述してください：
+本プロジェクトは**日本語を基本言語**として運用します。
+
+### 文書・コメントの言語
 
 - **Git コミットメッセージ**: 日本語で簡潔に（例: `FormEchoAgent: メモリー戦略を SEMANTIC に変更`)
-- **ADR (Architecture Decision Records)**: 日本語で意思決定の背景と根拠を記述
-- **仕様書・ドキュメント**: CONTEXT.md, GLOSSARY-FORMAT.md 等は日本語
-- **コードコメント**: 複雑なロジック・非自明な制約は日本語（WHY を重視）
+- **ADR・仕様書**: スキルの指定フォーマット（domain-modeling, to-spec 等）に従い、**内容は日本語**で記述
+- **コードコメント**: 複雑なロジック・非自明な制約は日本語で記述（WHY を重視、WHAT は不要）
 - **Markdown ドキュメント**: README, 設計ドキュメント、手順書は日本語
 
-**例外**:
-- 生成されたファイル（CDK 生成コード、`agentcore export` 出力）は編集しない
+### スキルのフォーマット継承
+
+- `domain-modeling` → ADR-FORMAT.md, CONTEXT-FORMAT.md に従う ← **記述言語は日本語**
+- `to-spec` → SPEC テンプレートに従う ← **記述言語は日本語**
+- その他スキル → 各スキルのガイドラインに従う ← **記述言語は日本語**
+
+### 例外
+
+- 生成されたファイル（CDK コード、`agentcore export` 出力）は編集しない
 - 外部ライブラリの API 名・定数は英語のまま
 - `nextjs-app/AGENTS.md` は `next dev` が自動生成するため手編集不可
 
-**参考**:
-- git commit は `git commit` で実行時に日本語を入力する（.gitignore は UTF-8 安全）
+### 参考
+
 - 他チームメンバーも同じポリシーに従う（CLAUDE.md がソース・オブ・トゥルース）
+- 各スキルがテンプレートを提供する場合、それに従いながら日本語で記述する
 
 ## Vetting new Claude Code skills/plugins before adding them
 
