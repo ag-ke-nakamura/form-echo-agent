@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "skillspector": {
+      "type": "stdio",
+      "command": "skillspector",
+      "args": [
+        "mcp"
+      ],
+      "env": {}
+    },
+    "strands": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "strands-agents-mcp-server==0.2.9"
+      ],
+      "env": {}
+    }
+  }
+}

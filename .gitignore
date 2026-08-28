@@ -1,0 +1,30 @@
+# Claude Code local-only state (per-user MCP/tool trust approvals, machine-specific overrides)
+.claude/settings.local.json
+
+# Node / npm / pnpm / yarn — safety net for any tooling added anywhere in this workspace
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Secrets / local env overrides
+.env
+.env.local
+.env.*.local
+
+# Logs / caches
+*.log
+.cache/
+
+# OS cruft
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
