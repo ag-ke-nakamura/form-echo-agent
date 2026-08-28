@@ -13,6 +13,7 @@
   "enabledPlugins": {
     "context7@claude-plugins-official": true,
     "aws-core@agent-toolkit-for-aws": true,
-    "hono-skill@hono-skill": true
+    "hono-skill@hono-skill": true,
+    "commit-commands@claude-plugins-official": true
   }
 }
