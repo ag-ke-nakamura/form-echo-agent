@@ -1,0 +1,4 @@
+pre-commit:
+  jobs:
+    - name: betterleaks
+      run: mise exec -- betterleaks git --pre-commit --redact --staged --verbose
