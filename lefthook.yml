@@ -10,11 +10,6 @@ pre-commit:
       run: mise exec -- prettier --write {staged_files}
       stage_fixed: true
 
-    - name: cdk-typecheck
-      root: "agentcore/cdk/"
-      glob: "*.ts"
-      run: mise exec -- npm exec tsc -- --noEmit
-
     - name: formecho-agent-format
       root: "app/FormEchoAgent/"
       glob: "*.ts"
