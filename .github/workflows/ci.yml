@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@v2
+      - env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || format('{0}~1', github.sha) }}
+          HEAD_SHA: ${{ github.sha }}
+        run: betterleaks git --log-opts="${BASE_SHA}..${HEAD_SHA}"
+
+  agentcore-cdk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agentcore/cdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - run: npm ci
+      - run: npx prettier --check .
+      # build/test は @aws/agentcore-cdk (alpha) の破壊的変更による既存の型エラーのため一時的に除外。
+      # 解消後に `npm run build` と `npm test` を追加すること。
+
+  formecho-agent:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/FormEchoAgent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run build
+
+  hono-app:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hono-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - run: bun install
+      - run: bun run format:check
+      - run: bun run lint
+      - run: bun run typecheck
+
+  nextjs-app:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nextjs-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run build
