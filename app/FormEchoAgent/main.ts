@@ -1,12 +1,17 @@
+import {
+  Agent,
+  type McpClient,
+  type ToolList,
+  tool,
+} from '@strands-agents/sdk';
 import { BedrockAgentCoreApp } from 'bedrock-agentcore/runtime';
-import { Agent, McpClient, tool, type ToolList } from '@strands-agents/sdk';
 import { z } from 'zod';
-import { loadModel } from './model/load.js';
 import { getStreamableHttpMcpClient } from './mcp_client/client.js';
+import { loadModel } from './model/load.js';
 
 // Define a collection of MCP clients (filter out anything that failed to initialize)
 const mcpClients: McpClient[] = [getStreamableHttpMcpClient()].filter(
-  (client): client is McpClient => Boolean(client)
+  (client): client is McpClient => Boolean(client),
 );
 
 // Define a collection of tools used by the model

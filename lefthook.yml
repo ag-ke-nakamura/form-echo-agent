@@ -1,4 +1,43 @@
 pre-commit:
+  parallel: true
   jobs:
     - name: betterleaks
       run: mise exec -- betterleaks git --pre-commit --redact --staged --verbose
+
+    - name: cdk-format
+      root: "agentcore/cdk/"
+      glob: "*.{ts,json}"
+      run: mise exec -- prettier --write {staged_files}
+      stage_fixed: true
+
+    - name: cdk-typecheck
+      root: "agentcore/cdk/"
+      glob: "*.ts"
+      run: mise exec -- npm exec tsc -- --noEmit
+
+    - name: formecho-agent-format
+      root: "app/FormEchoAgent/"
+      glob: "*.ts"
+      run: mise exec -- biome check --write --no-errors-on-unmatched {staged_files}
+      stage_fixed: true
+
+    - name: formecho-agent-typecheck
+      root: "app/FormEchoAgent/"
+      glob: "*.ts"
+      run: mise exec -- npm exec tsc -- --noEmit
+
+    - name: hono-app-format
+      root: "hono-app/"
+      glob: "*.ts"
+      run: mise exec -- biome check --write --no-errors-on-unmatched {staged_files}
+      stage_fixed: true
+
+    - name: hono-app-typecheck
+      root: "hono-app/"
+      glob: "*.ts"
+      run: mise exec -- bun x tsc --noEmit
+
+    - name: nextjs-lint
+      root: "nextjs-app/"
+      glob: "*.{ts,tsx}"
+      run: mise exec -- pnpm exec eslint {staged_files}

@@ -10,8 +10,11 @@ A minimal [Hono](https://hono.dev) web application running on the [Bun](https://
 
 - Install dependencies: `bun install`
 - Run the dev server (hot reload): `bun run dev` — serves at http://localhost:3000
+- Type-check: `bun run typecheck`
+- Lint: `bun run lint`
+- Format: `bun run format` (check only: `bun run format:check`)
 
-There is no build, lint, or test setup configured yet.
+Lint/format is handled by [Biome](https://biomejs.dev) (`biome.json`). There is no test setup configured yet.
 
 ## Architecture
 

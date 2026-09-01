@@ -7,7 +7,10 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/main.js",
-    "dev": "tsx watch main.ts"
+    "dev": "tsx watch main.ts",
+    "format": "biome format --write .",
+    "format:check": "biome check .",
+    "lint": "biome lint ."
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.2",
