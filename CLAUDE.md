@@ -62,7 +62,7 @@ When a task is scoped to one of `hono-app/` or `nextjs-app/`, that directory's o
 
 - `mise.toml` の `latest` は実行時解決なので、手元と CI で版が食い違い得る
 - dependabot は `package.json` しか見ないため、更新 PR が永遠に出ない
-- 素の `biome` を PATH から叩くと別物を拾う（このマシンには Homebrew の biome 2.3.8 が実在する）
+- 素の `biome` を PATH から叩くと、開発機に Homebrew などで別途入っているものを拾う（実例: この方針を決めた時点の開発機には Homebrew の biome 2.3.8 が入っており、リポジトリの 2.5.11 と食い違っていた）
 
 `mise.toml` に置くのは、プロジェクトの依存として表現できないもの（`node`, `python`, `pnpm`, `bun`, `lefthook`, `betterleaks`, `gh`, `jq`, `aws-cli`, `uv`）だけです。
 
@@ -85,8 +85,8 @@ CI は format と build のみ実行し、**`npm test` は意図的に外して�
 したがって:
 
 - **キャレットを付けないこと。** alpha 間で破壊的変更が入るため、範囲指定は事故になる
-- **dependabot はこれを更新しない**（プレリリース版は既定で対象外）。手で上げること
-- 上げる前に `npm run build` と `npm test` で確認する。壊れていたら、直近の互換 alpha に戻す
+- **dependabot は alpha 更新の PR を出してくる**（実績: PR #17 が alpha.49 → alpha.50 を提案した）。自動マージしないこと
+- **マージ前に必ず `npm run build` を通すこと。** 壊れていたら、直近の互換 alpha に固定したまま PR をクローズする。`npm test` は CI から外してあるので、判断材料は build のみ（必要なら手元で `npm test` も回す）
 
 `agentcore` CLI を更新しても解決しない（0.28.1 時点で、生成テンプレートは古い API のまま）。
 
