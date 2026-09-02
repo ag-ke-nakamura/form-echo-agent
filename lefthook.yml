@@ -1,3 +1,25 @@
+# push しようとしている範囲全体を secret scan する。
+#
+# WHY: pre-commit の betterleaks は staged 分しか見ないため、--no-verify で回避した
+# コミットや、複数コミットにまたがる混入を取り逃がす。CI にも同じチェックがあるが、
+# 検出されるのは push の「後」であり、秘密情報が一度リモートに出たら force push で
+# 消しても漏洩済みという点で不可逆。だから push の前に一度だけ範囲で見る。
+#
+# ここに AI レビューは置かない。判定が非決定的で、差分自体がプロンプトになるため
+# インジェクションで突破でき、門としては成立しない（レビューは変更内容に応じて
+# 手動でエージェントを選ぶ運用、機械的に強制したい場合の置き場所は CI）。
+pre-push:
+  jobs:
+    - name: betterleaks-range
+      run: |
+        base=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/main)
+        git fetch --quiet origin || true
+        if git rev-parse --verify --quiet "$base" >/dev/null; then
+          mise exec -- betterleaks git --redact --log-opts="$base..HEAD"
+        else
+          mise exec -- betterleaks git --redact
+        fi
+
 pre-commit:
   parallel: true
   jobs:

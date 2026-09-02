@@ -36,7 +36,8 @@
       "Bash(agentcore deploy:*)",
       "Bash(cdk deploy:*)",
       "Bash(npx cdk deploy:*)",
-      "Bash(npm run cdk:*)"
+      "Bash(npm run cdk:*)",
+      "Bash(git push:*)"
     ],
     "disableBypassPermissionsMode": "disable"
   },
@@ -65,6 +66,7 @@
     "typescript-lsp@claude-plugins-official": true,
     "claude-code-setup@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,
-    "claude-md-management@claude-plugins-official": true
+    "claude-md-management@claude-plugins-official": true,
+    "pr-review-toolkit@claude-plugins-official": true
   }
 }
