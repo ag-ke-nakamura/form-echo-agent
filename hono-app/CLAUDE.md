@@ -4,22 +4,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-A minimal [Hono](https://hono.dev) web application running on the [Bun](https://bun.sh) runtime. The app is currently a bare scaffold (`src/index.ts`) with a single route.
+[Hono](https://hono.dev) の最小構成アプリ。`src/index.ts` に単一ルートだけの雛形。
+`agentcore.json` からは参照されていない独立した実験用ディレクトリ。
+
+**パッケージ管理は pnpm、実行ランタイムは Bun** という組み合わせ（`create-hono` の bun テンプレートを
+pnpm で導入したため）。依存の追加・スクリプト実行は pnpm、`dev` の中身だけが bun。
+`bun install` は使わない（`pnpm-lock.yaml` を無視して `bun.lock` を作ってしまう）。
 
 ## Commands
 
-- Install dependencies: `bun install`
-- Run the dev server (hot reload): `bun run dev` — serves at http://localhost:3000
-- Type-check: `bun run typecheck`
-- Lint: `bun run lint`
-- Format: `bun run format` (check only: `bun run format:check`)
+- 依存インストール: `pnpm install`
+- 開発サーバー（ホットリロード）: `pnpm run dev` — http://localhost:3000
+- 型チェック: `pnpm run typecheck`
+- Lint: `pnpm run lint`
+- Format: `pnpm run format`（チェックのみ: `pnpm run format:check`）
 
-Lint/format is handled by [Biome](https://biomejs.dev) (`biome.json`). There is no test setup configured yet.
+Lint/format は [Biome](https://biomejs.dev)（`biome.json`）。biome 本体は devDependency ではなく
+mise が PATH に供給する。テストは未設定。
 
 ## Architecture
 
-- `src/index.ts` is the entire application: it creates a `Hono` app instance and exports it as the default export. Bun's runtime picks up this default export to serve HTTP requests — there is no separate server-listen call.
-- `tsconfig.json` sets `jsxImportSource` to `hono/jsx`, so JSX in this project (if added) compiles to Hono's own JSX runtime, not React's.
+- `src/index.ts` がアプリ全体。`Hono` インスタンスを default export するだけで、Bun のランタイムが
+  この default export を拾って HTTP を受ける。明示的な listen 呼び出しは存在しない。
+- `tsconfig.json` の `jsxImportSource` は `hono/jsx`。JSX を追加した場合 React ではなく Hono 独自の
+  JSX ランタイムにコンパイルされる。`types: ["bun"]` により Bun のグローバル型を参照する。
 
 ## 言語方針
 

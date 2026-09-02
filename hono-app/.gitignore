@@ -1,2 +1,5 @@
 # deps
 node_modules/
+
+# 誤って `bun install` した際の副産物。依存管理は pnpm-lock.yaml が単一の真実
+bun.lock

@@ -15,7 +15,8 @@ updates:
     schedule:
       interval: "weekly"
 
-  - package-ecosystem: "bun"
+  # pnpm-lock.yaml は npm エコシステムが扱う（bun.lock から移行済み）
+  - package-ecosystem: "npm"
     directory: "/hono-app"
     schedule:
       interval: "weekly"

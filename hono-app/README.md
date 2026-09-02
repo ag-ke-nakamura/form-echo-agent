@@ -1,11 +1,14 @@
-To install dependencies:
+依存インストール:
 ```sh
-bun install
+pnpm install
 ```
 
-To run:
+起動:
 ```sh
-bun run dev
+pnpm run dev
 ```
 
-open http://localhost:3000
+http://localhost:3000 を開く
+
+`dev` の中身は Bun（`bun run --hot`）だが、依存管理は pnpm。`bun install` は使わないこと
+（`pnpm-lock.yaml` を無視して `bun.lock` を作ってしまう）。

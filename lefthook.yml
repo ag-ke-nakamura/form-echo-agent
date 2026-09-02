@@ -59,7 +59,7 @@ pre-commit:
     - name: hono-app-typecheck
       root: "hono-app/"
       glob: "*.ts"
-      run: mise exec -- bun x tsc --noEmit
+      run: mise exec -- pnpm exec tsc --noEmit
 
     - name: nextjs-lint
       root: "nextjs-app/"
