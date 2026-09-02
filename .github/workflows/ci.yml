@@ -9,7 +9,7 @@ jobs:
   secret-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: jdx/mise-action@v4
@@ -24,7 +24,7 @@ jobs:
       run:
         working-directory: agentcore/cdk
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: jdx/mise-action@v4
       - run: npm ci
       - run: npx prettier --check .
@@ -37,7 +37,7 @@ jobs:
       run:
         working-directory: app/FormEchoAgent
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: jdx/mise-action@v4
       - run: npm ci
       - run: npm run format:check
@@ -50,7 +50,7 @@ jobs:
       run:
         working-directory: hono-app
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: jdx/mise-action@v4
       - run: pnpm install --frozen-lockfile
       - run: pnpm run format:check
@@ -63,7 +63,7 @@ jobs:
       run:
         working-directory: nextjs-app
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: jdx/mise-action@v4
       - run: pnpm install --frozen-lockfile
       - run: pnpm run format:check
