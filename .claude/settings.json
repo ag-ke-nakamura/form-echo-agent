@@ -1,6 +1,5 @@
 {
   "permissions": {
-    "disableBypassPermissionsMode": "disable",
     "allow": [
       "Bash(git grep *)",
       "Bash(git fetch *)",
@@ -9,12 +8,6 @@
       "Bash(git merge-base *)",
       "Bash(npm audit)",
       "Bash(git merge-tree *)"
-    ],
-    "ask": [
-      "Bash(agentcore deploy:*)",
-      "Bash(cdk deploy:*)",
-      "Bash(npx cdk deploy:*)",
-      "Bash(npm run cdk:*)"
     ],
     "deny": [
       "Read(**/.env)",
@@ -38,7 +31,14 @@
       "Bash(kubectl delete:*)",
       "Bash(helm uninstall:*)",
       "Bash(helm delete:*)"
-    ]
+    ],
+    "ask": [
+      "Bash(agentcore deploy:*)",
+      "Bash(cdk deploy:*)",
+      "Bash(npx cdk deploy:*)",
+      "Bash(npm run cdk:*)"
+    ],
+    "disableBypassPermissionsMode": "disable"
   },
   "hooks": {
     "PreToolUse": [
@@ -61,6 +61,10 @@
     "commit-commands@claude-plugins-official": true,
     "code-review@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": true,
-    "mattpocock-skills@claude-plugins-official": true
+    "mattpocock-skills@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "claude-code-setup@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "claude-md-management@claude-plugins-official": true
   }
 }
