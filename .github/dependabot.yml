@@ -1,19 +1,34 @@
 version: 2
+
+# @types/node のメジャー更新は無視する。
+#
+# ランタイムは mise.toml で node 22 に固定してあり、型定義がそれを超えて先に進む
+# 理由がない。26 系の型を入れると、実際には存在しない API が型として見えてしまう。
+# node のメジャーを上げるときは mise.toml と一緒に、この ignore を外して上げること。
 updates:
   - package-ecosystem: "npm"
     directory: "/agentcore/cdk"
     schedule:
       interval: "weekly"
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
     directory: "/app/FormEchoAgent"
     schedule:
       interval: "weekly"
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
     directory: "/nextjs-app"
     schedule:
       interval: "weekly"
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   # pnpm-lock.yaml は npm エコシステムが扱う（bun.lock から移行済み）
   - package-ecosystem: "npm"
