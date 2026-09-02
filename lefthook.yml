@@ -61,7 +61,16 @@ pre-commit:
       glob: "*.ts"
       run: mise exec -- pnpm exec tsc --noEmit
 
+    # nextjs-app は lint と format の担当が分かれている。lint は eslint-config-next
+    # （core-web-vitals 等、biome に等価物が無いルールを持つ）、format は biome。
+    # biome 側の linter は衝突を避けるため biome.json で無効にしてある。
     - name: nextjs-lint
       root: "nextjs-app/"
       glob: "*.{ts,tsx}"
       run: mise exec -- pnpm exec eslint {staged_files}
+
+    - name: nextjs-format
+      root: "nextjs-app/"
+      glob: "*.{ts,tsx,mjs,css,json}"
+      run: mise exec -- biome format --write --no-errors-on-unmatched {staged_files}
+      stage_fixed: true
