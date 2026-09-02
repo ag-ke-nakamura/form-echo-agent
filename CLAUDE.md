@@ -43,6 +43,23 @@ When a task is scoped to one of `hono-app/` or `nextjs-app/`, that directory's o
 - 他チームメンバーも同じポリシーに従う（CLAUDE.md がソース・オブ・トゥルース）
 - 各スキルがテンプレートを提供する場合、それに従いながら日本語で記述する
 
+## Harness guardrails
+
+`.claude/settings.json` で以下を強制しています。ブロックされた場合は回避を試みず、対象と理由をユーザーに提示してください。
+
+- `permissions.deny`: 秘密ファイル（`.env*`, `*.pem`, `~/.aws/**`, `~/.ssh/**`）の読み取り、force push、`aws * delete-*`、IaC の destroy 系
+- `permissions.ask`: `agentcore deploy` / `cdk deploy`（毎回確認）
+- `.claude/hooks/guard-destructive-command.py`（PreToolUse）: `rm -rf` は再生成可能なパス（`node_modules`, `dist`, `build`, `.next`, `coverage` 等）のみ許可。それ以外は拒否
+- `--dangerously-skip-permissions` は `disableBypassPermissionsMode` により無効化済み
+
+固定パターンは `permissions.deny` に置き、フックには宣言的に書けないもの（`rm -rf` のアローリスト判定、`--force-with-lease` のブランチ判定）だけを残す方針です。ガードを変更したら `python3 .claude/hooks/tests/test_guard.py` で回帰を確認すること。
+
+## agentcore/cdk
+
+生成物のため編集不可（`@AGENTS.md` 参照）。コマンドは `npm run build` / `npm test`（jest）/ `npm run format`。
+
+CI は build/test を除外中 — 原因は `@aws/agentcore-cdk` (alpha) ではなく `lib/cdk-stack.ts` の `connectorName`（正しくは `connector`）というプロパティ名の不一致。
+
 ## Vetting new Claude Code skills/plugins before adding them
 
 Before adding a new skill or plugin to this project (via `claude plugin install` or `npx skills add`), scan it first with [SkillSpector](https://github.com/NVIDIA/SkillSpector) — declared as a project-scoped MCP server (`skillspector`) in `.mcp.json`, exposing a `scan_skill` tool.
