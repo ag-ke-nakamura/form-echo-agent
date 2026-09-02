@@ -1,50 +1,85 @@
 version: 2
 
-# @types/node のメジャー更新は無視する。
+# 更新方針は「誰がその依存を所有しているか」で決める。
 #
-# ランタイムは mise.toml で node 22 に固定してあり、型定義がそれを超えて先に進む
-# 理由がない。26 系の型を入れると、実際には存在しない API が型として見えてしまう。
-# node のメジャーを上げるときは mise.toml と一緒に、この ignore を外して上げること。
+# - 生成物でツールが所有し、我々がコードを書かないもの → 凍結する
+# - スキャフォールドが完全固定した「結合したバージョン集合」→ まとめて上げる
+# - 我々が書くコードの依存 → 通常どおり個別に上げる
+#
+# 「公式ツールが作った」だけでは凍結の理由にならない。ほぼ全てのプロジェクトは
+# スキャフォールドから始まるため、それを理由にすると何も更新できなくなる。
+
 updates:
+  # agentcore/cdk はバージョン更新を止める。
+  #
+  # 理由（4条件が揃うのはここだけ）:
+  #   1. `agentcore` CLI が所有し再生成で上書きする。編集不可の方針
+  #   2. alpha 依存（@aws/agentcore-cdk）に結合している
+  #   3. 自動更新で実際に壊れた。^0.1.0-alpha.19 の範囲が alpha.49 を招き入れ、
+  #      Initial commit の時点から build と test が動いていなかった
+  #   4. 我々がコードを書かないので新しい依存の便益がない
+  #
+  # ジェネレータ自身が aws-cdk を完全固定（2.1126.0）しているのも同じシグナル。
+  #
+  # open-pull-requests-limit: 0 はバージョン更新 PR だけを止め、セキュリティ更新は
+  # 通す。ディレクトリ設定ごと削除するとセキュリティ更新も止まるため、こちらを使う。
+  #
+  # 再開する場合は @types/node と typescript のメジャー更新を ignore すること。
+  # 前者はランタイムが node 22 のため、後者は生成された tsconfig.json の
+  # "moduleResolution": "Node" が TS 6 で TS5107 / TS 7 で TS5108 になるため
+  # （6 系でも通らないことを実測済み）。
   - package-ecosystem: "npm"
     directory: "/agentcore/cdk"
     schedule:
       interval: "weekly"
-    ignore:
-      - dependency-name: "@types/node"
-        update-types: ["version-update:semver-major"]
-      # typescript のメジャー更新は、生成された tsconfig.json が古い
-      # moduleResolution を使っているため通らない（実測）。
-      #
-      #   "moduleResolution": "Node"   ← node10 相当
-      #   TS 6 → error TS5107: deprecated and will stop functioning in TypeScript 7.0
-      #   TS 7 → error TS5108: has been removed
-      #
-      # tsconfig.json は agentcore CLI の生成物で編集不可の方針のため、
-      # ここでは上げられない。CLI が新しい moduleResolution を出力するように
-      # なったら、この ignore を外すこと。
-      #
-      # 5.x のパッチ・マイナー更新は通るので無視しない。
-      - dependency-name: "typescript"
-        update-types: ["version-update:semver-major"]
+    open-pull-requests-limit: 0
 
+  # app/FormEchoAgent は我々が書くコードなので通常どおり更新する。
+  # ただし bedrock-agentcore と @strands-agents/sdk は agentcore CLI と同じ
+  # AWS ツールチェーンで、package.json の overrides で結ばれている
+  # （overrides が両者を単一インスタンスに解決することが前提。2重に入ると
+  #   型は通るのに実行時に壊れる）。個別に動かさずまとめて上げる。
   - package-ecosystem: "npm"
     directory: "/app/FormEchoAgent"
     schedule:
       interval: "weekly"
+    groups:
+      aws-agent-toolchain:
+        patterns:
+          - "bedrock-agentcore"
+          - "@strands-agents/sdk"
     ignore:
+      # ランタイムは mise.toml で node 22 に固定。型定義がそれを超えて先に進むと、
+      # 実際には存在しない API が型として見えてしまう。node のメジャーを上げる
+      # ときは mise.toml と一緒にこの ignore を外すこと。
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
 
+  # nextjs-app は create-next-app が next / react / react-dom /
+  # eslint-config-next を完全固定している。一緒に動くことしか保証されていないため
+  # （eslint-config-next は next と同じ版が必要）、個別更新は壊れる。
+  # 凍結ではなくグルーピングで、同時に動く1つの PR にする。
+  # @types/react* は react のメジャーに追従するので同じ集合に入れる。
   - package-ecosystem: "npm"
     directory: "/nextjs-app"
     schedule:
       interval: "weekly"
+    groups:
+      nextjs-core:
+        patterns:
+          - "next"
+          - "eslint-config-next"
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
     ignore:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
 
-  # pnpm-lock.yaml は npm エコシステムが扱う（bun.lock から移行済み）
+  # hono-app は完全固定が1つも無く、依存も hono だけで結合集合が存在しない。
+  # 実害の実績も無いため通常どおり更新する。
+  # pnpm-lock.yaml は npm エコシステムが扱う（bun.lock から移行済み）。
   - package-ecosystem: "npm"
     directory: "/hono-app"
     schedule:

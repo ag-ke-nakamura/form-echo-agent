@@ -85,8 +85,9 @@ CI は format と build のみ実行し、**`npm test` は意図的に外して�
 したがって:
 
 - **キャレットを付けないこと。** alpha 間で破壊的変更が入るため、範囲指定は事故になる
-- **dependabot は alpha 更新の PR を出してくる**（実績: PR #17 が alpha.49 → alpha.50 を提案した）。自動マージしないこと
-- **マージ前に必ず `npm run build` を通すこと。** 壊れていたら、直近の互換 alpha に固定したまま PR をクローズする。`npm test` は CI から外してあるので、判断材料は build のみ（必要なら手元で `npm test` も回す）
+- **このディレクトリは dependabot のバージョン更新を止めてある**（`open-pull-requests-limit: 0`）。以前は alpha 更新の PR が来ていた（PR #17 が alpha.49 → alpha.50 を提案）が、生成物の依存は `agentcore` CLI の責任範囲なので、我々が上げるのは**実際に壊れた時だけ**にする。判断理由は `.github/dependabot.yml` のコメント参照
+- **手で上げるときは必ず `npm run build` を通すこと。** 壊れていたら直近の互換 alpha に戻す。`npm test` は CI から外してあるので判断材料は build（必要なら手元で `npm test` も回す）
+- セキュリティ更新は `open-pull-requests-limit: 0` でも通る
 
 `agentcore` CLI を更新しても解決しない（0.28.1 時点で、生成テンプレートは古い API のまま）。
 
