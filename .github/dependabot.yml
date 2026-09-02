@@ -10,7 +10,7 @@ version: 2
 # スキャフォールドから始まるため、それを理由にすると何も更新できなくなる。
 
 updates:
-  # agentcore/cdk はバージョン更新を止める。
+  # agent-app/agentcore/cdk はバージョン更新を止める。
   #
   # 理由（4条件が揃うのはここだけ）:
   #   1. `agentcore` CLI が所有し再生成で上書きする。編集不可の方針
@@ -29,18 +29,18 @@ updates:
   # "moduleResolution": "Node" が TS 6 で TS5107 / TS 7 で TS5108 になるため
   # （6 系でも通らないことを実測済み）。
   - package-ecosystem: "npm"
-    directory: "/agentcore/cdk"
+    directory: "/agent-app/agentcore/cdk"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 0
 
-  # app/FormEchoAgent は我々が書くコードなので通常どおり更新する。
+  # agent-app/app/FormEchoAgent は我々が書くコードなので通常どおり更新する。
   # ただし bedrock-agentcore と @strands-agents/sdk は agentcore CLI と同じ
   # AWS ツールチェーンで、package.json の overrides で結ばれている
   # （overrides が両者を単一インスタンスに解決することが前提。2重に入ると
   #   型は通るのに実行時に壊れる）。個別に動かさずまとめて上げる。
   - package-ecosystem: "npm"
-    directory: "/app/FormEchoAgent"
+    directory: "/agent-app/app/FormEchoAgent"
     schedule:
       interval: "weekly"
     groups:

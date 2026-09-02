@@ -1,104 +1,62 @@
-# AgentCore Project
+# FormEcho
 
-This project was created with the [AgentCore CLI](https://github.com/aws/agentcore-cli).
+AWS Bedrock AgentCore を使ったエージェントと、それに付随するフロントエンドの実験を収めたリポジトリ。
 
-## Project Structure
+## 構成
 
-```
-my-project/
-├── AGENTS.md               # AI coding assistant context
-├── agentcore/
-│   ├── agentcore.json      # Project config (agents, memories, credentials, gateways, evaluators)
-│   ├── aws-targets.json    # Deployment targets (account + region)
-│   ├── .env.local          # Secrets — API keys (gitignored)
-│   ├── .llm-context/       # TypeScript type definitions for AI assistants
-│   │   ├── agentcore.ts    # AgentCoreProjectSpec types
-│   │   ├── aws-targets.ts  # Deployment target types
-│   │   └── mcp.ts          # Gateway and MCP tool types
-│   └── cdk/                # CDK infrastructure (@aws/agentcore-cdk)
-├── app/                    # Agent application code
-└── evaluators/             # Custom evaluator code (if any)
-```
+3つの独立したプロジェクトを並べています。ルートに `package.json` やワークスペース定義はなく、共有しているのは開発ハーネスだけです。
 
-## Getting Started
+| ディレクトリ | 内容 | パッケージ管理 |
+| --- | --- | --- |
+| `agent-app/` | AgentCore プロジェクト本体。`agentcore` CLI の生成物一式 | npm |
+| `hono-app/` | Hono スキャフォールド（`dev` のみ Bun ランタイム） | pnpm |
+| `nextjs-app/` | Next.js 16 スキャフォールド | pnpm |
 
-### Prerequisites
+## セットアップ
 
-- **Node.js** 20.x or later
-- **Python 3.10+** and **uv** for Python agents ([install uv](https://docs.astral.sh/uv/getting-started/installation/))
-- **AWS credentials** configured (`aws configure` or environment variables)
-- **Docker** (only for Container build agents)
+開発ツールは [mise](https://mise.jdx.dev) で管理しています。
 
-### Development
-
-Run your agent locally:
-
-```bash
-agentcore dev
+```sh
+mise install          # node, python, pnpm, bun, lefthook, betterleaks, aws-cli 等
+lefthook install      # pre-commit / pre-push フックを有効化
 ```
 
-### Deployment
+各プロジェクトの依存は個別に入れます。
 
-Deploy to AWS:
-
-```bash
-agentcore deploy
+```sh
+(cd agent-app/agentcore/cdk && npm ci)
+(cd agent-app/app/FormEchoAgent && npm ci)
+(cd hono-app && pnpm install)
+(cd nextjs-app && pnpm install)
 ```
 
-## Commands
+## agent-app
 
-| Command | Description |
+`agentcore` コマンドは **`agent-app/` 内で実行**します。CLI は自分のいるフォルダをプロジェクトルートとして扱うため、リポジトリルートからは認識されません。
+
+```sh
+cd agent-app
+agentcore validate    # 設定の検証
+agentcore dev         # ローカル実行（ホットリロード）
+agentcore deploy      # AWS へデプロイ
+```
+
+デプロイ先は `agent-app/agentcore/aws-targets.json` に定義します。**現在は空のため、`agentcore deploy` と `cdk synth` は実行できません。**
+
+スキーマと CLI の全リファレンスは `agent-app/AGENTS.md`（CLI の生成物）にあります。
+
+## 開発ハーネス
+
+| 段階 | 内容 |
 | --- | --- |
-| `agentcore create` | Create a new AgentCore project |
-| `agentcore add` | Add resources (agent, memory, credential, gateway, evaluator, policy) |
-| `agentcore remove` | Remove resources |
-| `agentcore dev` | Run agent locally with hot-reload |
-| `agentcore deploy` | Deploy to AWS via CDK |
-| `agentcore status` | Show deployment status |
-| `agentcore invoke` | Invoke agent (local or deployed) |
-| `agentcore logs` | View agent logs |
-| `agentcore traces` | View agent traces |
-| `agentcore eval` | Run evaluations |
-| `agentcore package` | Package agent artifacts |
-| `agentcore validate` | Validate configuration |
-| `agentcore pause` | Pause a deployed agent |
-| `agentcore resume` | Resume a paused agent |
-| `agentcore fetch` | Fetch remote resource definitions |
-| `agentcore import` | Import existing resources |
-| `agentcore update` | Check for CLI updates |
+| pre-commit | secret scan（betterleaks）、各プロジェクトの format / lint / typecheck、破壊的コマンドガードの回帰テスト |
+| pre-push | push 範囲全体の secret scan |
+| CI | 上記に加えて各プロジェクトの build |
 
-## Configuration
+フォーマッター・リンター・型チェッカーは各プロジェクトの devDependency として持ち、`npm exec` / `pnpm exec` 経由で呼びます（`mise.toml` には置きません）。理由は `CLAUDE.md` を参照してください。
 
-Edit the JSON files in `agentcore/` to configure your project. See `agentcore/.llm-context/` for type definitions and validation constraints.
+依存の更新方針（どのディレクトリを凍結し、どれをグループ化するか）は `.github/dependabot.yml` のコメントに記載しています。
 
-The project uses a **flat resource model** — agents, memories, credentials, gateways, evaluators, and policies are top-level arrays in `agentcore.json`. Resources are independent; agents discover memories and credentials at runtime via environment variables or SDK calls.
+## 言語
 
-## Resources
-
-| Resource | Purpose |
-| --- | --- |
-| Agent (runtime) | HTTP, MCP, or A2A agent deployed to AgentCore Runtime |
-| Memory | Persistent context storage with configurable strategies |
-| Credential | API key or OAuth credential providers |
-| Gateway | MCP gateway that routes tool calls to targets |
-| Gateway Target | Tool implementation (Lambda, MCP server, OpenAPI, Smithy, API Gateway) |
-| Evaluator | Custom LLM-as-a-Judge or code-based evaluation |
-| Online Eval Config | Continuous evaluation pipeline for deployed agents |
-| Policy | Cedar authorization policies for gateway tools |
-
-### Agent Types
-
-- **Template agents**: Created from framework templates (Strands, LangChain/LangGraph, GoogleADK, OpenAI Agents, Autogen)
-- **BYO agents**: Bring your own code with `agentcore add agent --type byo`
-- **Import agents**: Import existing Bedrock agents with `agentcore import`
-
-### Build Types
-
-- **CodeZip**: Python source packaged as a zip and deployed directly to AgentCore Runtime
-- **Container**: Docker image built via CodeBuild (ARM64), pushed to ECR, and deployed to AgentCore Runtime
-
-## Documentation
-
-- [AgentCore CLI](https://github.com/aws/agentcore-cli)
-- [AgentCore CDK Constructs](https://github.com/aws/agentcore-l3-cdk-constructs)
-- [Amazon Bedrock AgentCore](https://aws.amazon.com/bedrock/agentcore/)
+ドキュメント、コミットメッセージ、コードコメントはすべて日本語で記述します。

@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: agentcore/cdk
+        working-directory: agent-app/agentcore/cdk
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v4
@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: app/FormEchoAgent
+        working-directory: agent-app/app/FormEchoAgent
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v4
