@@ -70,9 +70,21 @@ When a task is scoped to one of `hono-app/` or `nextjs-app/`, that directory's o
 
 ## agentcore/cdk
 
-生成物のため編集不可（`@AGENTS.md` 参照）。コマンドは `npm run build` / `npm test`（jest）/ `npm run format`。
+生成物のため編集不可（`@AGENTS.md` 参照）。コマンドは `npm run build` / `npm test`（jest）/ `npm run format`。CI は format/build/test すべて実行する。
 
-CI は build/test を除外中 — 原因は `@aws/agentcore-cdk` (alpha) ではなく `lib/cdk-stack.ts` の `connectorName`（正しくは `connector`）というプロパティ名の不一致。
+### `@aws/agentcore-cdk` はキャレットを付けずに固定する
+
+`agentcore create` が生成する `package.json` は `"@aws/agentcore-cdk": "^0.1.0-alpha.19"` を宣言するが、この範囲は `>=0.1.0-alpha.19 <0.2.0` なので**最新の alpha が入る**。生成コードは古い alpha 世代の API に対して書かれているため、**生成した瞬間にコンパイルが壊れる**。
+
+実際に起きたこと: 生成コードは `AgentCorePaymentConnector` に `connectorName` / `connectorType` を平坦に渡すが、alpha.49 でこれが `connector: { name, provider, credentialName }` というオブジェクトに変わり、`error TS2561` で build と test（ts-jest が型検査するため）の両方が止まった。alpha.51 で両方の形を受け付ける union 型に戻されたため、**alpha.51 に固定**して解消した。
+
+したがって:
+
+- **キャレットを付けないこと。** alpha 間で破壊的変更が入るため、範囲指定は事故になる
+- **dependabot はこれを更新しない**（プレリリース版は既定で対象外）。手で上げること
+- 上げる前に `npm run build` と `npm test` で確認する。壊れていたら、直近の互換 alpha に戻す
+
+`agentcore` CLI を更新しても解決しない（0.28.1 時点で、生成テンプレートは古い API のまま）。
 
 ## Vetting new Claude Code skills/plugins before adding them
 
