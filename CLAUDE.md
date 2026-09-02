@@ -54,6 +54,20 @@ When a task is scoped to one of `hono-app/` or `nextjs-app/`, that directory's o
 
 固定パターンは `permissions.deny` に置き、フックには宣言的に書けないもの（`rm -rf` のアローリスト判定、`--force-with-lease` のブランチ判定）だけを残す方針です。ガードを変更したら `python3 .claude/hooks/tests/test_guard.py` で回帰を確認すること。
 
+## ツールの入手経路（mise とロックファイルの分担）
+
+**フォーマッター・リンター・型チェッカーは各プロジェクトの devDependency として持ち、`mise.toml` には置きません。** 呼び出しは必ず `npm exec` / `pnpm exec` 経由で `node_modules/.bin` から引くこと。
+
+理由は、mise の PATH 経由で供給すると版がロックファイルの外に出るためです。
+
+- `mise.toml` の `latest` は実行時解決なので、手元と CI で版が食い違い得る
+- dependabot は `package.json` しか見ないため、更新 PR が永遠に出ない
+- 素の `biome` を PATH から叩くと別物を拾う（このマシンには Homebrew の biome 2.3.8 が実在する）
+
+`mise.toml` に置くのは、プロジェクトの依存として表現できないもの（`node`, `python`, `pnpm`, `bun`, `lefthook`, `betterleaks`, `gh`, `jq`, `aws-cli`, `uv`）だけです。
+
+現状: biome は3プロジェクトで `2.5.11` にキャレットなしで固定（biome 公式の推奨。マイナー更新でも整形結果が変わり得るため）。prettier は `agentcore/cdk` のみ（`^3.4.2` → lock で 3.9.6）。
+
 ## agentcore/cdk
 
 生成物のため編集不可（`@AGENTS.md` 参照）。コマンドは `npm run build` / `npm test`（jest）/ `npm run format`。

@@ -19,8 +19,9 @@ pnpm で導入したため）。依存の追加・スクリプト実行は pnpm�
 - Lint: `pnpm run lint`
 - Format: `pnpm run format`（チェックのみ: `pnpm run format:check`）
 
-Lint/format は [Biome](https://biomejs.dev)（`biome.json`）。biome 本体は devDependency ではなく
-mise が PATH に供給する。テストは未設定。
+Lint/format は [Biome](https://biomejs.dev)（`biome.json`）。biome 本体は devDependency として
+バージョン固定してある（`2.5.11`、キャレットなし）。素の `biome` を PATH から叩かないこと
+— mise が供給していない環境では別物を拾う。テストは未設定。
 
 ## Architecture
 

@@ -33,16 +33,20 @@ pre-commit:
       glob: ".claude/hooks/**/*.py"
       run: mise exec -- python3 .claude/hooks/tests/test_guard.py
 
+    # フォーマッターは必ず npm exec / pnpm exec 経由で node_modules/.bin から引く。
+    # 素の `biome` / `prettier` を PATH から叩くと、mise が供給していない環境では
+    # 別物を拾う（このリポジトリでは Homebrew の biome 2.3.8 が実在する）。
+    # ロックファイルで固定された版を使うことが、CI と手元で整形結果を一致させる条件。
     - name: cdk-format
       root: "agentcore/cdk/"
       glob: "*.{ts,json}"
-      run: mise exec -- prettier --write {staged_files}
+      run: mise exec -- npm exec prettier -- --write {staged_files}
       stage_fixed: true
 
     - name: formecho-agent-format
       root: "app/FormEchoAgent/"
       glob: "*.ts"
-      run: mise exec -- biome check --write --no-errors-on-unmatched {staged_files}
+      run: mise exec -- npm exec biome -- check --write --no-errors-on-unmatched {staged_files}
       stage_fixed: true
 
     - name: formecho-agent-typecheck
@@ -53,7 +57,7 @@ pre-commit:
     - name: hono-app-format
       root: "hono-app/"
       glob: "*.ts"
-      run: mise exec -- biome check --write --no-errors-on-unmatched {staged_files}
+      run: mise exec -- pnpm exec biome check --write --no-errors-on-unmatched {staged_files}
       stage_fixed: true
 
     - name: hono-app-typecheck
@@ -72,5 +76,5 @@ pre-commit:
     - name: nextjs-format
       root: "nextjs-app/"
       glob: "*.{ts,tsx,mjs,css,json}"
-      run: mise exec -- biome format --write --no-errors-on-unmatched {staged_files}
+      run: mise exec -- pnpm exec biome format --write --no-errors-on-unmatched {staged_files}
       stage_fixed: true

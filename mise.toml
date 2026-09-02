@@ -1,8 +1,6 @@
 [tools]
 lefthook = "latest"
 "aqua:betterleaks/betterleaks" = "latest"
-biome = "latest"
-prettier = "latest"
 node = "22"
 python = "3.13"
 uv = "latest"
@@ -11,3 +9,13 @@ pnpm = "10.23.0"
 "aqua:aws/aws-cli" = "latest"
 gh = "latest"
 jq = "latest"
+
+# biome と prettier は意図的にここに置かない。
+#
+# mise の PATH 経由でフォーマッターを供給すると、版が package-lock.json /
+# pnpm-lock.yaml の外に出るため (1) mise は latest を実行時解決するので手元と CI で
+# 版が食い違い得る (2) dependabot は package.json しか見ないので更新 PR が永遠に
+# 出ない、という2つの穴ができる。
+#
+# 各プロジェクトの devDependency として持たせ、lefthook からは npm exec / pnpm exec
+# 経由で node_modules/.bin を引くこと。整形結果はロックファイルで再現可能になる。
