@@ -1,5 +1,6 @@
 {
   "permissions": {
+    "disableBypassPermissionsMode": "disable",
     "allow": [
       "Bash(git grep *)",
       "Bash(git fetch *)",
@@ -8,6 +9,49 @@
       "Bash(git merge-base *)",
       "Bash(npm audit)",
       "Bash(git merge-tree *)"
+    ],
+    "ask": [
+      "Bash(agentcore deploy:*)",
+      "Bash(cdk deploy:*)",
+      "Bash(npx cdk deploy:*)",
+      "Bash(npm run cdk:*)"
+    ],
+    "deny": [
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/*.pem)",
+      "Read(**/id_rsa*)",
+      "Read(~/.aws/**)",
+      "Read(~/.ssh/**)",
+      "Bash(git push --force:*)",
+      "Bash(git push * --force)",
+      "Bash(git push -f:*)",
+      "Bash(git push * -f)",
+      "Bash(aws * delete-*)",
+      "Bash(aws * remove-*)",
+      "Bash(aws s3 rb:*)",
+      "Bash(aws s3 rm:*)",
+      "Bash(cdk destroy:*)",
+      "Bash(npx cdk destroy:*)",
+      "Bash(terraform destroy:*)",
+      "Bash(pulumi destroy:*)",
+      "Bash(kubectl delete:*)",
+      "Bash(helm uninstall:*)",
+      "Bash(helm delete:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/guard-destructive-command.py\"",
+            "timeout": 15
+          }
+        ]
+      }
     ]
   },
   "enabledPlugins": {

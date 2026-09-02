@@ -30,3 +30,5 @@ coverage/
 .idea/
 
 temp/
+# Python (Claude Code フックスクリプト)
+__pycache__/

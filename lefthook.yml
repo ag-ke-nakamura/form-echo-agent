@@ -4,6 +4,13 @@ pre-commit:
     - name: betterleaks
       run: mise exec -- betterleaks git --pre-commit --redact --staged --verbose
 
+    # Claude Code の破壊的コマンドガードの回帰テスト。
+    # 誤って許可する側の退行は実行時に無音で通ってしまうため、ここで止める
+    # （クラッシュ系の破損は次の Bash 呼び出しが全て失敗するので即座に気付ける）。
+    - name: claude-hooks-test
+      glob: ".claude/hooks/**/*.py"
+      run: mise exec -- python3 .claude/hooks/tests/test_guard.py
+
     - name: cdk-format
       root: "agentcore/cdk/"
       glob: "*.{ts,json}"
