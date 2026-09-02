@@ -13,6 +13,20 @@ updates:
     ignore:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # typescript のメジャー更新は、生成された tsconfig.json が古い
+      # moduleResolution を使っているため通らない（実測）。
+      #
+      #   "moduleResolution": "Node"   ← node10 相当
+      #   TS 6 → error TS5107: deprecated and will stop functioning in TypeScript 7.0
+      #   TS 7 → error TS5108: has been removed
+      #
+      # tsconfig.json は agentcore CLI の生成物で編集不可の方針のため、
+      # ここでは上げられない。CLI が新しい moduleResolution を出力するように
+      # なったら、この ignore を外すこと。
+      #
+      # 5.x のパッチ・マイナー更新は通るので無視しない。
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
     directory: "/app/FormEchoAgent"

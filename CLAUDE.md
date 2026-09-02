@@ -70,7 +70,11 @@ When a task is scoped to one of `hono-app/` or `nextjs-app/`, that directory's o
 
 ## agentcore/cdk
 
-生成物のため編集不可（`@AGENTS.md` 参照）。コマンドは `npm run build` / `npm test`（jest）/ `npm run format`。CI は format/build/test すべて実行する。
+生成物のため編集不可（`@AGENTS.md` 参照）。コマンドは `npm run build` / `npm test`（jest）/ `npm run format`。
+
+CI は format と build のみ実行し、**`npm test` は意図的に外している**。生成された `test/cdk.test.ts` は全リソースが空の spec で synth して出力が1つあることだけを確認する内容で、実際の `agentcore.json` を検証していない（CDK 自身が "Resources section must exist and be non-empty" と警告する）。型検査は ts-jest 経由で `npm run build` と重複するだけなので、build に対する固有の価値がない。
+
+意味のある検証は `cdk synth`（実際の `agentcore.json` を読む）だが、`aws-targets.json` が空のため現時点では "No deployment targets configured" で失敗する。ターゲットを設定したら CI に `cdk synth` を追加すること。
 
 ### `@aws/agentcore-cdk` はキャレットを付けずに固定する
 

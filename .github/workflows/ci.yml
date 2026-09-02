@@ -29,7 +29,17 @@ jobs:
       - run: npm ci
       - run: npx prettier --check .
       - run: npm run build
-      - run: npm test
+      # npm test（生成された test/cdk.test.ts）は意図的に実行しない。
+      # 全リソースが空の spec で synth し、出力が1つあることだけを確認する
+      # 内容で、実際の agentcore.json を検証していない（CDK 自身が
+      # "Resources section must exist and be non-empty" と警告する）。
+      # 型検査は ts-jest 経由で上の npm run build と重複するだけなので、
+      # build に対する固有の価値がない。
+      #
+      # 意味のある検証は「実際の agentcore.json が synth できるか」= cdk synth
+      # だが、aws-targets.json が空のため現時点では実行できない
+      # （"No deployment targets configured" で失敗する）。
+      # ターゲットが設定されたら cdk synth をここに追加すること。
 
   formecho-agent:
     runs-on: ubuntu-latest
