@@ -39,11 +39,11 @@ BFF が Runtime を叩く宛先は `FORMECHO_RUNTIME_URL`、フロントエン�
 - `agent-app/agentcore/agentcore.json` がデプロイ対象のソース・オブ・トゥルース
 - **`agent-app/AGENTS.md` にスキーマと CLI リファレンスがある。`agentcore.json` や AgentCore リソースを触る前に読むこと**
 - `agent-app/AGENTS.md` と `agent-app/README.md` は CLI の生成物。`render()` が `copyFile` で上書きするため、我々の内容を書かない
-- `agent-app/app/FormEchoAgent/` — デプロイされるエージェント本体（Strands SDK + `bedrock-agentcore`、エントリ `main.ts`）。**`npm run dev` / `npm start` を直接使わず `agentcore dev` / `agentcore deploy` 経由で操作する**（プロセス単体をデバッグする場合を除く）
+- `agent-app/app/FormEchoAgent/` — デプロイされるエージェント本体（Strands SDK + `bedrock-agentcore`、エントリ `main.ts`）。**`main.ts` は `BedrockAgentCoreApp` への配線と起動だけを持ち、invocation のロジックは `invocation/` にある**（シームは `invocation/invoke-task.ts` の `invokeTask`）。**`npm run dev` / `npm start` を直接使わず `agentcore dev` / `agentcore deploy` 経由で操作する**（プロセス単体をデバッグする場合を除く）
 - `agent-app/agentcore/aws-targets.json` は現在空。デプロイ先が未設定なので `agentcore deploy` と `cdk synth` は実行できない
 - `agentcore package` は CLI 0.28.1 のバグで失敗する（esbuild が自身のバンドルに含まれておりバイナリを見つけられない）。`deploy` も同じ経路を通る可能性がある
 - **`agentcore dev` の備え付けチャット UI と `agentcore dev "<prompt>"` からはこの Runtime を動かせない。** どちらもスキャフォールド由来の `{"prompt": "…"}` しか送らず、`taskId` を付けられないため。プロンプトを試すときはフロントエンド（localhost:3000）か curl を使う。UI には `INVALID_INPUT` と理由が表示される
-- リクエストの検査を `BedrockAgentCoreApp` の `requestSchema` に任せない。bedrock-agentcore 0.3.0 は検査に落ちたとき 400 の本文を Content-Type 指定なしで送るが、呼び出し側が `Accept: text/event-stream` だと `@fastify/sse` が応答を握っており fastify が object を拒否する（`FST_ERR_REP_INVALID_PAYLOAD_TYPE`）。結果、**本文の無い 500** になって原因が伝わらない。`main.ts` のハンドラ内で `aiTaskRequestSchema` を回すこと
+- リクエストの検査を `BedrockAgentCoreApp` の `requestSchema` に任せない。bedrock-agentcore 0.3.0 は検査に落ちたとき 400 の本文を Content-Type 指定なしで送るが、呼び出し側が `Accept: text/event-stream` だと `@fastify/sse` が応答を握っており fastify が object を拒否する（`FST_ERR_REP_INVALID_PAYLOAD_TYPE`）。結果、**本文の無い 500** になって原因が伝わらない。`invocation/handler.ts` の中で `aiTaskRequestSchema` を回すこと
 
 ## 言語方針
 
