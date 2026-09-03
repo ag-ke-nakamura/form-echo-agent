@@ -19,7 +19,7 @@
 | BFF | 8787 | `hono-app/` で `pnpm run dev` |
 | フロントエンド | 3000 | `nextjs-app/` で `pnpm run dev` |
 
-BFF が Runtime を叩く宛先は `FORMECHO_RUNTIME_URL`、フロントエンドが BFF を叩く宛先は `NEXT_PUBLIC_API_BASE_URL`（SSG なのでビルド時に埋め込まれる）。Runtime のモデルは `FORMECHO_MODEL`（`sonnet` / `haiku`）で切り替える。
+BFF が Runtime を叩く宛先は `FORMECHO_RUNTIME_URL`、フロントエンドが BFF を叩く宛先は `NEXT_PUBLIC_API_BASE_URL`（SSG なのでビルド時に埋め込まれる）。Runtime のモデルは `FORMECHO_MODEL`（`sonnet` / `haiku` / `fake`）で切り替える。`fake` は Bedrock に接続しない差し替えで、テストが使う（#40）。
 
 ## contracts（入出力の契約）
 
@@ -54,6 +54,16 @@ BFF が Runtime を叩く宛先は `FORMECHO_RUNTIME_URL`、フロントエン�
 - **`agentcore dev` の備え付けチャット UI と `agentcore dev "<prompt>"` からはこの Runtime を動かせない。** どちらもスキャフォールド由来の `{"prompt": "…"}` しか送らず、`taskId` を付けられないため。プロンプトを試すときはフロントエンド（localhost:3000）か curl を使う。UI には `INVALID_INPUT` と理由が表示される
 - リクエストの検査を `BedrockAgentCoreApp` の `requestSchema` に任せない。bedrock-agentcore 0.3.0 は検査に落ちたとき 400 の本文を Content-Type 指定なしで送るが、呼び出し側が `Accept: text/event-stream` だと `@fastify/sse` が応答を握っており fastify が object を拒否する（`FST_ERR_REP_INVALID_PAYLOAD_TYPE`）。結果、**本文の無い 500** になって原因が伝わらない。`invocation/handler.ts` の中で `aiTaskRequestSchema` を回すこと
 
+### テスト（#40）
+
+テストは invocation 境界（#23 のシームその1）だけを叩く。**新しいシームを作らず、`FORMECHO_MODEL=fake` でモデルを差し替える。** 台本は `model/fake.ts` の `fakeModelScript` が持ち、テストが「モデルは次にこれを返す」と書く。`tests/use-fake-model.ts`（vitest の `setupFiles`）が `FORMECHO_MODEL` を上書きするので、開発機の環境変数でテストが Bedrock を叩くことはない。
+
+- **入口は `invocation/handler.ts` の `handleInvocation`。** `invokeTask` ではなく handler を通すのは、出力契約のエラーコードへの写像がそこにあるため（「未知の `taskId` が `INVALID_INPUT` になる」は `invokeTask` の側からは言えない）。足場は `tests/harness.ts`
+- **モデルが受け取った system prompt と会話履歴を assert してよい。** これは内部の呼び出し順ではなく Runtime が Bedrock へ何を投げたかであり、taskId の解決と履歴の巻き戻しはそこにしか現れない
+- **AI の出力品質は assert しない**（#23）。抽出結果の正しさは実測の対象。守るのは配線・契約・エラー処理
+- 固定値（`VALID_OUTPUTS`）は `OUTPUT_SCHEMAS` から型を引く。契約から外れた固定値を置くと「弾かれる形」の検証が全部通ってしまう
+- **vitest は 3 系に留める。** node 22.22 同梱の npm 10.9.4 は vitest 4 の peer 依存で `Cannot read properties of null (reading 'edgesOut')` を出して install できない（空のパッケージでも再現するので、npm 側のバグ）。`nextjs-app` は pnpm なので 4 系が入っている
+
 ## 言語方針
 
 **日本語を基本言語**とする。コミットメッセージ、コードコメント（WHY を書く。WHAT は不要）、Markdown ドキュメント、ADR・仕様書すべて。スキルがテンプレートを提供する場合はそのフォーマットに従いつつ日本語で書く。外部ライブラリの API 名・定数は英語のまま。
@@ -84,14 +94,17 @@ CI（`.github/workflows/ci.yml`）と同じものを手元で回す。
 
 | プロジェクト | コマンド |
 | --- | --- |
-| `agent-app/app/FormEchoAgent` | `npm run format:check && npm run lint && npm run build` |
+| `agent-app/app/FormEchoAgent` | `npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build` |
 | `hono-app` | `pnpm run format:check && pnpm run lint && pnpm run typecheck` |
 | `nextjs-app` | `pnpm run format:check && pnpm run lint && pnpm run test && pnpm run build` |
 | `agent-app/agentcore/cdk` | `npx prettier --check . && npm run build` |
 
 `nextjs-app` に `typecheck` スクリプトは無い（型検証は `build` が兼ねる）。`test` があるのは
-`nextjs-app` だけで、対象は参加可否表のモック生成器1つ（#58 のシーム3）。Runtime と BFF の
-テスト基盤は #40 / #41 で入る。`contracts/` はどのプロジェクトにも属さないので、整形は `agent-app/app/FormEchoAgent` の biome で見る（`./node_modules/.bin/biome check ../../../contracts`）。
+`agent-app/app/FormEchoAgent`（invocation 境界。#40）と `nextjs-app`（参加可否表のモック生成器1つ。
+#58 のシーム3）で、BFF のテスト基盤は #41 で入る。`contracts/` はどのプロジェクトにも属さないので、整形は `agent-app/app/FormEchoAgent` の biome で見る（`./node_modules/.bin/biome check ../../../contracts`）。
+
+Runtime だけ `build` と `typecheck` の両方を回す。`build` は emit するので `dist/` にテストを
+混ぜないようテストを除いており、`typecheck`（`tsconfig.test.json`）がテストまで含めて見る。
 
 ## フォーマッター・リンター・型チェッカーの入手経路
 

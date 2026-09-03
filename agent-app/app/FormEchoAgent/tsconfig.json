@@ -18,5 +18,9 @@
     }
   },
   "include": ["**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  // テストは emit の対象外。`dist/` に入れると `agentcore deploy` が運ぶ成果物に
+  // テストランナー依存のファイルが乗る。型検査は tsconfig.test.json が見る。
+  // `model/fake.ts` は除かない — 設定で選ぶ差し替えなので Runtime 側の実装であり、
+  // `model/load.ts` が静的に import している。
+  "exclude": ["node_modules", "dist", "tests", "**/*.test.ts"]
 }

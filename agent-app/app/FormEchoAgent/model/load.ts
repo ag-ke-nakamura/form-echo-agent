@@ -1,10 +1,22 @@
 import { NodeHttpHandler } from '@smithy/node-http-handler';
+import type { Model } from '@strands-agents/sdk';
 import { BedrockModel } from '@strands-agents/sdk/models/bedrock';
-import { AWS_REGION, resolveModelId } from '../config.js';
+import {
+  AWS_REGION,
+  bedrockModelId,
+  FAKE_MODEL_NAME,
+  resolveModelName,
+} from '../config.js';
+import { FakeModel } from './fake.js';
 
-export function loadModel(): BedrockModel {
+export function loadModel(): Model {
+  const name = resolveModelName();
+  // fake は Bedrock に接続しない差し替え（#23 の決定性の確保）。テストと実測は
+  // 同じ invocation 境界を通り、違うのはこの設定だけにする。
+  if (name === FAKE_MODEL_NAME) return new FakeModel();
+
   return new BedrockModel({
-    modelId: resolveModelId(),
+    modelId: bedrockModelId(name),
     // 環境の AWS_REGION に依らずリージョンを固定する。`jp.` の推論プロファイルは
     // ap-northeast-1 でしか解決できず、取り違えると実行時まで気付けない。
     region: AWS_REGION,

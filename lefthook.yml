@@ -53,7 +53,9 @@ pre-commit:
     - name: formecho-agent-typecheck
       root: "agent-app/app/FormEchoAgent/"
       glob: "*.ts"
-      run: mise exec -- npm exec tsc -- --noEmit
+      # tsconfig.test.json を使う。既定の tsconfig.json は emit するのでテストを
+      # 除いており、そのままではテストの型崩れを手元で拾えない（CI と同じ script）。
+      run: mise exec -- npm run typecheck
 
     - name: hono-app-format
       root: "hono-app/"
