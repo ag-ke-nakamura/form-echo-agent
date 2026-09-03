@@ -1,59 +1,41 @@
-import type {
-  AiErrorCode,
-  AiTaskSuccessResponse,
-  TaskId,
+import type { AiErrorCode, AiTaskSuccessResponse } from '@contracts/index.js'
+import {
+  isAiErrorCode,
+  outputSchemaFor,
+  usageSchema,
 } from '@contracts/index.js'
-import { isAiErrorCode, outputSchemaFor } from '@contracts/index.js'
-import { RUNTIME_TIMEOUT_MS, RUNTIME_URL } from '../config.js'
+import type { RuntimeInvocation } from './runtime-transport.js'
+import { loadRuntimeTransport } from './runtime-transport.js'
 
 export type RuntimeOutcome =
   | { ok: true; response: AiTaskSuccessResponse }
   | { ok: false; code: AiErrorCode; message: string }
 
-/** AgentCore Runtime がセッションの振り分けに使うヘッダー。無いと 400 を返す。 */
-const SESSION_HEADER = 'X-Amzn-Bedrock-AgentCore-Runtime-Session-Id'
-
 /**
- * ローカルの `agentcore dev` が立てた Runtime を叩く。
+ * Runtime を呼び、返ってきたものを出力契約のエラーコードか成功応答に写す。
  *
- * デプロイ済み Runtime を SigV4 で叩く経路は未実装。切り替えは呼び出し側ではなく
- * このモジュールの中で行う（BFF の他の部分は宛先を知らない）。
+ * 宛先と通信のしかたは `runtime-transport.ts` が設定から決める（ローカル /
+ * デプロイ済み / fake）。**この関数はどれが選ばれたかを知らない** — 通信が
+ * 差し替わっても、応答の解釈はここ1箇所を通る。
  */
-/**
- * Runtime へ渡す1回分。`prompt` と `input` のどちらが必要かは taskId ごとに違う
- * （ADR-0004）ので、両方を任意にして表の判断を呼び出し側に残す。
- */
-export interface RuntimeInvocation {
-  taskId: TaskId
-  prompt?: string
-  sessionId: string
-  /** 入力契約で検査済みの構造化入力。持たない taskId では undefined。 */
-  input?: unknown
-}
+export async function invokeRuntime(
+  invocation: RuntimeInvocation,
+): Promise<RuntimeOutcome> {
+  // 設定の解決を try の外に置く。中に入れると、綴りを間違えた
+  // `FORMECHO_RUNTIME_CLIENT` が下の catch に飲まれて RUNTIME_UNAVAILABLE になり、
+  // 「設定が間違っている」が「Runtime が落ちている」に化ける。
+  const transport = loadRuntimeTransport()
 
-export async function invokeRuntime({
-  taskId,
-  prompt,
-  sessionId,
-  input,
-}: RuntimeInvocation): Promise<RuntimeOutcome> {
   let response: Response
   try {
-    response = await fetch(`${RUNTIME_URL}/invocations`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        [SESSION_HEADER]: sessionId,
-      },
-      // 構造化入力は毎回そのまま送り直す。Runtime 側の会話履歴はコールドスタートで
-      // 消えるので、2回目以降に省くと表の無いリクエストが届く（ADR-0004）。
-      body: JSON.stringify({ taskId, prompt, sessionId, input }),
-      signal: AbortSignal.timeout(RUNTIME_TIMEOUT_MS),
-    })
+    response = await transport(invocation)
   } catch (error) {
     // TimeoutError と、接続そのものが張れない場合（Runtime が落ちている）を分ける。
     // 画面の案内が「もう一度お試しください」と「手動で入力してください」で違うため。
+    //
+    // TimeoutError 以外を型で絞らない。undici は接続失敗を `TypeError: fetch failed`
+    // で投げるが Bun は別の形で投げるので、型で分岐すると `dev`（Bun）でだけ
+    // 判定が変わる。この try に残るのは通信だけなので、既定を寄せて構わない。
     if (error instanceof DOMException && error.name === 'TimeoutError') {
       return {
         ok: false,
@@ -78,8 +60,8 @@ export async function invokeRuntime({
         message: `Runtime が ${response.status} を返しました。`,
       }
     }
-    // 4xx は Runtime がこの BFF の投げ方を拒否したということで、利用者ではなく
-    // 我々の側の不整合。利用者に再入力を促しても直らないので INTERNAL_ERROR にする。
+    // 4xx は Runtime がこの BFF の投げ方を拒否したということで、職員ではなく
+    // 我々の側の不整合。職員に再入力を促しても直らないので INTERNAL_ERROR にする。
     return {
       ok: false,
       code: 'INTERNAL_ERROR',
@@ -106,7 +88,9 @@ export async function invokeRuntime({
   // 推薦系では入力も渡す。提案が入力の候補日程と過不足なく対応しているかは
   // 出力契約だけでは言えない（ADR-0004）。Runtime の作り直しを通り抜けたものが、
   // フロントエンドへ出る前にここで最後に落ちる。
-  const result = outputSchemaFor(taskId, input).safeParse(parsed.result)
+  const result = outputSchemaFor(invocation.taskId, invocation.input).safeParse(
+    parsed.result,
+  )
   if (!result.success) {
     return {
       ok: false,
@@ -148,7 +132,10 @@ function runtimeSuccessShape(body: unknown): AiTaskSuccessResponse | null {
   if (typeof body !== 'object' || body === null) return null
   const candidate = body as Partial<AiTaskSuccessResponse>
   if (typeof candidate.sessionId !== 'string') return null
-  if (candidate.result === undefined || candidate.usage === undefined)
-    return null
-  return candidate as AiTaskSuccessResponse
+  if (candidate.result === undefined) return null
+  // usage も契約で見る。`result` を契約で見て usage を見ない非対称に理由がない
+  // （欄が欠けた usage は画面のトークン表示をそのまま壊す）。
+  const usage = usageSchema.safeParse(candidate.usage)
+  if (!usage.success) return null
+  return { ...candidate, usage: usage.data } as AiTaskSuccessResponse
 }

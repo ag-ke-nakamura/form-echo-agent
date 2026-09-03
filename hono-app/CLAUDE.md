@@ -19,18 +19,32 @@ pnpm で導入したため）。依存の追加・スクリプト実行は pnpm�
 - 開発サーバー（ホットリロード）: `pnpm run dev` — http://localhost:8787
   （フロントエンド・Runtime とまとめて起動するならリポジトリルートで `mise run dev`）
 - 型チェック: `pnpm run typecheck`
+- テスト: `pnpm run test`（一覧のみ: `pnpm run test:list`）
 - Lint: `pnpm run lint`
 - Format: `pnpm run format`（チェックのみ: `pnpm run format:check`）
 
 Lint/format は [Biome](https://biomejs.dev)（`biome.json`）。biome 本体は devDependency として
 バージョン固定してある（`2.5.11`、キャレットなし）。素の `biome` を PATH から叩かないこと
-— mise が供給していない環境では別物を拾う。テストは未設定。
+— mise が供給していない環境では別物を拾う。
+
+テストは vitest（`vitest.config.mts`）。**書き方の作法は `../.claude/rules/formecho-bff-testing.md`**
+— `paths` で絞ってあるので、テストや `src/lib/` の差し替え周り（`fake-runtime.ts` /
+`runtime-transport.ts`）を触った時に自動で載る。
 
 ## Architecture
 
 - `src/index.ts` — ルート定義とエラーの写像。`STATUS_BY_CODE` が出力契約のエラーコードから
-  HTTP ステータスへの対応を1箇所に集めている。`Hono` インスタンスを default export するだけで、
+  HTTP ステータスへの対応を1箇所に集めている。`{port, fetch}` を default export するだけで、
   Bun のランタイムがこれを拾って HTTP を受ける。明示的な listen 呼び出しは存在しない。
+  `Hono` インスタンス（`app`）は名前付きでも export してある — テストが `app.request()` で
+  プロセスを立てずにこの境界を叩くため（#23 のシームその2）。
+- `src/lib/runtime-transport.ts` — Runtime との**通信だけ**を担う層（`RuntimeTransport`）。
+  宛先と実装は `FORMECHO_RUNTIME_CLIENT` が決める（`local` / `fake`）。デプロイ済み Runtime を
+  SigV4 で叩く経路はここに `deployed` として足す。切り替えは呼び出し側ではなくこのモジュールの
+  中で行う（BFF の他の部分は宛先を知らない）。
+- `src/lib/fake-runtime.ts` — Runtime に接続しないクライアント（#41）。返す内容は台本
+  （`fakeRuntimeScript`）が決める。**差し替わるのは「Runtime が何を返したか」だけで、
+  「それをどう扱うか」は実物と同じコードが通る。**
 - `src/lib/runtime-client.ts` — Runtime の呼び出しと、返ってきた構造化データの再検査。
   契約に反するものはフロントエンドへ通さない。推薦系では契約の
   `outputSchemaFor(taskId, input)` を通すので、**提案が入力の参加可否表と同じ候補日程を
@@ -50,7 +64,11 @@ Lint/format は [Biome](https://biomejs.dev)（`biome.json`）。biome 本体は
   JSX ランタイムにコンパイルされる。`types: ["bun"]` により Bun のグローバル型を参照する。
 
 設定はすべて環境変数から読む（`src/config.ts`）。再ビルドせずに切り替えられるようにするため。
-`PORT` / `FORMECHO_RUNTIME_URL` / `FORMECHO_RUNTIME_TIMEOUT_MS` / `FORMECHO_ALLOWED_ORIGINS`。
+`PORT` / `FORMECHO_RUNTIME_URL` / `FORMECHO_RUNTIME_TIMEOUT_MS` / `FORMECHO_ALLOWED_ORIGINS` /
+`FORMECHO_RUNTIME_CLIENT`。
+
+`FORMECHO_RUNTIME_CLIENT` だけは **`src/index.ts` が起動時に検証する**。不正な値をリクエスト時に
+落とすと、Runtime を呼ぶ前の失敗が `RUNTIME_UNAVAILABLE` として出て Runtime 障害と区別が付かない。
 
 ## 言語方針
 
