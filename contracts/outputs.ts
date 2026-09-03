@@ -32,17 +32,41 @@ const commonOutputFields = {
  * `new Date(iso)` を挟んだ瞬間に日が1日ずれる余地が残る。出張の出発日という
  * 対象自体が日付であって時点ではない。
  */
-const ISO8601_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const ISO8601_DATE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+
+/**
+ * 暦に実在する日付か。`2026-02-31` のように月日の範囲は満たすが存在しない日を弾く。
+ *
+ * WHY: 正規表現だけでは月末の日数と閏年を見られない。`ISO8601_DATE` を置いた理由は
+ * 「`<input type="date">` が黙って空欄を表示する値を契約で止める」ことだったが、
+ * `2026-02-31` はその症状をそのまま再現する。
+ *
+ * `Date` の ISO パーサは月・日の範囲を検査するので、閏年込みの実在判定になる
+ * （`2026-02-29` は Invalid、`2028-02-29` は有効）。`toISOString()` と突き合わせるのは、
+ * パーサが受け付ける桁揃えの緩さ（`2026-1-1`）を落とすため。
+ *
+ * 二段構えにするのは、正規表現だけが JSON Schema に写るため。粗い形の検査はモデルへの
+ * 指示として効き、実在判定は `safeParse` の段で効いて Structured Output の再試行に回る。
+ */
+function isCalendarDate(value: string): boolean {
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.toISOString().startsWith(`${value}T`)
+  );
+}
+
+/** 日付欄の共通スキーマ。交通ICと会議ロジの両方がこれを使う。 */
+const isoDateSchema = z
+  .string()
+  .regex(ISO8601_DATE)
+  .refine(isCalendarDate, { error: '暦に存在しない日付です' });
 
 export const parseReservationOutputSchema = z.object({
-  departure_date: z
-    .string()
-    .regex(ISO8601_DATE)
+  departure_date: isoDateSchema
     .nullable()
     .describe('出発日。YYYY-MM-DD 形式。読み取れない場合は null'),
-  return_date: z
-    .string()
-    .regex(ISO8601_DATE)
+  return_date: isoDateSchema
     .nullable()
     .describe('帰着日。YYYY-MM-DD 形式。読み取れない場合は null'),
   origin: z.string().nullable().describe('出発地。読み取れない場合は null'),
@@ -75,11 +99,8 @@ const HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/;
  * 所要時間（`duration`）を持たない。「3時間」は `end_time - start_time` で導ける。
  * 両方持つと、モデルがどちらかを取り違えたときに不整合な組が契約を通ってしまう。
  */
-const candidateSchema = z.object({
-  date: z
-    .string()
-    .regex(ISO8601_DATE)
-    .describe('候補日程の日付。YYYY-MM-DD 形式'),
+const candidateFieldsSchema = z.object({
+  date: isoDateSchema.describe('候補日程の日付。YYYY-MM-DD 形式'),
   start_time: z
     .string()
     .regex(HH_MM)
@@ -89,6 +110,28 @@ const candidateSchema = z.object({
     .regex(HH_MM)
     .describe('終了時刻。HH:mm 形式（24時間表記）'),
 });
+
+/**
+ * 終了時刻は開始時刻より後、という欄をまたぐ不変条件。
+ *
+ * WHY: #23 が所要時間（`duration`）を欄として持たないと決めた理由は
+ * 「`end_time - start_time` で導ける」だった。逆順の組を通すとその導出が負になり、
+ * `duration` を捨てた代わりに契約が引き受けたはずの不変条件が守られない。画面側でも
+ * `<input type="time">` は2つの欄の関係を見ないので、逆順のまま表示されて誰も気付かない。
+ *
+ * 日をまたぐ会議（`22:00`–`01:00`）は存在しないものとして扱うので、比較は素直な大小で
+ * よい。`HH_MM` が桁揃えを保証しているため、辞書順の比較がそのまま時刻の前後になる。
+ *
+ * この検査は JSON Schema に写らないため、モデルへの指示としては効かず `safeParse` の段で
+ * 初めて弾かれて再試行に回る。`.max(10)` とは効き方が違うので、`SKILL.md` にも同じ制約を書く。
+ */
+const candidateSchema = candidateFieldsSchema.refine(
+  ({ start_time, end_time }) => start_time < end_time,
+  {
+    error: '終了時刻は開始時刻より後である必要があります',
+    path: ['end_time'],
+  },
+);
 
 /** 1回の応答で返せる候補日程の上限。`SKILL.md` の制約と同じ数を置く。 */
 export const MAX_CANDIDATES = 10;
@@ -113,10 +156,7 @@ export type ParseCandidatesOutput = z.infer<typeof parseCandidatesOutputSchema>;
  * 画面が持っている候補日程の一覧に当てる突き合わせはフロントエンドが行う。
  */
 const availabilitySchema = z.object({
-  date: z
-    .string()
-    .regex(ISO8601_DATE)
-    .describe('参加可否を答えた日付。YYYY-MM-DD 形式'),
+  date: isoDateSchema.describe('参加可否を答えた日付。YYYY-MM-DD 形式'),
   /**
    * ○×の2値に留める。`maybe` や時間帯を足すと、手で埋める側（各候補日程に手動で○×）
    * にもそれを入れる UI が要り、非AI経路と形が揃わなくなる。「16日の午後なら大丈夫」
