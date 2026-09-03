@@ -20,3 +20,4 @@ Structured Output のスキーマは Runtime（生成側）・BFF（検証側）
 
 - `contracts/` は独立したパッケージではないので、依存（Zod）は各プロジェクトが自前で持つ。バージョンのずれは自動的には防げず、意図的に v4 で揃える運用になる
 - 各プロジェクトの tsconfig に `paths` と `include` の設定が増える。ビルドツール（Next.js の webpack/turbopack、bun、tsc）がそれぞれ `rootDir` の外のファイルを解決できる設定を要する
+- 実装した結果、この「解決できる設定」は3プロジェクトで同じにならなかった。`hono-app` と `nextjs-app` は emit しないので `paths` で足りたが、emit する `agent-app/app/FormEchoAgent` では `rootDir` の外を取り込めず（TS6059）、かつ `paths` エイリアスは emit 後の import 文に残るため実行時に解決できない。ここだけ `contracts` への symlink をパッケージ内に置き、相対 import にしてある（詳細は `CLAUDE.md`）。あわせて `contracts/` 自身の位置から `node_modules` を辿れないため、各 tsconfig に `zod` の `paths` を張り、`contracts/package.json` にモジュール種別のマーカー（`{"type": "module"}`）を置いた
