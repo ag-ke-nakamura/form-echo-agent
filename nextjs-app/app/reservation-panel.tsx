@@ -15,7 +15,7 @@ type FieldName =
 
 /**
  * 交通ICのフォームの状態モデル。スカラーの平坦なマップ。
- * 会議候補日タブとは形が違うので共有しない（共有するのは `FieldSource` だけ）。
+ * 候補日程タブとは形が違うので共有しない（共有するのは `FieldSource` だけ）。
  */
 type FormState = Record<FieldName, { value: string; source: FieldSource }>;
 

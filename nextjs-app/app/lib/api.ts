@@ -2,10 +2,10 @@ import type {
   AiErrorCode,
   AiErrorResponse,
   AiTaskSuccessResponse,
-  ParseCandidatesOutput,
-  ParseReservationOutput,
+  OUTPUT_SCHEMAS,
   TaskId,
 } from "@contracts/index.js";
+import type { z } from "zod";
 
 /**
  * SSG なのでビルド時に埋め込まれる。本番は CloudFront で配信した静的ファイルから
@@ -23,11 +23,17 @@ const API_BASE_URL =
 export const RESERVATION_TASK_ID = "ic-card.parse-reservation" satisfies TaskId;
 export const CANDIDATES_TASK_ID = "meeting.parse-candidates" satisfies TaskId;
 
-/** taskId から出力の型を引く表。AI チャット欄はこの表を通してタブに紐づく。 */
-export interface TaskOutputs {
-  "ic-card.parse-reservation": ParseReservationOutput;
-  "meeting.parse-candidates": ParseCandidatesOutput;
-}
+/**
+ * taskId から出力の型を引く表。AI チャット欄はこの表を通してタブに紐づく。
+ *
+ * 出力契約の `OUTPUT_SCHEMAS` から導く。同じ対応を手で書き写すと、taskId を
+ * 足すときの編集箇所が `ALLOWED_TASK_IDS` / `OUTPUT_SCHEMAS` / ここの3つになり、
+ * 「3者が同一の契約を見る」（ADR-002）が画面側だけで崩れる。
+ * `import type` なので zod のスキーマ本体はバンドルに乗らない。
+ */
+export type TaskOutputs = {
+  [K in TaskId]: z.infer<(typeof OUTPUT_SCHEMAS)[K]>;
+};
 
 export type AiTaskOutcome<TTaskId extends TaskId> =
   | { ok: true; result: TaskOutputs[TTaskId] }
@@ -37,7 +43,7 @@ export type AiTaskOutcome<TTaskId extends TaskId> =
  * BFF の `POST /api/ai/tasks` を叩く。
  *
  * taskId 以外は全タブで同じなので、経路もひとつに保つ。タブを増やしても
- * 増えるのは `TaskOutputs` の1行だけで、この関数は変わらない。
+ * 変わるのは出力契約の許可リストだけで、この関数もその戻り値の型も動かない。
  */
 export async function requestAiTask<TTaskId extends TaskId>(
   taskId: TTaskId,

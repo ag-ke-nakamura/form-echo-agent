@@ -76,7 +76,10 @@ const HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/;
  * 両方持つと、モデルがどちらかを取り違えたときに不整合な組が契約を通ってしまう。
  */
 const candidateSchema = z.object({
-  date: z.string().regex(ISO8601_DATE).describe('候補日。YYYY-MM-DD 形式'),
+  date: z
+    .string()
+    .regex(ISO8601_DATE)
+    .describe('候補日程の日付。YYYY-MM-DD 形式'),
   start_time: z
     .string()
     .regex(HH_MM)

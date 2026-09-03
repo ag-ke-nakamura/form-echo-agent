@@ -4,13 +4,7 @@ import { useState } from "react";
 import { CandidatesPanel } from "./candidates-panel";
 import { ReservationPanel } from "./reservation-panel";
 
-/**
- * タブの定義。参加可否タブは別チケットでここに1行増える。
- *
- * WHY: タブの切り替えでフォームの状態を持ち越さない（`key` を渡して作り直す）。
- * タブごとに状態モデルが違うので持ち越す先が無く、AI チャット欄も前のタブの
- * 応答を残したままにすると、どの taskId の結果を見ているのか分からなくなる。
- */
+/** タブの定義。参加可否タブは別チケットでここに1行増える。 */
 const TABS = [
   { id: "ic-card", label: "交通IC予約", Panel: ReservationPanel },
   { id: "meeting-candidates", label: "会議候補日設定", Panel: CandidatesPanel },
@@ -20,7 +14,6 @@ type TabId = (typeof TABS)[number]["id"];
 
 export function FormEchoTabs() {
   const [activeTabId, setActiveTabId] = useState<TabId>(TABS[0].id);
-  const active = TABS.find((tab) => tab.id === activeTabId) ?? TABS[0];
 
   return (
     <>
@@ -48,7 +41,16 @@ export function FormEchoTabs() {
         })}
       </nav>
 
-      <active.Panel key={active.id} />
+      {/*
+        選んでいないタブも描いたまま隠す。
+        タブごとに作り直すと、AI が埋めた値を直している最中（ストーリー3・4）に
+        タブを触っただけで入力が消える。`hidden` なので支援技術からも外れる。
+      */}
+      {TABS.map((tab) => (
+        <div key={tab.id} hidden={tab.id !== activeTabId}>
+          <tab.Panel />
+        </div>
+      ))}
     </>
   );
 }
