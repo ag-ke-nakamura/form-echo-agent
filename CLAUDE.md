@@ -5,8 +5,8 @@
 3つの独立したプロジェクトを並べたリポジトリ。共有しているのはハーネス（`.github/`, `lefthook.yml`, `mise.toml`, `.claude/`）と出力契約（`contracts/`）だけで、ルートに `package.json` やワークスペース定義は無い。
 
 - `agent-app/` — AWS Bedrock AgentCore プロジェクト（`FormEcho`）。**`agentcore` CLI の生成物一式がこのフォルダに収まっている**（`AGENTS.md`, `README.md`, `agentcore/`, `app/`）。CLI は「自分のいるフォルダがプロジェクトルート」として振る舞うため、**`agentcore` コマンドは必ず `agent-app/` 内で実行する**（リポジトリルートからは "No agentcore project found" になる）
-- `hono-app/` — Hono スキャフォールド。**依存管理は pnpm、`dev` スクリプトのみ Bun**
-- `nextjs-app/` — Next.js 16 + pnpm スキャフォールド。`nextjs-app/AGENTS.md` は `next dev` が自動生成するため手編集不可
+- `hono-app/` — BFF。`POST /api/ai/tasks` で入力サニタイズ・`taskId` 照合・Runtime 呼び出し・出力の再検査を行う。**依存管理は pnpm、`dev` スクリプトのみ Bun**
+- `nextjs-app/` — フロントエンド（SSG）。AI 機能ごとのタブを持つ。`nextjs-app/AGENTS.md` は `next dev` が自動生成するため手編集不可
 - `contracts/` — 3プロジェクトが共有する出力契約（ADR-002）
 
 ## 3プロセスの起動
@@ -24,6 +24,8 @@ BFF が Runtime を叩く宛先は `FORMECHO_RUNTIME_URL`、フロントエン�
 ## contracts（出力契約）
 
 出力スキーマ（Zod）・リクエスト型・エラーコード・`taskId` 許可リストの正典。パッケージ化せず素の `.ts` で置き、各プロジェクトが自前の解決経路で参照する（ADR-002）。**Zod は3プロジェクトとも v4 に揃える。**
+
+**リクエスト契約は `{taskId, prompt, sessionId}` の3つだけで、画面が持っているフォームの状態（候補日程の一覧、入力済みの値、レコードID）を Runtime へ渡さない**（ADR-003）。`prompt` にシステムが組み立てた文脈を埋め込むこともしない。突き合わせはフロントエンドが行う。
 
 参照のしかたはプロジェクトごとに違う。
 
@@ -68,6 +70,19 @@ BFF が Runtime を叩く宛先は `FORMECHO_RUNTIME_URL`、フロントエン�
 **ブロックされた場合は回避を試みず、対象と理由をユーザーに提示して実行を依頼する。** フラグを外す・別コマンドに言い換えるといった迂回もしない。
 
 ガードを変更したら `python3 .claude/hooks/tests/test_guard.py` で回帰を確認する。
+
+## 変更を出す前の確認
+
+CI（`.github/workflows/ci.yml`）と同じものを手元で回す。
+
+| プロジェクト | コマンド |
+| --- | --- |
+| `agent-app/app/FormEchoAgent` | `npm run format:check && npm run lint && npm run build` |
+| `hono-app` | `pnpm run format:check && pnpm run lint && pnpm run typecheck` |
+| `nextjs-app` | `pnpm run format:check && pnpm run lint && pnpm run build` |
+| `agent-app/agentcore/cdk` | `npx prettier --check . && npm run build` |
+
+`nextjs-app` に `typecheck` スクリプトは無い（型検証は `build` が兼ねる）。`contracts/` はどのプロジェクトにも属さないので、整形は `agent-app/app/FormEchoAgent` の biome で見る（`./node_modules/.bin/biome check ../../../contracts`）。
 
 ## フォーマッター・リンター・型チェッカーの入手経路
 
