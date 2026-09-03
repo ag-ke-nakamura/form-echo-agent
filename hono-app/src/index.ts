@@ -23,7 +23,11 @@ const STATUS_BY_CODE: Record<AiErrorCode, ContentfulStatusCode> = {
   INTERNAL_ERROR: 500,
 }
 
-const app = new Hono()
+/**
+ * この BFF の HTTP 境界（#23 のシームその2）。名前付きで export するのは、
+ * テストが `app.request()` でプロセスを立てずに叩けるようにするため。
+ */
+export const app = new Hono()
 
 app.use('/api/*', cors({ origin: ALLOWED_ORIGINS }))
 app.use('/api/*', authenticate)

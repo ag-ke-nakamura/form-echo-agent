@@ -19,7 +19,7 @@
 | BFF | 8787 | `hono-app/` で `pnpm run dev` |
 | フロントエンド | 3000 | `nextjs-app/` で `pnpm run dev` |
 
-BFF が Runtime を叩く宛先は `FORMECHO_RUNTIME_URL`、フロントエンドが BFF を叩く宛先は `NEXT_PUBLIC_API_BASE_URL`（SSG なのでビルド時に埋め込まれる）。Runtime のモデルは `FORMECHO_MODEL`（`sonnet` / `haiku` / `fake`）で切り替える。`fake` は Bedrock に接続しない差し替えで、テストが使う（#40）。
+BFF が Runtime を叩く宛先は `FORMECHO_RUNTIME_URL`、フロントエンドが BFF を叩く宛先は `NEXT_PUBLIC_API_BASE_URL`（SSG なのでビルド時に埋め込まれる）。Runtime のモデルは `FORMECHO_MODEL`（`sonnet` / `haiku` / `fake`）、BFF の Runtime クライアントは `FORMECHO_RUNTIME_CLIENT`（`local` / `fake`）で切り替える。どちらの `fake` も外部に接続しない差し替えで、テストが使う（#40、#41）。
 
 ## contracts（入出力の契約）
 
@@ -58,7 +58,7 @@ BFF が Runtime を叩く宛先は `FORMECHO_RUNTIME_URL`、フロントエン�
 
 テストは invocation 境界（#23 のシームその1）だけを叩き、モデルは `FORMECHO_MODEL=fake` で差し替える。**書き方の作法は `.claude/rules/formecho-agent-testing.md`** — `paths` で絞ってあるので、テストや `model/fake.ts` を触った時に自動で載る。ここへ写さないこと。
 
-- **vitest は 3 系に留める。** node 22.22 同梱の npm 10.9.4 は vitest 4 の peer 依存で `Cannot read properties of null (reading 'edgesOut')` を出して install できない（空のパッケージでも再現するので、npm 側のバグ）。`nextjs-app` は pnpm なので 4 系が入っており、**このバージョン差は許容する** — 揃えるには node/npm を上げることになり、AgentCore Runtime の実行環境に触る
+- **vitest は 3 系に留める。** node 22.22 同梱の npm 10.9.4 は vitest 4 の peer 依存で `Cannot read properties of null (reading 'edgesOut')` を出して install できない（空のパッケージでも再現するので、npm 側のバグ）。`hono-app` と `nextjs-app` は pnpm なので 4 系が入っており、**このバージョン差は許容する** — 揃えるには node/npm を上げることになり、AgentCore Runtime の実行環境に触る
 
 ## 言語方針
 
@@ -93,13 +93,13 @@ CI（`.github/workflows/ci.yml`）と同じものを手元で回す。
 | プロジェクト | コマンド |
 | --- | --- |
 | `agent-app/app/FormEchoAgent` | `npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build` |
-| `hono-app` | `pnpm run format:check && pnpm run lint && pnpm run typecheck` |
+| `hono-app` | `pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test` |
 | `nextjs-app` | `pnpm run format:check && pnpm run lint && pnpm run test && pnpm run build` |
 | `agent-app/agentcore/cdk` | `npx prettier --check . && npm run build` |
 
 `nextjs-app` に `typecheck` スクリプトは無い（型検証は `build` が兼ねる）。`test` があるのは
-`agent-app/app/FormEchoAgent`（invocation 境界。#40）と `nextjs-app`（参加可否表のモック生成器1つ。
-#58 のシーム3）で、BFF のテスト基盤は #41 で入る。`contracts/` はどのプロジェクトにも属さないので、整形は `agent-app/app/FormEchoAgent` の biome で見る（`./node_modules/.bin/biome check ../../../contracts`）。
+`agent-app/app/FormEchoAgent`（invocation 境界。#40）、`hono-app`（HTTP 境界。#41）、
+`nextjs-app`（参加可否表のモック生成器1つ。#58 のシーム3）。`contracts/` はどのプロジェクトにも属さないので、整形は `agent-app/app/FormEchoAgent` の biome で見る（`./node_modules/.bin/biome check ../../../contracts`）。
 
 Runtime だけ `build` と `typecheck` の両方を回す。`build` は emit するので `dist/` にテストを
 混ぜないようテストを除いており、`typecheck`（`tsconfig.test.json`）がテストまで含めて見る。

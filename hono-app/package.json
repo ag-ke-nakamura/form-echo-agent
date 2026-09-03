@@ -3,6 +3,8 @@
   "scripts": {
     "dev": "bun run --hot src/index.ts",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:list": "vitest list",
     "format": "biome format --write .",
     "format:check": "biome check .",
     "lint": "biome lint ."
@@ -14,6 +16,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.11",
     "@types/bun": "latest",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
   }
 }

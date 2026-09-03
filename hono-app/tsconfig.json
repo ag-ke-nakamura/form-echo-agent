@@ -15,5 +15,5 @@
       "zod": ["./node_modules/zod"]
     }
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.mts"]
 }

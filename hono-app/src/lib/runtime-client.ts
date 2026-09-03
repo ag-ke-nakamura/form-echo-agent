@@ -1,56 +1,25 @@
-import type {
-  AiErrorCode,
-  AiTaskSuccessResponse,
-  TaskId,
-} from '@contracts/index.js'
+import type { AiErrorCode, AiTaskSuccessResponse } from '@contracts/index.js'
 import { isAiErrorCode, outputSchemaFor } from '@contracts/index.js'
-import { RUNTIME_TIMEOUT_MS, RUNTIME_URL } from '../config.js'
+import type { RuntimeInvocation } from './runtime-transport.js'
+import { loadRuntimeTransport } from './runtime-transport.js'
 
 export type RuntimeOutcome =
   | { ok: true; response: AiTaskSuccessResponse }
   | { ok: false; code: AiErrorCode; message: string }
 
-/** AgentCore Runtime がセッションの振り分けに使うヘッダー。無いと 400 を返す。 */
-const SESSION_HEADER = 'X-Amzn-Bedrock-AgentCore-Runtime-Session-Id'
-
 /**
- * ローカルの `agentcore dev` が立てた Runtime を叩く。
+ * Runtime を呼び、返ってきたものを出力契約のエラーコードか成功応答に写す。
  *
- * デプロイ済み Runtime を SigV4 で叩く経路は未実装。切り替えは呼び出し側ではなく
- * このモジュールの中で行う（BFF の他の部分は宛先を知らない）。
+ * 宛先と通信のしかたは `runtime-transport.ts` が設定から決める（ローカル /
+ * デプロイ済み / fake）。**この関数はどれが選ばれたかを知らない** — 通信が
+ * 差し替わっても、応答の解釈はここ1箇所を通る。
  */
-/**
- * Runtime へ渡す1回分。`prompt` と `input` のどちらが必要かは taskId ごとに違う
- * （ADR-0004）ので、両方を任意にして表の判断を呼び出し側に残す。
- */
-export interface RuntimeInvocation {
-  taskId: TaskId
-  prompt?: string
-  sessionId: string
-  /** 入力契約で検査済みの構造化入力。持たない taskId では undefined。 */
-  input?: unknown
-}
-
-export async function invokeRuntime({
-  taskId,
-  prompt,
-  sessionId,
-  input,
-}: RuntimeInvocation): Promise<RuntimeOutcome> {
+export async function invokeRuntime(
+  invocation: RuntimeInvocation,
+): Promise<RuntimeOutcome> {
   let response: Response
   try {
-    response = await fetch(`${RUNTIME_URL}/invocations`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        [SESSION_HEADER]: sessionId,
-      },
-      // 構造化入力は毎回そのまま送り直す。Runtime 側の会話履歴はコールドスタートで
-      // 消えるので、2回目以降に省くと表の無いリクエストが届く（ADR-0004）。
-      body: JSON.stringify({ taskId, prompt, sessionId, input }),
-      signal: AbortSignal.timeout(RUNTIME_TIMEOUT_MS),
-    })
+    response = await loadRuntimeTransport()(invocation)
   } catch (error) {
     // TimeoutError と、接続そのものが張れない場合（Runtime が落ちている）を分ける。
     // 画面の案内が「もう一度お試しください」と「手動で入力してください」で違うため。
@@ -78,8 +47,8 @@ export async function invokeRuntime({
         message: `Runtime が ${response.status} を返しました。`,
       }
     }
-    // 4xx は Runtime がこの BFF の投げ方を拒否したということで、利用者ではなく
-    // 我々の側の不整合。利用者に再入力を促しても直らないので INTERNAL_ERROR にする。
+    // 4xx は Runtime がこの BFF の投げ方を拒否したということで、職員ではなく
+    // 我々の側の不整合。職員に再入力を促しても直らないので INTERNAL_ERROR にする。
     return {
       ok: false,
       code: 'INTERNAL_ERROR',
@@ -106,7 +75,9 @@ export async function invokeRuntime({
   // 推薦系では入力も渡す。提案が入力の候補日程と過不足なく対応しているかは
   // 出力契約だけでは言えない（ADR-0004）。Runtime の作り直しを通り抜けたものが、
   // フロントエンドへ出る前にここで最後に落ちる。
-  const result = outputSchemaFor(taskId, input).safeParse(parsed.result)
+  const result = outputSchemaFor(invocation.taskId, invocation.input).safeParse(
+    parsed.result,
+  )
   if (!result.success) {
     return {
       ok: false,
