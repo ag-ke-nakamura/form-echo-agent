@@ -1,19 +1,47 @@
 "use client";
 
-import { useState } from "react";
-import { CandidatesPanel } from "./candidates-panel";
+import { type ReactNode, useState } from "react";
+import { AvailabilityPanel } from "./availability-panel";
+import {
+  candidateDates,
+  CandidatesPanel,
+  useCandidateRows,
+} from "./candidates-panel";
 import { ReservationPanel } from "./reservation-panel";
 
-/** タブの定義。参加可否タブは別チケットでここに1行増える。 */
+/**
+ * タブの定義。並び順は職員が触る順（予約 → 候補日程を決める → 可否を答える）に
+ * 合わせる。プロダクトオーナーがタブの切り替えだけで3機能を順に追えるようにする。
+ */
 const TABS = [
-  { id: "ic-card", label: "交通IC予約", Panel: ReservationPanel },
-  { id: "meeting-candidates", label: "会議候補日設定", Panel: CandidatesPanel },
+  { id: "ic-card", label: "交通IC予約" },
+  { id: "meeting-candidates", label: "会議候補日設定" },
+  { id: "meeting-availability", label: "参加可否回答" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
 
 export function FormEchoTabs() {
   const [activeTabId, setActiveTabId] = useState<TabId>(TABS[0].id);
+
+  /**
+   * 候補日程はタブ層で持つ。
+   *
+   * WHY: 参加可否タブが○×を付ける対象は候補日程タブが作った日付であり、AI は
+   * 既にある候補日程へ○×を付けるだけで候補日程そのものは作らない。どちらかの
+   * タブの内側に置くと相手から見えず、参加可否タブは対象がないまま必ず空振りする。
+   * 状態モデルの定義は `candidates-panel.tsx` に残してあり、ここに上がったのは
+   * 置き場所だけ（#23: フォームの状態モデルはタブごとに分ける）。
+   */
+  const candidates = useCandidateRows();
+
+  const panels: Record<TabId, ReactNode> = {
+    "ic-card": <ReservationPanel />,
+    "meeting-candidates": <CandidatesPanel candidates={candidates} />,
+    "meeting-availability": (
+      <AvailabilityPanel dates={candidateDates(candidates.rows)} />
+    ),
+  };
 
   return (
     <>
@@ -48,7 +76,7 @@ export function FormEchoTabs() {
       */}
       {TABS.map((tab) => (
         <div key={tab.id} hidden={tab.id !== activeTabId}>
-          <tab.Panel />
+          {panels[tab.id]}
         </div>
       ))}
     </>

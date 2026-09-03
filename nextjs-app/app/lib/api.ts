@@ -22,6 +22,8 @@ const API_BASE_URL =
  */
 export const RESERVATION_TASK_ID = "ic-card.parse-reservation" satisfies TaskId;
 export const CANDIDATES_TASK_ID = "meeting.parse-candidates" satisfies TaskId;
+export const AVAILABILITY_TASK_ID =
+  "meeting.parse-availability" satisfies TaskId;
 
 /**
  * taskId から出力の型を引く表。AI チャット欄はこの表を通してタブに紐づく。
