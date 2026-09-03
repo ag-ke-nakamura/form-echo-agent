@@ -34,11 +34,6 @@ const TRANSPORT_LABELS = {
   other: "その他",
 } as const;
 
-/** `<input type="date">` は YYYY-MM-DD しか受け取らないので、ISO8601 から日付部分だけを取る。 */
-function toDateInputValue(iso: string): string {
-  return iso.slice(0, 10);
-}
-
 export function ReservationPanel() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [prompt, setPrompt] = useState("");
@@ -60,11 +55,9 @@ export function ReservationPanel() {
       for (const name of Object.keys(EMPTY_FORM) as FieldName[]) {
         const raw = result[name];
         if (raw === null) continue;
-        const value =
-          name === "departure_date" || name === "return_date"
-            ? toDateInputValue(raw)
-            : raw;
-        next[name] = { value, source: "ai" };
+        // 日付は出力契約が YYYY-MM-DD を保証するので、`<input type="date">` へ
+        // そのまま渡せる。整形は要らない。
+        next[name] = { value: raw, source: "ai" };
       }
       return next;
     });
