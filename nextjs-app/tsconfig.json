@@ -19,7 +19,9 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@contracts/*": ["../contracts/*"],
+      "zod": ["./node_modules/zod"]
     }
   },
   "include": [

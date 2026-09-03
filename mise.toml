@@ -19,3 +19,28 @@ jq = "latest"
 #
 # 各プロジェクトの devDependency として持たせ、lefthook からは npm exec / pnpm exec
 # 経由で node_modules/.bin を引くこと。整形結果はロックファイルで再現可能になる。
+
+# 検証環境の3プロセスを1コマンドで並行起動する。
+#
+# ルートに package.json を置かない方針（CLAUDE.md）なので npm スクリプトは使えず、
+# ここが唯一の置き場所になる。`:::` は mise がタスクを並行実行する区切り。
+# Runtime は agentcore CLI が「自分のいるフォルダがプロジェクトルート」として
+# 振る舞うため、必ず agent-app/ で起動する。
+[tasks.dev]
+description = "フロントエンド・BFF・Runtime を並行起動する"
+run = "mise run dev:runtime ::: dev:bff ::: dev:web"
+
+[tasks."dev:runtime"]
+description = "AgentCore Runtime をローカル実行する (http://localhost:8080)"
+dir = "agent-app"
+run = "agentcore dev --logs --skip-deploy"
+
+[tasks."dev:bff"]
+description = "BFF を起動する (http://localhost:8787)"
+dir = "hono-app"
+run = "pnpm run dev"
+
+[tasks."dev:web"]
+description = "フロントエンドを起動する (http://localhost:3000)"
+dir = "nextjs-app"
+run = "pnpm run dev"
