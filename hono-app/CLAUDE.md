@@ -32,12 +32,20 @@ Lint/format は [Biome](https://biomejs.dev)（`biome.json`）。biome 本体は
   HTTP ステータスへの対応を1箇所に集めている。`Hono` インスタンスを default export するだけで、
   Bun のランタイムがこれを拾って HTTP を受ける。明示的な listen 呼び出しは存在しない。
 - `src/lib/runtime-client.ts` — Runtime の呼び出しと、返ってきた構造化データの再検査。
-  契約に反するものはフロントエンドへ通さない。
+  契約に反するものはフロントエンドへ通さない。推薦系では契約の
+  `outputSchemaFor(taskId, input)` を通すので、**提案が入力の参加可否表と同じ候補日程を
+  過不足なく指しているか**もここで見る（ADR-0004。出力契約は単独では入力を知らないので
+  言えない）。Runtime の作り直しを通り抜けたものが最後にここで落ちる。
 - `src/lib/sanitize.ts` — 入力サニタイズ（最大10,000文字・タグ除去）。
+  **構造化入力（`input`）はこれを通さない**（ADR-0004。検査対象は職員が書いた文である）。
+  代わりに `checkTaskInput` の適合だけがこの値に対する関門になるので、`src/index.ts` で
+  Runtime へ渡す前に必ず弾く。
 - `src/middleware/auth.ts` — 認証の差し込み口。実装は本検証環境の範囲外で、口だけ空けてある。
 - 出力契約は tsconfig の `paths` で `@contracts/*` として引く（emit しないので `rootDir` の
-  制約を受けない）。**`taskId` の許可リストと出力スキーマは契約から引くので、AI 機能が増えても
-  この層は変更しない。**
+  制約を受けない）。**`taskId` の許可リストも、自然文と構造化入力の必須性・適合も、
+  出力スキーマも、すべて契約から引くので AI 機能が増えてもこの層は変更しない。** 判断は
+  `checkTaskInput` と `outputSchemaFor` が持ち、この層に残るのは失敗をエラーコードと
+  文言に写すところだけ（`INPUT_PROBLEM_MESSAGES`）。
 - `tsconfig.json` の `jsxImportSource` は `hono/jsx`。JSX を追加した場合 React ではなく Hono 独自の
   JSX ランタイムにコンパイルされる。`types: ["bun"]` により Bun のグローバル型を参照する。
 

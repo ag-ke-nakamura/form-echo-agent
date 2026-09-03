@@ -1,6 +1,13 @@
 "use client";
 
 import type { TaskId } from "@contracts/index.js";
+/*
+  値として引くのはこの1モジュールだけ。`index.js` から引くと zod がバンドルに乗る
+  （他の import はすべて `import type` なので実行時には消える）。拡張子を付けないのは、
+  型としてしか使わない import と違ってバンドラが実際に解決するため — `.js` を付けると
+  `.ts` の実体を見つけられない。
+*/
+import { isPromptRequired } from "@contracts/prompt-requirement";
 import { useEffect, useId, useRef, useState } from "react";
 import type { ApplyReport } from "./field-source";
 import { formSectionId } from "./form-section";
@@ -31,6 +38,18 @@ type AiChatPanelProps<TTaskId extends TaskId> = {
   nonAiPathHint: string;
   /** 初回の指示の例。 */
   placeholder: string;
+  /**
+   * 構造化入力（ADR-0004）。持つ taskId では**毎回そのまま送り直す**。
+   *
+   * WHY: Runtime 側の会話履歴はコールドスタートで消えるので、初回だけ送ると
+   * 履歴が消えた後の追加の指示が「表の無いリクエスト」として届く。
+   */
+  input?: unknown;
+  /**
+   * 初回の送信ボタンの文言。自然文が必須でないタブでは「フォームを埋める」が
+   * 実態と合わない（職員はまだ何も書いていない）。
+   */
+  submitLabel?: string;
   /** 追加の指示の例。初回とは書くことが違うので別に持つ。 */
   followUpPlaceholder: string;
   /** 結果をフォームへ写し、何を更新して何を守ったかを返す。 */
@@ -56,6 +75,8 @@ export function AiChatPanel<TTaskId extends TaskId>({
   nonAiPathHint,
   placeholder,
   followUpPlaceholder,
+  input,
+  submitLabel = "フォームを埋める",
   onResult,
   onReset,
 }: AiChatPanelProps<TTaskId>) {
@@ -66,6 +87,15 @@ export function AiChatPanel<TTaskId extends TaskId>({
 
   const promptId = useId();
   const nextTurnNumber = useRef(0);
+
+  /**
+   * 自然文が要るかどうかは契約の表から引く（ADR-0004）。
+   *
+   * 画面側で「このタブは任意」と書き写さない。書き写すと、契約が taskId の必須性を
+   * 変えたときに送信ボタンだけが古い判断のまま残り、押せるのに BFF が弾く（または
+   * 押せないまま送れない）状態になる。
+   */
+  const promptRequired = isPromptRequired(taskId);
 
   /**
    * 送信ごとの連番。
@@ -93,11 +123,19 @@ export function AiChatPanel<TTaskId extends TaskId>({
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     const sent = prompt.trim();
-    if (sent === "" || pending) return;
+    if (pending) return;
+    if (promptRequired && sent === "") return;
     const serial = ++submitSerial.current;
     setPending(true);
 
-    const outcome = await requestAiTask(taskId, sent, sessionId);
+    const outcome = await requestAiTask({
+      taskId,
+      // 空文字ではなく null で送る。BFF から見て「書かれなかった」と
+      // 「空を書いた」を区別する必要はなく、契約は任意フィールドの欠落で表す。
+      prompt: sent === "" ? null : sent,
+      sessionId,
+      input,
+    });
     // 待っている間にやり直されていたら、この結果は捨てる（`pending` は
     // `handleReset` が下ろしている）。
     if (serial !== submitSerial.current) return;
@@ -190,14 +228,10 @@ export function AiChatPanel<TTaskId extends TaskId>({
         />
         <button
           type="submit"
-          disabled={pending || prompt.trim() === ""}
+          disabled={pending || (promptRequired && prompt.trim() === "")}
           className="mt-3 w-full rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background disabled:opacity-40"
         >
-          {pending
-            ? "生成中…"
-            : continuing
-              ? "追加の指示を送る"
-              : "フォームを埋める"}
+          {pending ? "生成中…" : continuing ? "追加の指示を送る" : submitLabel}
         </button>
       </form>
 
@@ -234,7 +268,15 @@ function TurnView({
         <span className="mr-2 text-xs text-black/50 dark:text-white/50">
           指示
         </span>
-        {turn.prompt}
+        {/* 自然文が任意のタブでは、指示なしで送った往復もログに残る。空欄のまま
+            並べると送信そのものが無かったように見えるので、そう書く。 */}
+        {turn.prompt === "" ? (
+          <span className="text-black/55 dark:text-white/55">
+            （指示なし。参加可否表だけで提案）
+          </span>
+        ) : (
+          turn.prompt
+        )}
       </p>
       {turn.ok ? (
         <div className="rounded-md border border-black/10 p-3 text-sm dark:border-white/15">
