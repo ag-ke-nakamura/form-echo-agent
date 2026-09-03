@@ -3,8 +3,9 @@
 import type { TaskId } from "@contracts/index.js";
 import { useEffect, useId, useRef, useState } from "react";
 import type { ApplyReport } from "./field-source";
+import { formSectionId } from "./form-section";
 import { requestAiTask, type TaskOutputs } from "./lib/api";
-import { errorMessageFor } from "./lib/error-messages";
+import { type ErrorGuidance, errorGuidanceFor } from "./lib/error-guidance";
 
 /**
  * 会話ログの1往復。職員が送った指示と、それに対する結果を対で持つ。
@@ -14,12 +15,20 @@ import { errorMessageFor } from "./lib/error-messages";
  */
 type Turn = { id: string; prompt: string } & (
   | { ok: true; message: string; report: ApplyReport }
-  | { ok: false; errorMessage: string }
+  | { ok: false; guidance: ErrorGuidance }
 );
 
 type AiChatPanelProps<TTaskId extends TaskId> = {
   taskId: TTaskId;
   description: string;
+  /**
+   * 非AI経路でこのタブの何ができるかの一文。AI が使えないときに導線へ添える。
+   *
+   * WHY: タブごとに書けることが違う。参加可否タブは候補日程が空だと付ける対象が
+   * 無く、先に「会議候補日設定」タブへ回る必要がある — ここを共通の
+   * 「すべての項目を埋められます」で済ませると、空のフォームへ運んだ先で嘘になる。
+   */
+  nonAiPathHint: string;
   /** 初回の指示の例。 */
   placeholder: string;
   /** 追加の指示の例。初回とは書くことが違うので別に持つ。 */
@@ -44,6 +53,7 @@ type AiChatPanelProps<TTaskId extends TaskId> = {
 export function AiChatPanel<TTaskId extends TaskId>({
   taskId,
   description,
+  nonAiPathHint,
   placeholder,
   followUpPlaceholder,
   onResult,
@@ -113,7 +123,7 @@ export function AiChatPanel<TTaskId extends TaskId>({
           id,
           prompt: sent,
           ok: false,
-          errorMessage: errorMessageFor(outcome.code),
+          guidance: errorGuidanceFor(outcome.code),
         },
       ]);
       // 失敗したときは書いたものを残す。INVALID_INPUT のように**書き直して
@@ -156,7 +166,11 @@ export function AiChatPanel<TTaskId extends TaskId>({
         <ol aria-live="polite" className="mt-4 grid gap-4">
           {turns.map((turn) => (
             <li key={turn.id}>
-              <TurnView turn={turn} />
+              <TurnView
+                turn={turn}
+                taskId={taskId}
+                nonAiPathHint={nonAiPathHint}
+              />
             </li>
           ))}
         </ol>
@@ -205,7 +219,15 @@ export function AiChatPanel<TTaskId extends TaskId>({
   );
 }
 
-function TurnView({ turn }: { turn: Turn }) {
+function TurnView({
+  turn,
+  taskId,
+  nonAiPathHint,
+}: {
+  turn: Turn;
+  taskId: TaskId;
+  nonAiPathHint: string;
+}) {
   return (
     <div className="grid gap-2">
       <p className="rounded-md bg-black/[.04] p-3 text-sm dark:bg-white/[.06]">
@@ -220,12 +242,60 @@ function TurnView({ turn }: { turn: Turn }) {
           <ReportView report={turn.report} />
         </div>
       ) : (
-        <p
-          role="alert"
-          className="rounded-md border border-red-500/40 p-3 text-sm text-red-700 dark:text-red-400"
-        >
-          {turn.errorMessage}
+        <ErrorView
+          guidance={turn.guidance}
+          taskId={taskId}
+          nonAiPathHint={nonAiPathHint}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * 失敗の表示（参照ドキュメント 9.3節）。
+ *
+ * 起きたことと次の一手を分けて出す。統制のコントローラビリティは「AI が失敗した
+ * ことが分かる」だけでは足りず、**その場から非AI経路へ抜けられる**ところまでで
+ * 成り立つ（PO ストーリー41）。
+ *
+ * 導線をリンクで出すのは、「左のフォーム」と書いて済ませられないため。1カラムに
+ * 畳まれる幅ではフォームは左ではなく上にあり、AI が使えないと分かった直後の職員に
+ * **どこへ行けば手で埋められるのか**を探させることになる。
+ */
+function ErrorView({
+  guidance,
+  taskId,
+  nonAiPathHint,
+}: {
+  guidance: ErrorGuidance;
+  taskId: TaskId;
+  nonAiPathHint: string;
+}) {
+  return (
+    <div
+      role="alert"
+      className="rounded-md border border-red-500/40 p-3 text-sm"
+    >
+      <p className="font-medium text-red-700 dark:text-red-400">
+        {guidance.summary}
+      </p>
+      {guidance.alreadyAttempted && (
+        <p className="mt-1 text-xs text-black/55 dark:text-white/55">
+          {guidance.alreadyAttempted}
         </p>
+      )}
+      <p className="mt-2 text-black/70 dark:text-white/70">
+        {guidance.nextStep}
+        {guidance.offersNonAiPath && nonAiPathHint}
+      </p>
+      {guidance.offersNonAiPath && (
+        <a
+          href={`#${formSectionId(taskId)}`}
+          className="mt-3 inline-block rounded-md border border-black/15 px-3 py-1.5 text-xs font-medium dark:border-white/20"
+        >
+          AI を使わずに入力する
+        </a>
       )}
     </div>
   );
