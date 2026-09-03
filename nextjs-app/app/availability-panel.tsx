@@ -3,7 +3,7 @@
 import type { ParseAvailabilityOutput } from "@contracts/index.js";
 import { useId, useState } from "react";
 import { AiChatPanel } from "./ai-chat-panel";
-import { AiBadge, type FieldSource } from "./field-source";
+import { AiBadge, type ApplyReport, type FieldSource } from "./field-source";
 import { AVAILABILITY_TASK_ID } from "./lib/api";
 
 /**
@@ -59,19 +59,44 @@ export function AvailabilityPanel({ dates }: AvailabilityPanelProps) {
    *
    * 候補日程に無い日付は書き込まない。書き込むと、後からその日付が候補日程に
    * 足された瞬間に、職員が見ていない○×が現れることになる。
+   *
+   * **手で付けた○×は上書きしない**（#38 の判断）。ここは特に効く — 職員が手で
+   * 付けた可否は本人の予定そのもので、AI が自然文から読み取った推測より確かである。
+   * 触らなかった日付は報告に載せ、指示したのに変わらない理由が分かるようにする。
+   *
+   * 判断を setState の updater の中に置けないのは、何を更新して何を守ったかを
+   * **同期で**返す必要があるため（updater は純粋に保つ約束があり、実行も後になる）。
    */
-  function applyResult(result: ParseAvailabilityOutput) {
+  function applyResult(result: ParseAvailabilityOutput): ApplyReport {
     const known = new Set(dates);
-    setAnswers((current) => {
-      const next = { ...current };
-      for (const entry of result.availability) {
-        if (known.has(entry.date)) {
-          next[entry.date] = { choice: entry.available, source: "ai" };
-        }
+    const next = { ...answers };
+    const updated: string[] = [];
+    const preserved: string[] = [];
+
+    for (const entry of result.availability) {
+      // 落ちた分はここでは数えない。今の候補日程の一覧から導いて別枠で出す（下）。
+      if (!known.has(entry.date)) continue;
+      const current = next[entry.date];
+      // `answers` に入るのは職員か AI が実際に付けた○×だけ（未回答はキーが無い）。
+      if (current?.source === "manual") {
+        preserved.push(entry.date);
+        continue;
       }
-      return next;
-    });
+      // 同じ○×なら「更新」に数えない。読み取り直した日付を毎回並べると、実際に
+      // 変わった日付が埋もれる。
+      if (current?.choice === entry.available) continue;
+      next[entry.date] = { choice: entry.available, source: "ai" };
+      updated.push(entry.date);
+    }
+
+    setAnswers(next);
     setLastAnswers(result.availability);
+    return { updated, preserved };
+  }
+
+  function reset() {
+    setAnswers({});
+    setLastAnswers([]);
   }
 
   // 突き合わせに失敗した分。状態として持たず今の候補日程の一覧から導くので、
@@ -134,9 +159,11 @@ export function AvailabilityPanel({ dates }: AvailabilityPanelProps) {
 
       <AiChatPanel
         taskId={AVAILABILITY_TASK_ID}
-        description="参加できる日・できない日を文章で書くと、左の候補日程に○×を付けます。「15日」のように月を省いた書き方は今日以降の直近の15日として解決されるので、別の月なら月から書いてください。"
+        description="参加できる日・できない日を文章で書くと、左の候補日程に○×を付けます。あとから答えを変える指示も送れます。「15日」のように月を省いた書き方は今日以降の直近の15日として解決されるので、別の月なら月から書いてください。"
         placeholder="15日と17日は大丈夫ですが16日は無理です"
+        followUpPlaceholder="16日も参加できるようになりました"
         onResult={applyResult}
+        onReset={reset}
       />
     </div>
   );

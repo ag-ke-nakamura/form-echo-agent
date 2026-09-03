@@ -3,7 +3,12 @@
 import type { ParseCandidatesOutput } from "@contracts/index.js";
 import { useId, useRef, useState } from "react";
 import { AiChatPanel } from "./ai-chat-panel";
-import { AiBadge, type FieldSource } from "./field-source";
+import {
+  AiBadge,
+  type ApplyReport,
+  type FieldSource,
+  NOTHING_APPLIED,
+} from "./field-source";
 import { CANDIDATES_TASK_ID } from "./lib/api";
 
 /**
@@ -77,7 +82,8 @@ export type CandidateRowsApi = {
   setField: (id: string, field: CandidateField, value: string) => void;
   addRow: () => void;
   removeRow: (id: string) => void;
-  applyResult: (result: ParseCandidatesOutput) => void;
+  applyResult: (result: ParseCandidatesOutput) => ApplyReport;
+  reset: () => void;
 };
 
 /**
@@ -92,6 +98,49 @@ export function candidateDates(rows: CandidateRow[]): string[] {
       rows.map((row) => row.fields.date.value).filter((value) => value !== ""),
     ),
   ];
+}
+
+/**
+ * 作り直しで何が入れ替わったかを言う。
+ *
+ * WHY: 件数だけだと「水曜は避けたい」で何が外れたのかが分からず、10件が10件に
+ * 変わったときは**変わっていないのと見分けが付かない**。他のタブは項目名を挙げる
+ * ので、ここも日付を挙げて揃える。写像そのものは素直な代入のままで、これは報告の
+ * ためだけの計算（#23: 写像に条件分岐を育てない）。
+ *
+ * 時刻だけが動いた場合も拾うため、変化の有無は日付ではなく3項目の組で見る。
+ */
+function describeChange(
+  replaced: CandidateRow[],
+  candidates: ParseCandidatesOutput["candidates"],
+): string[] {
+  const before = replaced.map(
+    (row) =>
+      `${row.fields.date.value} ${row.fields.start_time.value}-${row.fields.end_time.value}`,
+  );
+  const after = candidates.map(
+    (candidate) =>
+      `${candidate.date} ${candidate.start_time}-${candidate.end_time}`,
+  );
+  if (
+    before.length === after.length &&
+    before.every((s, i) => s === after[i])
+  ) {
+    return [];
+  }
+
+  const beforeDates = replaced.map((row) => row.fields.date.value);
+  const afterDates = candidates.map((candidate) => candidate.date);
+  const added = afterDates.filter((date) => !beforeDates.includes(date));
+  const removed = beforeDates.filter((date) => !afterDates.includes(date));
+
+  const changes: string[] = [];
+  if (added.length > 0) changes.push(`追加 ${added.join("・")}`);
+  if (removed.length > 0) changes.push(`削除 ${removed.join("・")}`);
+  // 日付の出入りが無く時刻だけ動いた場合。上の突き合わせは通っているので何かは変わっている。
+  if (changes.length === 0) changes.push("時刻を変更");
+
+  return [`候補日程 ${afterDates.length}件（${changes.join("、")}）`];
 }
 
 export function useCandidateRows(): CandidateRowsApi {
@@ -133,17 +182,28 @@ export function useCandidateRows(): CandidateRowsApi {
     setRows((current) => current.filter((row) => row.id !== id));
   }
 
-  function applyResult(result: ParseCandidatesOutput) {
+  /**
+   * 「水曜は避けたい」のような追加の指示で候補日程の列を作り直す。
+   *
+   * **守る単位は行**（交通ICは欄単位）。欄ごとに混ぜられないのは、作り直された列と
+   * 既にある行を対応付ける手がかりが無いため — 行の識別子は画面だけのもので出力契約に
+   * 乗らない（ADR-003）ので、AI が返した3件目が既にある3行目の作り直しなのか別物なのか
+   * を知る方法がない。職員が1欄でも書き込んだ行はその行ごと残す。
+   */
+  function applyResult(result: ParseCandidatesOutput): ApplyReport {
     // 読み取れなかった場合（空配列）は何も触らない。職員が先に手で入れていた
     // 候補日程を消してしまわないため。何が足りなかったかは message が言う。
-    if (result.candidates.length === 0) return;
+    if (result.candidates.length === 0) return NOTHING_APPLIED;
 
     const ids = takeRowIds(result.candidates.length);
-    setRows((current) => [
-      // 手つかずの AI 由来の行は新しい結果で置き換える（同じ条件を言い直したときに
-      // 候補日程が二重に積み上がらない）。職員が何か書き込んだ行は、AI が埋めた値を
-      // 直したものであっても残す。空のままの行だけは畳む。
-      ...current.filter(hasManualInput),
+    // 手つかずの AI 由来の行は新しい結果で置き換える（同じ条件を言い直したときに
+    // 候補日程が二重に積み上がらない）。職員が何か書き込んだ行は、AI が埋めた値を
+    // 直したものであっても残す。空のままの行だけは畳む。
+    const kept = rows.filter(hasManualInput);
+    // 置き換えられる（= 手つかずの AI 由来の）行。何が入れ替わったかを言うために取る。
+    const replaced = rows.filter((row) => !hasManualInput(row));
+    setRows([
+      ...kept,
       ...result.candidates.map((candidate, index) => ({
         id: ids[index],
         fields: {
@@ -155,9 +215,22 @@ export function useCandidateRows(): CandidateRowsApi {
         },
       })),
     ]);
+
+    return {
+      updated: describeChange(replaced, result.candidates),
+      preserved: kept.length > 0 ? [`手を入れた候補日程 ${kept.length}件`] : [],
+    };
   }
 
-  return { rows, setField, addRow, removeRow, applyResult };
+  /**
+   * 行 id の採番は戻さない。戻すと、作り直しの直後に足した行が消えた行と同じ id を
+   * 持ちうる（React の key が重複する）。
+   */
+  function reset() {
+    setRows(INITIAL_ROWS);
+  }
+
+  return { rows, setField, addRow, removeRow, applyResult, reset };
 }
 
 export function CandidatesPanel({
@@ -165,7 +238,7 @@ export function CandidatesPanel({
 }: {
   candidates: CandidateRowsApi;
 }) {
-  const { rows, setField, addRow, removeRow, applyResult } = candidates;
+  const { rows, setField, addRow, removeRow, applyResult, reset } = candidates;
 
   return (
     <div className="grid gap-8 lg:grid-cols-[1fr_20rem]">
@@ -205,9 +278,11 @@ export function CandidatesPanel({
 
       <AiChatPanel
         taskId={CANDIDATES_TASK_ID}
-        description="会議の条件を文章で書くと、左に候補日程の列を作ります。"
+        description="会議の条件を文章で書くと、左に候補日程の列を作ります。条件を足して作り直させることもできます。"
         placeholder="来月の午後で3時間"
+        followUpPlaceholder="水曜は避けたい"
         onResult={applyResult}
+        onReset={reset}
       />
     </div>
   );
