@@ -58,6 +58,11 @@ export function getOrCreateDomainAgent(
     tools: [],
     model: loadModel(),
     systemPrompt: buildSystemPrompt(taskId),
+    // 既定の printer を切る。モデルのテキストとツールの印を素の stdout へ書くが、
+    // Structured Output を一括で受け取る（`stream: false`）この Runtime では逐次
+    // テキストが存在せず、残るのはツール名の1行だけ。それが fastify の pino が
+    // 出す JSON のログと交ざり、行単位で読めなくなる。
+    printer: false,
   });
   agentCache.set(key, agent);
   return agent;
