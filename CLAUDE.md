@@ -25,9 +25,9 @@ BFF が Runtime を叩く宛先は `FORMECHO_RUNTIME_URL`、フロントエン�
 
 出力スキーマ（Zod）・リクエスト型・エラーコード・`taskId` 許可リストの正典。パッケージ化せず素の `.ts` で置き、各プロジェクトが自前の解決経路で参照する（ADR-002）。**Zod は3プロジェクトとも v4 に揃える。**
 
-**抽出系3タスクのリクエスト契約は `{taskId, prompt, sessionId}` の3つだけで、画面が持っているフォームの状態（候補日程の一覧、入力済みの値、レコードID）を Runtime へ渡さない**（ADR-003）。`prompt` にシステムが組み立てた文脈を埋め込むこともしない。突き合わせはフロントエンドが行う。
+**抽出系3タスクのリクエストは `{taskId, prompt, sessionId}` だけで、画面が持っているフォームの状態を Runtime へ渡さない。`prompt` にシステムが組み立てた文脈を埋め込むこともしない**（ADR-003）。突き合わせはフロントエンドが行う。
 
-**推薦系 `meeting.recommend-schedule` だけは構造化入力 `input` を渡す**（ADR-0004）。参加可否表を見ずに順位は付けられないため。入力契約は `INPUT_SCHEMAS` として `OUTPUT_SCHEMAS` と対称に持ち、自然文だけのタスクは `null` を明示する。自然文の必須性は `PROMPT_REQUIREMENT`（`prompt-requirement.ts`）が taskId ごとに持つ。`input` はサニタイズも Guardrail チェックも通さないので、**自由文字列を置かない**（参加者は `/^参加者[A-Z]$/`）。`input` はフロントエンドが**毎回そのまま送り直す** — Runtime 側の会話履歴はコールドスタートで消えるため。
+**推薦系 `meeting.recommend-schedule` だけは構造化入力 `input` を渡す**（ADR-0004）。`input` はサニタイズも Guardrail チェックも通さないので**自由文字列を置かない**。入力契約は `INPUT_SCHEMAS`、自然文の必須性は `PROMPT_REQUIREMENT`（`prompt-requirement.ts`）が taskId ごとに持つ（`OUTPUT_SCHEMAS` と対称。自然文だけのタスクは `null` を明示）。参加者の形と「毎回送り直す」理由は ADR-0004 にある。
 
 判断は契約側の関数に置く。`checkTaskInput(taskId, {prompt, input})` が「このリクエストが入力契約を満たすか」を、`outputSchemaFor(taskId, input)` が「この応答を何で検査するか」を決める。前者は Runtime の `aiTaskRequestSchema` と BFF の門の両方が、後者は Runtime の Structured Output 再試行と BFF の再検査の両方が引く。**同じ判断を2箇所に書かない** — 片方だけが契約の変更に追随すると、BFF は通すのに Runtime が弾く（またはその逆の）状態になる。
 
@@ -112,11 +112,7 @@ Runtime だけ `build` と `typecheck` の両方を回す。`build` は emit す
 
 ## agent-app/agentcore/cdk
 
-生成物のため編集不可。コマンドは `npm run build` / `npm run format`。CI は format と build のみ（`npm test` は生成されたテストが空 spec の synth しか見ておらず build と重複するため意図的に外している）。
-
-**`@aws/agentcore-cdk` はキャレットを付けずに固定する。** `agentcore create` は `^0.1.0-alpha.19` を宣言するが、この範囲は最新 alpha を招き入れ、生成コードは古い API 世代に対して書かれているため**生成した瞬間に build が壊れる**（実際 alpha.49 の `connectorName` → `connector` 変更で Initial commit から壊れていた。alpha.51 が両形を受け付けるので固定して解消）。CLI を更新しても直らない。
-
-このディレクトリは dependabot のバージョン更新を止めてある（理由は `.github/dependabot.yml` のコメント）。手で上げるときは必ず `npm run build` を通し、壊れていたら直近の互換 alpha に戻す。
+**生成物のため編集不可。** 依存の固定と dependabot の扱いは `.claude/rules/agentcore-cdk.md`（`paths` で絞ってあるので、そのディレクトリを触った時に自動で載る）。
 
 ## スキル・プラグインの追加前スキャン
 
