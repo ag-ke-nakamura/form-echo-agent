@@ -56,10 +56,8 @@ BFF が Runtime を叩く宛先は `FORMECHO_RUNTIME_URL`、フロントエン�
 
 ### テスト
 
-テストは invocation 境界（#23 のシームその1）だけを叩く。**新しいシームを作らず、`FORMECHO_MODEL=fake` でモデルを差し替える**（台本は `model/fake.ts` の `fakeModelScript`）。何を守り何を守らないかは #23 の Testing Decisions、境界の呼び方は `tests/harness.ts` にある。テスト名の一覧は `npm run test:list`。
+テストは invocation 境界（#23 のシームその1）だけを叩き、モデルは `FORMECHO_MODEL=fake` で差し替える。**書き方の作法は `.claude/rules/formecho-agent-testing.md`** — `paths` で絞ってあるので、テストや `model/fake.ts` を触った時に自動で載る。ここへ写さないこと。
 
-- **ドメイン部の解決だけは境界の外から言えない**ので `invocation/domain-agent.test.ts` が見る。ドメインエージェントの違いは `Agent` の名前と（第3段の）ツールにしか出ず、モデルへ届く system prompt はタスク部で決まる Skill だから
-- **契約に適合しない出力の検証は「`PARSE_FAILED` になる」ではなく「作り直しに回る」で書く。** Strands は Structured Output のツールの検査に落ちた時点でモデルへ聞き直すので、1回の `agent.invoke` の内側で何度でも作り直しが起きる。`{悪い出力, 良い出力}` を台本に置き、結果が良い出力になり呼び出しが2回になることを見る。台本を1手だけにして「尽きたら失敗する」を当てにすると、検査しているのは契約ではなく台本の枯れ方になる
 - **vitest は 3 系に留める。** node 22.22 同梱の npm 10.9.4 は vitest 4 の peer 依存で `Cannot read properties of null (reading 'edgesOut')` を出して install できない（空のパッケージでも再現するので、npm 側のバグ）。`nextjs-app` は pnpm なので 4 系が入っており、**このバージョン差は許容する** — 揃えるには node/npm を上げることになり、AgentCore Runtime の実行環境に触る
 
 ## 言語方針
@@ -81,6 +79,8 @@ BFF が Runtime を叩く宛先は `FORMECHO_RUNTIME_URL`、フロントエン�
 ## Harness guardrails
 
 `.claude/settings.json` の `permissions`（deny / ask）と `.claude/hooks/guard-destructive-command.py`（PreToolUse）で破壊的操作を止めている。詳細はそれらのファイルを読むこと。
+
+**このファイルの一部にしか関わらない規則は `.claude/rules/*.md` に置き、`paths` frontmatter で対象を絞る。** マッチするファイルを読んだ時だけ載るので、CLAUDE.md（毎セッション全文が載る。推奨上限200行）を太らせずに済み、なにより**その規則が効くべき作業をしている最中に確実に載る**。ここへ写して二重に持たないこと。
 
 **ブロックされた場合は回避を試みず、対象と理由をユーザーに提示して実行を依頼する。** フラグを外す・別コマンドに言い換えるといった迂回もしない。
 
