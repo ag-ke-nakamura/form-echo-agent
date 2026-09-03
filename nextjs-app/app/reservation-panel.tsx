@@ -3,7 +3,7 @@
 import type { ParseReservationOutput } from "@contracts/index.js";
 import { useId, useState } from "react";
 import { AiChatPanel } from "./ai-chat-panel";
-import { AiBadge, type FieldSource } from "./field-source";
+import { AiBadge, type ApplyReport, type FieldSource } from "./field-source";
 import { RESERVATION_TASK_ID } from "./lib/api";
 
 type FieldName =
@@ -27,11 +27,69 @@ const EMPTY_FORM: FormState = {
   transport: { value: "", source: "manual" },
 };
 
+/**
+ * 欄の表示名。JSX と再生成の報告の両方から引く。
+ *
+ * 報告（`ApplyReport`）に載せる文字列がここから来るので、片方だけ直すと画面の
+ * ラベルと「更新: 出発日」の言い方が食い違う。
+ */
+const FIELD_LABELS: Record<FieldName, string> = {
+  departure_date: "出発日",
+  return_date: "帰着日",
+  origin: "出発地",
+  destination: "目的地",
+  transport: "交通手段",
+};
+
+const FIELD_NAMES = Object.keys(FIELD_LABELS) as FieldName[];
+
 const TRANSPORT_LABELS = {
   train: "鉄道",
   flight: "航空機",
   other: "その他",
 } as const;
+
+/**
+ * AI の出力をフォームへ写し、何を更新して何を守ったかを一緒に返す。
+ *
+ * **手で直した欄は上書きしない**（#38 の判断）。これで AI バッジが「再生成で
+ * 上書きされる範囲」の印としても働く。代わりに、追加で指示したのに変わらない欄が
+ * 出るので、守ったことを報告に載せて画面から分かるようにする。
+ *
+ * 既知の穴: 職員が「消す」で空にした AI 由来の欄は `{value: "", source: "manual"}`
+ * になるが、空欄は初期状態と区別が付かないので次の再生成で埋め直される。分けるには
+ * `FieldSource` に3つ目の状態が必要で、それを足すと3タブすべての印の意味が変わる。
+ * 埋め直しは報告の「更新」に出るので、第1段はこのまま進める。
+ */
+function applyToForm(
+  current: FormState,
+  result: ParseReservationOutput,
+): { next: FormState; report: ApplyReport } {
+  const next = { ...current };
+  const updated: string[] = [];
+  const preserved: string[] = [];
+
+  for (const name of FIELD_NAMES) {
+    const raw = result[name];
+    // 読み取れなかった項目（null）は触らない。職員が先に手で埋めていた値を
+    // AI が空に戻してしまうのを避ける。
+    if (raw === null) continue;
+    const field = current[name];
+    if (field.source === "manual" && field.value !== "") {
+      preserved.push(FIELD_LABELS[name]);
+      continue;
+    }
+    // 同じ値なら「更新」に数えない。読み取り直した項目を毎回並べると、実際に
+    // 変わった項目が埋もれる（追加の指示は普通1〜2項目しか動かさない）。
+    if (field.value === raw) continue;
+    // 日付は出力契約が YYYY-MM-DD を保証するので、`<input type="date">` へ
+    // そのまま渡せる。整形は要らない。
+    next[name] = { value: raw, source: "ai" };
+    updated.push(FIELD_LABELS[name]);
+  }
+
+  return { next, report: { updated, preserved } };
+}
 
 export function ReservationPanel() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -40,20 +98,19 @@ export function ReservationPanel() {
     setForm((current) => ({ ...current, [name]: { value, source: "manual" } }));
   }
 
-  function applyResult(result: ParseReservationOutput) {
-    setForm((current) => {
-      const next = { ...current };
-      // 読み取れなかった項目（null）は触らない。職員が先に手で埋めていた値を
-      // AI が空に戻してしまうのを避ける。
-      for (const name of Object.keys(EMPTY_FORM) as FieldName[]) {
-        const raw = result[name];
-        if (raw === null) continue;
-        // 日付は出力契約が YYYY-MM-DD を保証するので、`<input type="date">` へ
-        // そのまま渡せる。整形は要らない。
-        next[name] = { value: raw, source: "ai" };
-      }
-      return next;
-    });
+  /**
+   * WHY: 判断を `applyToForm` に出して setState の updater に置かないのは、何を
+   * 更新して何を守ったかを**同期で**返す必要があるため（updater は純粋に保つ
+   * 約束があり、実行も後になる）。
+   */
+  function applyResult(result: ParseReservationOutput): ApplyReport {
+    const { next, report } = applyToForm(form, result);
+    setForm(next);
+    return report;
+  }
+
+  function resetForm() {
+    setForm(EMPTY_FORM);
   }
 
   return (
@@ -67,28 +124,24 @@ export function ReservationPanel() {
         <div className="mt-6 grid gap-5 sm:grid-cols-2">
           <Field
             name="departure_date"
-            label="出発日"
             type="date"
             state={form.departure_date}
             onChange={setField}
           />
           <Field
             name="return_date"
-            label="帰着日"
             type="date"
             state={form.return_date}
             onChange={setField}
           />
           <Field
             name="origin"
-            label="出発地"
             type="text"
             state={form.origin}
             onChange={setField}
           />
           <Field
             name="destination"
-            label="目的地"
             type="text"
             state={form.destination}
             onChange={setField}
@@ -99,9 +152,11 @@ export function ReservationPanel() {
 
       <AiChatPanel
         taskId={RESERVATION_TASK_ID}
-        description="出張の予定を文章で書くと、左のフォームを埋めます。"
+        description="出張の予定を文章で書くと、左のフォームを埋めます。書き足りなかったことは、続けて指示できます。"
         placeholder="来月15日から3泊4日で大阪出張、新幹線で往復"
+        followUpPlaceholder="往路は10月16日でした"
         onResult={applyResult}
+        onReset={resetForm}
       />
     </div>
   );
@@ -121,19 +176,18 @@ function ClearButton({ onClick }: { onClick: () => void }) {
 
 type FieldProps = {
   name: FieldName;
-  label: string;
   type: "date" | "text";
   state: { value: string; source: FieldSource };
   onChange: (name: FieldName, value: string) => void;
 };
 
-function Field({ name, label, type, state, onChange }: FieldProps) {
+function Field({ name, type, state, onChange }: FieldProps) {
   const id = useId();
   return (
     <div>
       <div className="flex items-center gap-2">
         <label htmlFor={id} className="text-sm font-medium">
-          {label}
+          {FIELD_LABELS[name]}
         </label>
         {state.source === "ai" && <AiBadge />}
         {state.value !== "" && (
@@ -163,7 +217,7 @@ function TransportField({
     <div>
       <div className="flex items-center gap-2">
         <label htmlFor={id} className="text-sm font-medium">
-          交通手段
+          {FIELD_LABELS.transport}
         </label>
         {state.source === "ai" && <AiBadge />}
         {state.value !== "" && (
