@@ -1,16 +1,31 @@
-import { Agent } from '@strands-agents/sdk';
+import { Agent, type ToolList } from '@strands-agents/sdk';
 import { type Domain, domainOf, type TaskId } from '../contracts/index.js';
 import { loadModel } from '../model/load.js';
 import { buildSystemPrompt } from './system-prompt.js';
 
+interface DomainAgentSpec {
+  /** ログと Observability に出る表示名。 */
+  name: string;
+  /**
+   * このドメインエージェントに渡すツール。
+   *
+   * WHY: 空配列でも省略せず明示する。「まだ足していない」のか「足さないと決めた」
+   * のかを区別するため。会議ロジは Websearch を持たない（F-22）— 候補日程の生成は
+   * 入力文と基準日だけで閉じており、裏を取る対象が無い。交通ICは第3段で
+   * Websearch（AgentCore Gateway）がここに入る。
+   */
+  tools: ToolList;
+}
+
 /**
- * ドメインエージェントの名前。taskId のドメイン部から引く。
+ * ドメインエージェントの定義。taskId のドメイン部から引く。
  *
- * 2ドメイン以下なので素の表で足り、Strands の Graph / Swarm / agent-as-tool は
+ * 2ドメインなので素の表で足り、Strands の Graph / Swarm / agent-as-tool は
  * 使わない。ドメイン間で協調させる必要が出た時点で見直す。
  */
-const DOMAIN_AGENT_NAMES: Record<Domain, string> = {
-  'ic-card': '交通ICドメインエージェント',
+const DOMAIN_AGENTS: Record<Domain, DomainAgentSpec> = {
+  'ic-card': { name: '交通ICドメインエージェント', tools: [] },
+  meeting: { name: '会議ロジドメインエージェント', tools: [] },
 };
 
 const AGENT_CACHE_LIMIT = 128;
@@ -24,7 +39,8 @@ const AGENT_CACHE_LIMIT = 128;
  * 永続的な履歴が要るなら memory を付ける。
  *
  * taskId までをキーに含めるのは、明示モードでは system prompt が taskId ごとに
- * 変わり、Agent の生成時に固定されるため。
+ * 変わり、Agent の生成時に固定されるため。同じセッションでタブを切り替えても
+ * 前のタブの Skill が混ざらない。
  */
 const agentCache = new Map<string, Agent>();
 
@@ -43,8 +59,10 @@ export function getOrCreateDomainAgent(
     const oldest = agentCache.keys().next().value;
     if (oldest !== undefined) agentCache.delete(oldest);
   }
+  const spec = DOMAIN_AGENTS[domainOf(taskId)];
   const agent = new Agent({
-    name: DOMAIN_AGENT_NAMES[domainOf(taskId)],
+    name: spec.name,
+    tools: spec.tools,
     model: loadModel(),
     systemPrompt: buildSystemPrompt(taskId),
   });

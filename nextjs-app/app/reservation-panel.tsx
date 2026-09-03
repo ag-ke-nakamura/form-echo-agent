@@ -2,8 +2,9 @@
 
 import type { ParseReservationOutput } from "@contracts/index.js";
 import { useId, useState } from "react";
-import { parseReservation } from "./lib/api";
-import { errorMessageFor } from "./lib/error-messages";
+import { AiChatPanel } from "./ai-chat-panel";
+import { AiBadge, type FieldSource } from "./field-source";
+import { RESERVATION_TASK_ID } from "./lib/api";
 
 type FieldName =
   | "departure_date"
@@ -13,11 +14,9 @@ type FieldName =
   | "transport";
 
 /**
- * 値の出どころ。AI由来であることを画面に出すために持つ（統制「透明性」）。
- * 職員が手を入れた時点で manual に戻り、バッジが消える。
+ * 交通ICのフォームの状態モデル。スカラーの平坦なマップ。
+ * 会議候補日タブとは形が違うので共有しない（共有するのは `FieldSource` だけ）。
  */
-type FieldSource = "manual" | "ai";
-
 type FormState = Record<FieldName, { value: string; source: FieldSource }>;
 
 const EMPTY_FORM: FormState = {
@@ -36,12 +35,6 @@ const TRANSPORT_LABELS = {
 
 export function ReservationPanel() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [prompt, setPrompt] = useState("");
-  const [pending, setPending] = useState(false);
-  const [aiMessage, setAiMessage] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const promptId = useId();
 
   function setField(name: FieldName, value: string) {
     setForm((current) => ({ ...current, [name]: { value, source: "manual" } }));
@@ -61,22 +54,6 @@ export function ReservationPanel() {
       }
       return next;
     });
-  }
-
-  async function handleSubmit(event: React.FormEvent) {
-    event.preventDefault();
-    if (prompt.trim() === "" || pending) return;
-    setPending(true);
-    setErrorMessage(null);
-    setAiMessage(null);
-    const outcome = await parseReservation(prompt);
-    setPending(false);
-    if (outcome.ok) {
-      applyResult(outcome.result);
-      setAiMessage(outcome.result.message);
-    } else {
-      setErrorMessage(errorMessageFor(outcome.code));
-    }
   }
 
   return (
@@ -120,56 +97,13 @@ export function ReservationPanel() {
         </div>
       </section>
 
-      <section className="rounded-lg border border-black/10 p-6 dark:border-white/15">
-        <h2 className="text-lg font-semibold">AI チャット</h2>
-        <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          出張の予定を文章で書くと、左のフォームを埋めます。
-        </p>
-
-        <form onSubmit={handleSubmit} className="mt-4">
-          <label htmlFor={promptId} className="sr-only">
-            出張の予定
-          </label>
-          <textarea
-            id={promptId}
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            rows={5}
-            placeholder="来月15日から3泊4日で大阪出張、新幹線で往復"
-            className="w-full rounded-md border border-black/15 bg-transparent p-3 text-sm dark:border-white/20"
-          />
-          <button
-            type="submit"
-            disabled={pending || prompt.trim() === ""}
-            className="mt-3 w-full rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background disabled:opacity-40"
-          >
-            {pending ? "生成中…" : "フォームを埋める"}
-          </button>
-        </form>
-
-        {aiMessage !== null && (
-          <p className="mt-4 rounded-md bg-black/[.04] p-3 text-sm dark:bg-white/[.06]">
-            {aiMessage}
-          </p>
-        )}
-        {errorMessage !== null && (
-          <p
-            role="alert"
-            className="mt-4 rounded-md border border-red-500/40 p-3 text-sm text-red-700 dark:text-red-400"
-          >
-            {errorMessage}
-          </p>
-        )}
-      </section>
+      <AiChatPanel
+        taskId={RESERVATION_TASK_ID}
+        description="出張の予定を文章で書くと、左のフォームを埋めます。"
+        placeholder="来月15日から3泊4日で大阪出張、新幹線で往復"
+        onResult={applyResult}
+      />
     </div>
-  );
-}
-
-function AiBadge() {
-  return (
-    <span className="rounded-full bg-blue-600/10 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:bg-blue-400/15 dark:text-blue-300">
-      AI が入力
-    </span>
   );
 }
 

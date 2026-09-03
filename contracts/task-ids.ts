@@ -5,9 +5,12 @@
  * WHY: 参照ドキュメント 10.2節は4つの taskId を挙げているが、ここに載せるのは
  * この検証環境が実際に処理できるものだけに限る。未実装の taskId を許可リストに
  * 入れると BFF を通過してから Runtime で落ち、どの層の問題かが分かりにくくなる。
- * 会議ロジドメインを実装するチケットでここに追加する。
+ * `meeting.parse-availability` は参加可否タブのチケットでここに追加する。
  */
-export const ALLOWED_TASK_IDS = ['ic-card.parse-reservation'] as const;
+export const ALLOWED_TASK_IDS = [
+  'ic-card.parse-reservation',
+  'meeting.parse-candidates',
+] as const;
 
 export type TaskId = (typeof ALLOWED_TASK_IDS)[number];
 
@@ -19,7 +22,7 @@ export function isTaskId(value: unknown): value is TaskId {
 }
 
 /** ドメインエージェントを一意に指す名前。taskId のドット前の部分と一致する。 */
-export type Domain = 'ic-card';
+export type Domain = 'ic-card' | 'meeting';
 
 export function domainOf(taskId: TaskId): Domain {
   return taskId.split('.')[0] as Domain;
