@@ -54,23 +54,13 @@ BFF が Runtime を叩く宛先は `FORMECHO_RUNTIME_URL`、フロントエン�
 - **`agentcore dev` の備え付けチャット UI と `agentcore dev "<prompt>"` からはこの Runtime を動かせない。** どちらもスキャフォールド由来の `{"prompt": "…"}` しか送らず、`taskId` を付けられないため。プロンプトを試すときはフロントエンド（localhost:3000）か curl を使う。UI には `INVALID_INPUT` と理由が表示される
 - リクエストの検査を `BedrockAgentCoreApp` の `requestSchema` に任せない。bedrock-agentcore 0.3.0 は検査に落ちたとき 400 の本文を Content-Type 指定なしで送るが、呼び出し側が `Accept: text/event-stream` だと `@fastify/sse` が応答を握っており fastify が object を拒否する（`FST_ERR_REP_INVALID_PAYLOAD_TYPE`）。結果、**本文の無い 500** になって原因が伝わらない。`invocation/handler.ts` の中で `aiTaskRequestSchema` を回すこと
 
-### テスト（#40）
+### テスト
 
-テストは invocation 境界（#23 のシームその1）だけを叩く。**新しいシームを作らず、`FORMECHO_MODEL=fake` でモデルを差し替える。** 台本は `model/fake.ts` の `fakeModelScript` が持ち、テストが「モデルは次にこれを返す」と書く。`tests/use-fake-model.ts`（vitest の `setupFiles`）が `FORMECHO_MODEL` を上書きするので、開発機の環境変数でテストが Bedrock を叩くことはない。テスト名の一覧は `npm run test:list`。
+テストは invocation 境界（#23 のシームその1）だけを叩く。**新しいシームを作らず、`FORMECHO_MODEL=fake` でモデルを差し替える**（台本は `model/fake.ts` の `fakeModelScript`）。何を守り何を守らないかは #23 の Testing Decisions、境界の呼び方は `tests/harness.ts` にある。テスト名の一覧は `npm run test:list`。
 
-- **入口は `invocation/handler.ts` の `handleInvocation`。** `invokeTask` ではなく handler を通すのは、出力契約のエラーコードへの写像がそこにあるため（「未知の `taskId` が `INVALID_INPUT` になる」は `invokeTask` の側からは言えない）。足場は `tests/harness.ts`
 - **ドメイン部の解決だけは境界の外から言えない**ので `invocation/domain-agent.test.ts` が見る。ドメインエージェントの違いは `Agent` の名前と（第3段の）ツールにしか出ず、モデルへ届く system prompt はタスク部で決まる Skill だから
-- **モデルが受け取った system prompt と会話履歴を assert してよい。** これは内部の呼び出し順ではなく Runtime が Bedrock へ何を投げたかであり、Skill の解決と履歴の巻き戻しはそこにしか現れない
-- **AI の出力品質は assert しない**（#23）。抽出結果の正しさは実測の対象。守るのは配線・契約・エラー処理
-- 固定値（`VALID_OUTPUTS`）は `OUTPUT_SCHEMAS` から型を引く。契約から外れた固定値を置くと「弾かれる形」の検証が全部通ってしまう
-- **契約に適合しない出力の検証は「PARSE_FAILED になる」ではなく「作り直しに回る」で書く。** Strands は Structured Output のツールの検査に落ちた時点でモデルへ聞き直すので、1回の `agent.invoke` の内側で何度でも作り直しが起きる。`{悪い出力, 良い出力}` を台本に置き、結果が良い出力になり呼び出しが2回になることを見る。台本を1手だけにして「尽きたら失敗する」を当てにすると、検査しているのは契約ではなく台本の枯れ方になる
-- **vitest は 3 系に留める。** node 22.22 同梱の npm 10.9.4 は vitest 4 の peer 依存で `Cannot read properties of null (reading 'edgesOut')` を出して install できない（空のパッケージでも再現するので、npm 側のバグ）。`nextjs-app` は pnpm なので 4 系が入っている。**このバージョン差は許容する** — 揃えるには node/npm を上げることになり、AgentCore Runtime の実行環境に触る
-
-### 再試行に乗せる失敗と乗せない失敗
-
-`invocation/structured-output.ts` の `isRetryable` が分ける。**乗せるのはモデルが応答したのに出力契約に届かなかったものだけ** — スキーマ検査の失敗と、Strands の `StructuredOutputError`（ツールの使用を強制してもモデルが呼ばなかった）。
-
-モデル呼び出しそのものの失敗（Bedrock に届かない、スロットリング、コンテキスト超過。いずれも `ModelError` 系）は**投げ直す**。作り直しても同じところで落ちる上、`PARSE_FAILED` として返ると参照ドキュメント 9.3節の案内が変わる — Runtime 障害には「手動で入力してください」を出させたいのに「読み取れませんでした」が出て、職員は同じ入力を打ち直す。投げ直せば handler が 500 にし、BFF が `RUNTIME_UNAVAILABLE` に写す。どちらの経路でも**履歴は巻き戻してから**抜ける（失敗したターンがキャッシュされた Agent に残ると、このセッションの次のリクエストが必ず失敗する）。
+- **契約に適合しない出力の検証は「`PARSE_FAILED` になる」ではなく「作り直しに回る」で書く。** Strands は Structured Output のツールの検査に落ちた時点でモデルへ聞き直すので、1回の `agent.invoke` の内側で何度でも作り直しが起きる。`{悪い出力, 良い出力}` を台本に置き、結果が良い出力になり呼び出しが2回になることを見る。台本を1手だけにして「尽きたら失敗する」を当てにすると、検査しているのは契約ではなく台本の枯れ方になる
+- **vitest は 3 系に留める。** node 22.22 同梱の npm 10.9.4 は vitest 4 の peer 依存で `Cannot read properties of null (reading 'edgesOut')` を出して install できない（空のパッケージでも再現するので、npm 側のバグ）。`nextjs-app` は pnpm なので 4 系が入っており、**このバージョン差は許容する** — 揃えるには node/npm を上げることになり、AgentCore Runtime の実行環境に触る
 
 ## 言語方針
 
