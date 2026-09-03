@@ -9,6 +9,7 @@ import {
   type FieldSource,
   NOTHING_APPLIED,
 } from "./field-source";
+import { FormSection } from "./form-section";
 import { CANDIDATES_TASK_ID } from "./lib/api";
 
 /**
@@ -242,7 +243,7 @@ export function CandidatesPanel({
 
   return (
     <div className="grid gap-8 lg:grid-cols-[1fr_20rem]">
-      <section className="rounded-lg border border-black/10 p-6 dark:border-white/15">
+      <FormSection taskId={CANDIDATES_TASK_ID}>
         <h2 className="text-lg font-semibold">会議候補日設定</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
           AI を使わずに、最初からこのフォームだけで候補日程を足せます。
@@ -274,10 +275,11 @@ export function CandidatesPanel({
         >
           候補日程を追加
         </button>
-      </section>
+      </FormSection>
 
       <AiChatPanel
         taskId={CANDIDATES_TASK_ID}
+        nonAiPathHint="AI を使わなくても、「候補日程を追加」から手で足せます。"
         description="会議の条件を文章で書くと、左に候補日程の列を作ります。条件を足して作り直させることもできます。"
         placeholder="来月の午後で3時間"
         followUpPlaceholder="水曜は避けたい"

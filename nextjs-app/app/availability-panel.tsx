@@ -4,6 +4,7 @@ import type { ParseAvailabilityOutput } from "@contracts/index.js";
 import { useId, useState } from "react";
 import { AiChatPanel } from "./ai-chat-panel";
 import { AiBadge, type ApplyReport, type FieldSource } from "./field-source";
+import { FormSection } from "./form-section";
 import { AVAILABILITY_TASK_ID } from "./lib/api";
 
 /**
@@ -106,7 +107,7 @@ export function AvailabilityPanel({ dates }: AvailabilityPanelProps) {
 
   return (
     <div className="grid gap-8 lg:grid-cols-[1fr_20rem]">
-      <section className="rounded-lg border border-black/10 p-6 dark:border-white/15">
+      <FormSection taskId={AVAILABILITY_TASK_ID}>
         <h2 className="text-lg font-semibold">参加可否回答</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
           AI を使わずに、各候補日程に手で○×を付けられます。候補日程そのものは
@@ -155,10 +156,11 @@ export function AvailabilityPanel({ dates }: AvailabilityPanelProps) {
             ))}
           </ul>
         )}
-      </section>
+      </FormSection>
 
       <AiChatPanel
         taskId={AVAILABILITY_TASK_ID}
+        nonAiPathHint="AI を使わなくても、候補日程ごとに手で○×を付けられます。候補日程がまだ無いときは「会議候補日設定」タブで先に作ってください。"
         description="参加できる日・できない日を文章で書くと、左の候補日程に○×を付けます。あとから答えを変える指示も送れます。「15日」のように月を省いた書き方は今日以降の直近の15日として解決されるので、別の月なら月から書いてください。"
         placeholder="15日と17日は大丈夫ですが16日は無理です"
         followUpPlaceholder="16日も参加できるようになりました"

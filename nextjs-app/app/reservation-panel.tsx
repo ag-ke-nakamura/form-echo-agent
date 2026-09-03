@@ -4,6 +4,7 @@ import type { ParseReservationOutput } from "@contracts/index.js";
 import { useId, useState } from "react";
 import { AiChatPanel } from "./ai-chat-panel";
 import { AiBadge, type ApplyReport, type FieldSource } from "./field-source";
+import { FormSection } from "./form-section";
 import { RESERVATION_TASK_ID } from "./lib/api";
 
 type FieldName =
@@ -115,7 +116,7 @@ export function ReservationPanel() {
 
   return (
     <div className="grid gap-8 lg:grid-cols-[1fr_20rem]">
-      <section className="rounded-lg border border-black/10 p-6 dark:border-white/15">
+      <FormSection taskId={RESERVATION_TASK_ID}>
         <h2 className="text-lg font-semibold">交通IC予約</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
           AI を使わずに、最初からこのフォームだけで入力できます。
@@ -148,10 +149,11 @@ export function ReservationPanel() {
           />
           <TransportField state={form.transport} onChange={setField} />
         </div>
-      </section>
+      </FormSection>
 
       <AiChatPanel
         taskId={RESERVATION_TASK_ID}
+        nonAiPathHint="AI を使わなくても、すべての項目を手で埋められます。"
         description="出張の予定を文章で書くと、左のフォームを埋めます。書き足りなかったことは、続けて指示できます。"
         placeholder="来月15日から3泊4日で大阪出張、新幹線で往復"
         followUpPlaceholder="往路は10月16日でした"
