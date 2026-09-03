@@ -12,6 +12,7 @@
     "format:check": "biome check .",
     "lint": "biome lint .",
     "test": "vitest run",
+    "test:list": "vitest list",
     "typecheck": "tsc -p tsconfig.test.json"
   },
   "dependencies": {

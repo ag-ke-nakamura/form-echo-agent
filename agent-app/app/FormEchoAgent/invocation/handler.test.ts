@@ -1,3 +1,4 @@
+import { ModelError } from '@strands-agents/sdk';
 import { describe, expect, it } from 'vitest';
 import type { z } from 'zod';
 import { resolveModelName } from '../config.js';
@@ -226,29 +227,6 @@ describe('taskId の解決', () => {
 });
 
 describe('Structured Output の再試行', () => {
-  it('1回目が出力契約から外れても作り直して成功する', async () => {
-    fakeModelScript.write(
-      {
-        kind: 'structuredOutput',
-        output: {
-          ...VALID_OUTPUTS['ic-card.parse-reservation'],
-          departure_date: '来月15日',
-        },
-      },
-      {
-        kind: 'structuredOutput',
-        output: VALID_OUTPUTS['ic-card.parse-reservation'],
-      },
-    );
-
-    const response = expectSuccess(
-      await invokeBoundary(REQUESTS['ic-card.parse-reservation']),
-    );
-
-    expect(response.result).toEqual(VALID_OUTPUTS['ic-card.parse-reservation']);
-    expect(fakeModelScript.calls).toHaveLength(2);
-  });
-
   it('2回続けて Structured Output を返さないと PARSE_FAILED になる', async () => {
     fakeModelScript.write(
       { kind: 'text', text: '出発日が読み取れませんでした。' },
@@ -289,31 +267,37 @@ describe('Structured Output の再試行', () => {
   });
 
   /**
-   * **既知の穴。** `structured-output.ts` の catch が例外を種類で分けないので、
-   * Bedrock に届かなかった失敗まで再試行に乗り、PARSE_FAILED として返る。
+   * モデル呼び出しそのものの失敗は作り直しに乗せず、PARSE_FAILED にもしない。
    *
-   * これは `handler.ts` 自身のコメント（「想定外の失敗は握り潰さず 500 にして、
-   * BFF に RUNTIME_UNAVAILABLE を出させる」）と食い違い、#23 が要求する
-   * 「Runtime 障害・パース失敗のそれぞれに対応する表示」も出せない — 画面には
-   * 「手動で入力してください」ではなく「読み取れませんでした」が出る。
-   *
-   * #40 の範囲は invocation 境界にテストを入れることなので、ここでは**現在の
-   * 振る舞いを固定するだけ**にして直さない。直すときにこのテストを書き換える。
+   * PARSE_FAILED で返すと画面の案内が変わる — 参照ドキュメント 9.3節は Runtime
+   * 障害に「手動で入力してください」を出させるが、パース失敗の文言が出て職員は
+   * 同じ入力を打ち直す。投げ直せば handler が 500 にし、BFF が
+   * RUNTIME_UNAVAILABLE に写す。
    */
-  it('【既知の穴】モデル呼び出しそのものの失敗も PARSE_FAILED になる', async () => {
+  it('モデル呼び出しそのものの失敗は投げ直され、PARSE_FAILED にならない', async () => {
     fakeModelScript.write(
       { kind: 'error', error: new Error('Bedrock に届きませんでした') },
       { kind: 'error', error: new Error('Bedrock に届きませんでした') },
     );
 
-    const response = await invokeBoundary(
-      REQUESTS['ic-card.parse-reservation'],
-    );
+    await expect(
+      invokeBoundary(REQUESTS['ic-card.parse-reservation']),
+    ).rejects.toThrow(ModelError);
 
-    expect(expectError(response).code).toBe('PARSE_FAILED');
+    // 作り直しに乗せない。乗せても同じところで落ちるだけなので、台本の2手目は残る。
+    expect(fakeModelScript.calls).toHaveLength(1);
+    expect(fakeModelScript.remaining).toBe(1);
   });
 });
 
+/**
+ * 契約に適合しない出力が結果にならないこと。
+ *
+ * 「PARSE_FAILED になる」ではなく「作り直しに回る」を見る。Strands は Structured
+ * Output のツールの検査に落ちた時点でモデルへ作り直しを求めるので、1回の
+ * `agent.invoke` の内側で何度でも聞き直す。最後まで契約に届かなかった場合が
+ * PARSE_FAILED で、そちらは `Structured Output の再試行` が見ている。
+ */
 describe('出力契約が弾く形', () => {
   const overLimitCandidates = Array.from(
     { length: MAX_CANDIDATES + 1 },
@@ -415,13 +399,20 @@ describe('出力契約が弾く形', () => {
       },
     },
   ] satisfies { name: string; taskId: TaskId; output: unknown }[])(
-    '$name 出力は成功にならず PARSE_FAILED になる',
+    '$name 出力は結果にならず、作り直しに回る',
     async ({ taskId, output }) => {
-      fakeModelScript.write({ kind: 'structuredOutput', output });
+      fakeModelScript.write(
+        { kind: 'structuredOutput', output },
+        { kind: 'structuredOutput', output: VALID_OUTPUTS[taskId] },
+      );
 
-      const response = await invokeBoundary(REQUESTS[taskId]);
+      const response = expectSuccess(await invokeBoundary(REQUESTS[taskId]));
 
-      expect(expectError(response).code).toBe('PARSE_FAILED');
+      // 契約を満たす出力を1手目に置いた場合はモデルを1回しか呼ばない
+      // （`応答の形` の各件がそれを示す）。2回呼ばれたということは、
+      // 1手目が契約に弾かれてモデルに作り直しを求めたということ。
+      expect(response.result).toEqual(VALID_OUTPUTS[taskId]);
+      expect(fakeModelScript.calls).toHaveLength(2);
     },
   );
 });
