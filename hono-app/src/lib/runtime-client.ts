@@ -3,7 +3,7 @@ import type {
   AiTaskSuccessResponse,
   TaskId,
 } from '@contracts/index.js'
-import { isAiErrorCode, OUTPUT_SCHEMAS } from '@contracts/index.js'
+import { isAiErrorCode, outputSchemaFor } from '@contracts/index.js'
 import { RUNTIME_TIMEOUT_MS, RUNTIME_URL } from '../config.js'
 
 export type RuntimeOutcome =
@@ -19,11 +19,24 @@ const SESSION_HEADER = 'X-Amzn-Bedrock-AgentCore-Runtime-Session-Id'
  * デプロイ済み Runtime を SigV4 で叩く経路は未実装。切り替えは呼び出し側ではなく
  * このモジュールの中で行う（BFF の他の部分は宛先を知らない）。
  */
-export async function invokeRuntime(
-  taskId: TaskId,
-  prompt: string,
-  sessionId: string,
-): Promise<RuntimeOutcome> {
+/**
+ * Runtime へ渡す1回分。`prompt` と `input` のどちらが必要かは taskId ごとに違う
+ * （ADR-0004）ので、両方を任意にして表の判断を呼び出し側に残す。
+ */
+export interface RuntimeInvocation {
+  taskId: TaskId
+  prompt?: string
+  sessionId: string
+  /** 入力契約で検査済みの構造化入力。持たない taskId では undefined。 */
+  input?: unknown
+}
+
+export async function invokeRuntime({
+  taskId,
+  prompt,
+  sessionId,
+  input,
+}: RuntimeInvocation): Promise<RuntimeOutcome> {
   let response: Response
   try {
     response = await fetch(`${RUNTIME_URL}/invocations`, {
@@ -33,7 +46,9 @@ export async function invokeRuntime(
         Accept: 'application/json',
         [SESSION_HEADER]: sessionId,
       },
-      body: JSON.stringify({ taskId, prompt, sessionId }),
+      // 構造化入力は毎回そのまま送り直す。Runtime 側の会話履歴はコールドスタートで
+      // 消えるので、2回目以降に省くと表の無いリクエストが届く（ADR-0004）。
+      body: JSON.stringify({ taskId, prompt, sessionId, input }),
       signal: AbortSignal.timeout(RUNTIME_TIMEOUT_MS),
     })
   } catch (error) {
@@ -87,7 +102,11 @@ export async function invokeRuntime(
 
   // 出力契約は Runtime 側でも検査済みだが、BFF でも同じスキーマで見る。
   // 3者が同じ contracts/ を参照していることを実際に効かせるのがこの検証環境の目的。
-  const result = OUTPUT_SCHEMAS[taskId].safeParse(parsed.result)
+  //
+  // 推薦系では入力も渡す。提案が入力の候補日程と過不足なく対応しているかは
+  // 出力契約だけでは言えない（ADR-0004）。Runtime の作り直しを通り抜けたものが、
+  // フロントエンドへ出る前にここで最後に落ちる。
+  const result = outputSchemaFor(taskId, input).safeParse(parsed.result)
   if (!result.success) {
     return {
       ok: false,

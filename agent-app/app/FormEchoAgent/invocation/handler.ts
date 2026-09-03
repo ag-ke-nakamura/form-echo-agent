@@ -34,16 +34,16 @@ export async function handleInvocation(
       error: {
         code: 'INVALID_INPUT',
         message:
-          'リクエストは taskId と prompt を持つ必要があります（出力契約の aiTaskRequestSchema を参照）。',
+          'リクエストが契約に適合しません。taskId ごとに自然文と構造化入力のどちらが必要かは contracts の aiTaskRequestSchema を参照してください。',
       },
     };
   }
 
-  const { taskId, prompt } = parsedRequest.data;
+  const { taskId, prompt, input } = parsedRequest.data;
 
   try {
     const { result, usage } = await invokeTask(
-      { taskId, prompt, sessionId: context.sessionId },
+      { taskId, prompt, input, sessionId: context.sessionId },
       context.log,
     );
     return { sessionId: context.sessionId, result, usage };

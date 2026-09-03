@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { AiErrorCode } from './errors.js';
 import { ALLOWED_TASK_IDS } from './task-ids.js';
+import { checkTaskInput } from './task-input.js';
 
 /** 参照ドキュメント 10.1節の入力サニタイズが課す上限。 */
 export const MAX_PROMPT_LENGTH = 10_000;
@@ -20,12 +21,53 @@ export const MAX_PROMPT_LENGTH = 10_000;
  */
 export const sessionIdSchema = z.uuid();
 
-export const aiTaskRequestSchema = z.object({
-  taskId: z.enum(ALLOWED_TASK_IDS),
-  prompt: z.string().min(1).max(MAX_PROMPT_LENGTH),
-  /** 初回は null または省略。 */
-  sessionId: sessionIdSchema.nullish(),
-});
+export const aiTaskRequestSchema = z
+  .object({
+    taskId: z.enum(ALLOWED_TASK_IDS),
+    /**
+     * 職員が書いた自然文。**必須かどうかは taskId ごとに違う**（ADR-0004）。
+     * 推薦系は参加可否表だけで成立するため、省略できる。
+     */
+    prompt: z.string().min(1).max(MAX_PROMPT_LENGTH).nullish(),
+    /** 初回は null または省略。 */
+    sessionId: sessionIdSchema.nullish(),
+    /**
+     * 構造化入力。形は taskId ごとに `INPUT_SCHEMAS` が決めるので、ここでは
+     * `unknown` で受けて下の `superRefine` が taskId を見てから検査する。
+     *
+     * WHY: taskId で discriminated union にすると既存3タスクのリクエスト型まで
+     * 書き換わる（ADR-0004 が却下した案）。3者が同一に見ているのは**表**であって
+     * 個々のスキーマではない、という `OUTPUT_SCHEMAS` と同じ形をここでも採る。
+     */
+    input: z.unknown().optional(),
+  })
+  .superRefine((request, ctx) => {
+    // 判断は契約の表に置き、ここは失敗を zod の issue に翻訳するだけにする。
+    const checked = checkTaskInput(request.taskId, request);
+    if (checked.ok) return;
+
+    switch (checked.problem.kind) {
+      case 'PROMPT_REQUIRED':
+        ctx.addIssue({
+          code: 'custom',
+          path: ['prompt'],
+          message: `${request.taskId} は自然文の指示が必要です。`,
+        });
+        return;
+      case 'INPUT_NOT_ACCEPTED':
+        ctx.addIssue({
+          code: 'custom',
+          path: ['input'],
+          message: `${request.taskId} は構造化入力を受け付けません。`,
+        });
+        return;
+      case 'INPUT_INVALID':
+        for (const issue of checked.problem.issues) {
+          ctx.addIssue({ ...issue, path: ['input', ...issue.path] });
+        }
+        return;
+    }
+  });
 
 export type AiTaskRequest = z.infer<typeof aiTaskRequestSchema>;
 

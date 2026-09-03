@@ -24,6 +24,7 @@ export const RESERVATION_TASK_ID = "ic-card.parse-reservation" satisfies TaskId;
 export const CANDIDATES_TASK_ID = "meeting.parse-candidates" satisfies TaskId;
 export const AVAILABILITY_TASK_ID =
   "meeting.parse-availability" satisfies TaskId;
+export const RECOMMEND_TASK_ID = "meeting.recommend-schedule" satisfies TaskId;
 
 /**
  * taskId から出力の型を引く表。AI チャット欄はこの表を通してタブに紐づく。
@@ -41,6 +42,21 @@ export type AiTaskOutcome<TTaskId extends TaskId> =
   | { ok: true; sessionId: string; result: TaskOutputs[TTaskId] }
   | { ok: false; code: AiErrorCode };
 
+export type AiTaskRequestArgs<TTaskId extends TaskId> = {
+  taskId: TTaskId;
+  /** 職員が書いた自然文。推薦系では省略できる（ADR-0004）。 */
+  prompt: string | null;
+  sessionId: string | null;
+  /**
+   * 構造化入力。持たない taskId では省略する。
+   *
+   * **追加の指示のときも毎回そのまま送る。** Runtime 側の会話履歴は
+   * コールドスタートで消えるので、初回だけ送ると2回目が「表の無いリクエスト」に
+   * なる（ADR-0004）。
+   */
+  input?: unknown;
+};
+
 /**
  * BFF の `POST /api/ai/tasks` を叩く。
  *
@@ -48,20 +64,21 @@ export type AiTaskOutcome<TTaskId extends TaskId> =
  * 変わるのは出力契約の許可リストだけで、この関数もその戻り値の型も動かない。
  *
  * `sessionId` は初回 null、2回目以降は前回の応答が返したものを渡す。これが
- * 追加の指示を同じ会話の続きとして届ける唯一の手立てになる（ADR-003 により
- * 画面の状態は運ばないので、前の指示の内容は Runtime 側の会話履歴にしかない）。
+ * 追加の指示を同じ会話の続きとして届ける唯一の手立てになる（抽出系は ADR-003 に
+ * より画面の状態を運ばないので、前の指示の内容は Runtime 側の会話履歴にしかない）。
  */
-export async function requestAiTask<TTaskId extends TaskId>(
-  taskId: TTaskId,
-  prompt: string,
-  sessionId: string | null,
-): Promise<AiTaskOutcome<TTaskId>> {
+export async function requestAiTask<TTaskId extends TaskId>({
+  taskId,
+  prompt,
+  sessionId,
+  input,
+}: AiTaskRequestArgs<TTaskId>): Promise<AiTaskOutcome<TTaskId>> {
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}/api/ai/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskId, prompt, sessionId }),
+      body: JSON.stringify({ taskId, prompt, sessionId, input }),
     });
   } catch {
     // BFF ごと落ちている場合。Runtime 障害と同じ案内で構わない（どちらも

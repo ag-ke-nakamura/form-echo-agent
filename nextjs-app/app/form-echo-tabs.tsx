@@ -7,16 +7,19 @@ import {
   CandidatesPanel,
   useCandidateRows,
 } from "./candidates-panel";
+import { RecommendPanel } from "./recommend-panel";
 import { ReservationPanel } from "./reservation-panel";
 
 /**
- * タブの定義。並び順は職員が触る順（予約 → 候補日程を決める → 可否を答える）に
- * 合わせる。プロダクトオーナーがタブの切り替えだけで3機能を順に追えるようにする。
+ * タブの定義。並び順は職員が触る順（予約 → 候補日程を決める → 可否を答える →
+ * 集まった可否から開催日を決める）に合わせる。プロダクトオーナーがタブの切り替え
+ * だけで4機能を順に追えるようにする。
  */
 const TABS = [
   { id: "ic-card", label: "交通IC予約" },
   { id: "meeting-candidates", label: "会議候補日設定" },
   { id: "meeting-availability", label: "参加可否回答" },
+  { id: "meeting-recommend", label: "候補日提案" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -41,6 +44,12 @@ export function FormEchoTabs() {
     "meeting-availability": (
       <AvailabilityPanel dates={candidateDates(candidates.rows)} />
     ),
+    /*
+      候補日程タブ・参加可否タブとは連動しない。参加可否表は自分のモックを持つ
+      （#58）。候補日程タブに同じサンプルを焼き込むと、焼いた行が手入力として
+      扱われ、AI が候補日程を作り直したときにサンプル行の上へ積み上がる。
+    */
+    "meeting-recommend": <RecommendPanel />,
   };
 
   return (

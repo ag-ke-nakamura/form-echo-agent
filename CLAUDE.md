@@ -21,11 +21,17 @@
 
 BFF が Runtime を叩く宛先は `FORMECHO_RUNTIME_URL`、フロントエンドが BFF を叩く宛先は `NEXT_PUBLIC_API_BASE_URL`（SSG なのでビルド時に埋め込まれる）。Runtime のモデルは `FORMECHO_MODEL`（`sonnet` / `haiku`）で切り替える。
 
-## contracts（出力契約）
+## contracts（入出力の契約）
 
 出力スキーマ（Zod）・リクエスト型・エラーコード・`taskId` 許可リストの正典。パッケージ化せず素の `.ts` で置き、各プロジェクトが自前の解決経路で参照する（ADR-002）。**Zod は3プロジェクトとも v4 に揃える。**
 
-**リクエスト契約は `{taskId, prompt, sessionId}` の3つだけで、画面が持っているフォームの状態（候補日程の一覧、入力済みの値、レコードID）を Runtime へ渡さない**（ADR-003）。`prompt` にシステムが組み立てた文脈を埋め込むこともしない。突き合わせはフロントエンドが行う。
+**抽出系3タスクのリクエスト契約は `{taskId, prompt, sessionId}` の3つだけで、画面が持っているフォームの状態（候補日程の一覧、入力済みの値、レコードID）を Runtime へ渡さない**（ADR-003）。`prompt` にシステムが組み立てた文脈を埋め込むこともしない。突き合わせはフロントエンドが行う。
+
+**推薦系 `meeting.recommend-schedule` だけは構造化入力 `input` を渡す**（ADR-0004）。参加可否表を見ずに順位は付けられないため。入力契約は `INPUT_SCHEMAS` として `OUTPUT_SCHEMAS` と対称に持ち、自然文だけのタスクは `null` を明示する。自然文の必須性は `PROMPT_REQUIREMENT`（`prompt-requirement.ts`）が taskId ごとに持つ。`input` はサニタイズも Guardrail チェックも通さないので、**自由文字列を置かない**（参加者は `/^参加者[A-Z]$/`）。`input` はフロントエンドが**毎回そのまま送り直す** — Runtime 側の会話履歴はコールドスタートで消えるため。
+
+判断は契約側の関数に置く。`checkTaskInput(taskId, {prompt, input})` が「このリクエストが入力契約を満たすか」を、`outputSchemaFor(taskId, input)` が「この応答を何で検査するか」を決める。前者は Runtime の `aiTaskRequestSchema` と BFF の門の両方が、後者は Runtime の Structured Output 再試行と BFF の再検査の両方が引く。**同じ判断を2箇所に書かない** — 片方だけが契約の変更に追随すると、BFF は通すのに Runtime が弾く（またはその逆の）状態になる。
+
+`candidate-key.ts` と `prompt-requirement.ts` は zod を import しない。フロントエンドがこの2つだけを**値として**引くので、スキーマと同じモジュールに置くと SSG のバンドルに zod が丸ごと乗る。
 
 参照のしかたはプロジェクトごとに違う。
 
@@ -80,10 +86,12 @@ CI（`.github/workflows/ci.yml`）と同じものを手元で回す。
 | --- | --- |
 | `agent-app/app/FormEchoAgent` | `npm run format:check && npm run lint && npm run build` |
 | `hono-app` | `pnpm run format:check && pnpm run lint && pnpm run typecheck` |
-| `nextjs-app` | `pnpm run format:check && pnpm run lint && pnpm run build` |
+| `nextjs-app` | `pnpm run format:check && pnpm run lint && pnpm run test && pnpm run build` |
 | `agent-app/agentcore/cdk` | `npx prettier --check . && npm run build` |
 
-`nextjs-app` に `typecheck` スクリプトは無い（型検証は `build` が兼ねる）。`contracts/` はどのプロジェクトにも属さないので、整形は `agent-app/app/FormEchoAgent` の biome で見る（`./node_modules/.bin/biome check ../../../contracts`）。
+`nextjs-app` に `typecheck` スクリプトは無い（型検証は `build` が兼ねる）。`test` があるのは
+`nextjs-app` だけで、対象は参加可否表のモック生成器1つ（#58 のシーム3）。Runtime と BFF の
+テスト基盤は #40 / #41 で入る。`contracts/` はどのプロジェクトにも属さないので、整形は `agent-app/app/FormEchoAgent` の biome で見る（`./node_modules/.bin/biome check ../../../contracts`）。
 
 ## フォーマッター・リンター・型チェッカーの入手経路
 

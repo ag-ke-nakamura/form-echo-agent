@@ -51,7 +51,7 @@ agentcore deploy      # AWS へデプロイ
 | --- | --- |
 | pre-commit | secret scan（betterleaks）、各プロジェクトの format / lint / typecheck、破壊的コマンドガードの回帰テスト |
 | pre-push | push 範囲全体の secret scan |
-| CI | 上記に加えて各プロジェクトの build |
+| CI | 上記に加えて各プロジェクトの build と、`nextjs-app` のテスト（vitest） |
 
 フォーマッター・リンター・型チェッカーは各プロジェクトの devDependency として持ち、`npm exec` / `pnpm exec` 経由で呼びます（`mise.toml` には置きません）。理由は `CLAUDE.md` を参照してください。
 
