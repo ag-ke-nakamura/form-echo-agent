@@ -63,7 +63,38 @@ function hasManualInput(row: CandidateRow): boolean {
  */
 const INITIAL_ROWS: CandidateRow[] = [blankRow("row-0")];
 
-export function CandidatesPanel() {
+/**
+ * 候補日程タブの状態を外から持てるようにしたもの。
+ *
+ * WHY: 参加可否タブが○×を付ける対象は、このタブが持っている候補日程の日付である。
+ * どちらかのタブの内側に状態を置くと相手から見えないので、状態の持ち主を
+ * `FormEchoTabs` に上げる。**状態モデルの定義はこのファイルに残す**（#23
+ * Implementation Decisions: フォームの状態モデルはタブごとに分ける）。上がったのは
+ * 置き場所だけで、参加可否タブが受け取るのも `CandidateRow` ではなく日付の列に留める。
+ */
+export type CandidateRowsApi = {
+  rows: CandidateRow[];
+  setField: (id: string, field: CandidateField, value: string) => void;
+  addRow: () => void;
+  removeRow: (id: string) => void;
+  applyResult: (result: ParseCandidatesOutput) => void;
+};
+
+/**
+ * 参加可否タブへ渡す候補日程の日付。
+ *
+ * 空欄と重複を落とす。空欄を渡すと、日付を入れていない行が参加可否タブに
+ * 「日付の無い候補日程」として並んでしまう。
+ */
+export function candidateDates(rows: CandidateRow[]): string[] {
+  return [
+    ...new Set(
+      rows.map((row) => row.fields.date.value).filter((value) => value !== ""),
+    ),
+  ];
+}
+
+export function useCandidateRows(): CandidateRowsApi {
   const [rows, setRows] = useState<CandidateRow[]>(INITIAL_ROWS);
   // 初期行の id と衝突しない位置から始める。
   const nextRowNumber = useRef(INITIAL_ROWS.length);
@@ -125,6 +156,16 @@ export function CandidatesPanel() {
       })),
     ]);
   }
+
+  return { rows, setField, addRow, removeRow, applyResult };
+}
+
+export function CandidatesPanel({
+  candidates,
+}: {
+  candidates: CandidateRowsApi;
+}) {
+  const { rows, setField, addRow, removeRow, applyResult } = candidates;
 
   return (
     <div className="grid gap-8 lg:grid-cols-[1fr_20rem]">
