@@ -107,6 +107,55 @@ CI（`.github/workflows/ci.yml`）と同じものを手元で回す。
 
 ## Agent skills
 
+### The Main Flow
+
+**開発はこの流れに載せる。** 工程を自分の判断で飛ばさない。スキルの仕事を手作業で代替しない。
+
+```
+                  ┌─ 複数セッション規模 ─→ to-spec → to-tickets ─→ implement（チケットごと）
+grill-with-docs ──┤
+                  └─ 1セッションで収まる ───────────────────────→ implement（この場で）
+```
+
+**`code-review` は独立した工程ではない。** `implement` が内部で `tdd` を回し、締めに `code-review`（Standards + Spec の2軸）を走らせてからコミットする。単独で呼ぶのは、ブランチや PR を任意の基準点と比べたいときだけ。
+
+- **`grill-with-docs`** — 設計を詰める。frontier（前提が揃った未決事項）が空になるまで質問の輪を回す。`CONTEXT.md` と ADR はこの中で書く。**working directory がある限り常にこちら**（`grill-me` は working directory が無いとき用で、記録を残さない）
+- **分岐1: 会話だけで全部決まるか。** 状態モデル・業務ロジック・見ないと分からない UI のように**動かして初めて答えが出る問い**が残るなら `prototype` に寄る。往復は `handoff`（prototype は別ディレクトリに住むため）
+- **分岐2: 複数セッションに跨る規模か。**
+  - **跨る** → `to-spec` で spec 化 → `to-tickets` で blocking edge 付きの縦切りに割る → チケットごとに `implement`
+  - **収まる** → **`to-spec` も `to-tickets` も飛ばして**その場で `implement`
+- **`mattpocock-skills:code-review`** — 呼ぶときは**必ずプラグイン名を付ける**。同名が3つある（他に `code-review:code-review` と組み込みの `code-review`）
+
+**`CONTEXT.md` の更新が要りそうな議論に入ったら `grill-with-docs` に載せる。** 用語の衝突、定義の揺れ、ADR に値する判断が出てきたら、その場で書き足さずに grilling の輪に回す。用語集と ADR はこのスキルの成果物である。
+
+### コンテキストの扱い
+
+**`grill-with-docs` から `to-tickets` までは1つの連続したコンテキストで通す**（`/compact` も `/clear` もしない）。grilling・spec・チケットが同じ思考の上に積まれる必要があるため。
+
+**`implement` は逆にチケットごとに新しいコンテキストで始める。** チケットは自己完結しているので、前のチケットの文脈は捨てて `/clear` してよい。
+
+`to-tickets` に達する前に smart zone（最新モデルで約150kトークン）に近づいたら、劣化したまま押し切らず直近の phase 境界で `/compact` する。
+
+### 私（Claude）から呼べないスキル
+
+`disable-model-invocation: true` が付いており **Skill ツールからは起動できない。** ユーザーが `/` で打つ必要がある。
+
+`grill-with-docs` / `to-spec` / `to-tickets` / `implement` / `triage` / `wayfinder` / `setup-matt-pocock-skills` / `ask-matt` / `improve-codebase-architecture` / `handoff` / `grill-me` / `wait-what`
+
+**したがって、各工程の終わりでは次のスキル名を明示して打つよう促す。** 自前のワークフローを組んで先に進めない（`to-spec` は「このスキルのワークフローを別の手段で再現するな」と明記している）。`handoff` も呼べないので、prototype detour の往復は私からは始められない。
+
+**`grill-with-docs` の締めが特に危ない。** スキル自身のドキュメントが「closing message が開いてしまうのは既知の粗さで、main flow における答えは同じ会話の中の `to-spec` である」と書いている。**frontier が空になったら分岐2を判断し、`/mattpocock-skills:to-spec` か `/mattpocock-skills:implement` のどちらかを名指しする。**
+
+私から呼べるのは `mattpocock-skills:code-review` / `domain-modeling` / `grilling` / `tdd` / `prototype` / `diagnosing-bugs` / `research` / `codebase-design`。
+
+### On-ramp
+
+**外から来た仕事は main flow の頭から入らない。**
+
+- **バグ報告・要望が溜まっている** → `triage`。`ready-for-agent` ラベルと brief が付いた時点で `implement` に合流する。**`to-tickets` が作ったチケットは triage しない**（既に agent-ready）
+- **何かが壊れている** → `diagnosing-bugs`。**そのバグで既に red になる1コマンド**を作るまで仮説を立てない。締めの post-mortem で「バグを閉じ込める良いシームが無い」と分かったら `improve-codebase-architecture` に渡す
+- **1セッションに収まらない霧のかかった塊**（greenfield、巨大機能）→ `wayfinder`。map の決定チケットを1つずつ解き、**決定を produce する（成果物ではない）**。霧が晴れたら `to-spec` で合流する — **`implement` へ直行しない**（map の linked detail を捨てることになる）
+
 ### Issue tracker
 
 issue は GitHub Issues（`ag-ke-nakamura/form-echo-agent`）で管理し、`gh` CLI 経由で操作する。詳細は `docs/agents/issue-tracker.md`。
