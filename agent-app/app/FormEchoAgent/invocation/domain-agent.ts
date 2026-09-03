@@ -39,6 +39,10 @@ export function getOrCreateDomainAgent(
   if (existing) {
     agentCache.delete(key);
     agentCache.set(key, existing);
+    // 基準時刻を貼り直す。system prompt は Agent の生成時に固定されるので、
+    // 追加の指示を1時間後に送ると「今から3時間後」が初回の時刻から数えられる。
+    // 会話履歴は messages 側に残るため、ここを差し替えても続きとして通る。
+    existing.systemPrompt = buildSystemPrompt(taskId);
     return existing;
   }
   if (agentCache.size >= AGENT_CACHE_LIMIT) {
