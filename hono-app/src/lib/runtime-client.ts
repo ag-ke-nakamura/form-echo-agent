@@ -1,5 +1,9 @@
 import type { AiErrorCode, AiTaskSuccessResponse } from '@contracts/index.js'
-import { isAiErrorCode, outputSchemaFor } from '@contracts/index.js'
+import {
+  isAiErrorCode,
+  outputSchemaFor,
+  usageSchema,
+} from '@contracts/index.js'
 import type { RuntimeInvocation } from './runtime-transport.js'
 import { loadRuntimeTransport } from './runtime-transport.js'
 
@@ -17,12 +21,21 @@ export type RuntimeOutcome =
 export async function invokeRuntime(
   invocation: RuntimeInvocation,
 ): Promise<RuntimeOutcome> {
+  // 設定の解決を try の外に置く。中に入れると、綴りを間違えた
+  // `FORMECHO_RUNTIME_CLIENT` が下の catch に飲まれて RUNTIME_UNAVAILABLE になり、
+  // 「設定が間違っている」が「Runtime が落ちている」に化ける。
+  const transport = loadRuntimeTransport()
+
   let response: Response
   try {
-    response = await loadRuntimeTransport()(invocation)
+    response = await transport(invocation)
   } catch (error) {
     // TimeoutError と、接続そのものが張れない場合（Runtime が落ちている）を分ける。
     // 画面の案内が「もう一度お試しください」と「手動で入力してください」で違うため。
+    //
+    // TimeoutError 以外を型で絞らない。undici は接続失敗を `TypeError: fetch failed`
+    // で投げるが Bun は別の形で投げるので、型で分岐すると `dev`（Bun）でだけ
+    // 判定が変わる。この try に残るのは通信だけなので、既定を寄せて構わない。
     if (error instanceof DOMException && error.name === 'TimeoutError') {
       return {
         ok: false,
@@ -119,7 +132,10 @@ function runtimeSuccessShape(body: unknown): AiTaskSuccessResponse | null {
   if (typeof body !== 'object' || body === null) return null
   const candidate = body as Partial<AiTaskSuccessResponse>
   if (typeof candidate.sessionId !== 'string') return null
-  if (candidate.result === undefined || candidate.usage === undefined)
-    return null
-  return candidate as AiTaskSuccessResponse
+  if (candidate.result === undefined) return null
+  // usage も契約で見る。`result` を契約で見て usage を見ない非対称に理由がない
+  // （欄が欠けた usage は画面のトークン表示をそのまま壊す）。
+  const usage = usageSchema.safeParse(candidate.usage)
+  if (!usage.success) return null
+  return { ...candidate, usage: usage.data } as AiTaskSuccessResponse
 }

@@ -8,10 +8,15 @@ import { checkTaskInput, isTaskId, sessionIdSchema } from '@contracts/index.js'
 import { type Context, Hono } from 'hono'
 import { cors } from 'hono/cors'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
-import { ALLOWED_ORIGINS, PORT } from './config.js'
+import { ALLOWED_ORIGINS, PORT, resolveRuntimeClientName } from './config.js'
 import { invokeRuntime } from './lib/runtime-client.js'
 import { PromptTooLongError, sanitizePrompt } from './lib/sanitize.js'
 import { authenticate } from './middleware/auth.js'
+
+// 設定が指す Runtime クライアントが存在することを起動時に確かめる。ここで確かめないと、
+// 綴りを間違えた `FORMECHO_RUNTIME_CLIENT` に気付けるのが最初のリクエストの時で、
+// しかも失敗が RUNTIME_UNAVAILABLE として出るため Runtime 障害と区別が付かない。
+resolveRuntimeClientName()
 
 /** エラーコードから HTTP ステータスへの写像。判断を1箇所に集める。 */
 const STATUS_BY_CODE: Record<AiErrorCode, ContentfulStatusCode> = {

@@ -130,6 +130,20 @@ describe('fake の Runtime クライアントの差し替え', () => {
     expect(resolveRuntimeClientName()).toBe('fake')
   })
 
+  it('設定が知らない実装を指していたら起動時に落ちる', () => {
+    // `src/index.ts` が読み込み時にこれを呼ぶ。リクエストが来るまで気付けないと、
+    // 綴りの間違いが RUNTIME_UNAVAILABLE として出て Runtime 障害と区別が付かない。
+    const configured = process.env.FORMECHO_RUNTIME_CLIENT
+    process.env.FORMECHO_RUNTIME_CLIENT = 'deployed'
+    try {
+      expect(() => resolveRuntimeClientName()).toThrow(
+        'FORMECHO_RUNTIME_CLIENT',
+      )
+    } finally {
+      process.env.FORMECHO_RUNTIME_CLIENT = configured
+    }
+  })
+
   it.each(ALLOWED_TASK_IDS)(
     '%s は Runtime を通って 200 で返る',
     async (taskId) => {
@@ -454,6 +468,25 @@ describe('出力契約の再検査', () => {
     fakeRuntimeScript.write({
       kind: 'respond',
       body: { sessionId: SESSION_ID },
+    })
+
+    const response = await postTask({
+      ...REQUESTS['ic-card.parse-reservation'],
+      sessionId: SESSION_ID,
+    })
+
+    expect((await expectError(response)).code).toBe('PARSE_FAILED')
+  })
+
+  it('usage が契約の形でなければ通さない', async () => {
+    // `result` を契約で見て usage を見ない非対称に理由がない。
+    fakeRuntimeScript.write({
+      kind: 'respond',
+      body: {
+        sessionId: SESSION_ID,
+        result: VALID_RESULTS['ic-card.parse-reservation'],
+        usage: { inputTokens: 12 },
+      },
     })
 
     const response = await postTask({

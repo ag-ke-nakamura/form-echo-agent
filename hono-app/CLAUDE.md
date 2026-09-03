@@ -67,6 +67,9 @@ Lint/format は [Biome](https://biomejs.dev)（`biome.json`）。biome 本体は
 `PORT` / `FORMECHO_RUNTIME_URL` / `FORMECHO_RUNTIME_TIMEOUT_MS` / `FORMECHO_ALLOWED_ORIGINS` /
 `FORMECHO_RUNTIME_CLIENT`。
 
+`FORMECHO_RUNTIME_CLIENT` だけは **`src/index.ts` が起動時に検証する**。不正な値をリクエスト時に
+落とすと、Runtime を呼ぶ前の失敗が `RUNTIME_UNAVAILABLE` として出て Runtime 障害と区別が付かない。
+
 ## 言語方針
 
 本プロジェクト（FormEcho 全体）は**日本語を基本言語**として運用します。詳細は `../CLAUDE.md` の「言語方針」セクションを参照してください。
