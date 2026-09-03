@@ -106,10 +106,50 @@ export const parseCandidatesOutputSchema = z.object({
 export type ParseCandidatesOutput = z.infer<typeof parseCandidatesOutputSchema>;
 
 /**
+ * 候補日程ひとつに対する参加可否。
+ *
+ * 候補日程IDではなく日付で写す。ユーザーの自然文が言っているのは日付であって
+ * 候補日程IDではなく、IDへの解決は AI にとって余計な仕事になる（ADR-003）。この日付を
+ * 画面が持っている候補日程の一覧に当てる突き合わせはフロントエンドが行う。
+ */
+const availabilitySchema = z.object({
+  date: z
+    .string()
+    .regex(ISO8601_DATE)
+    .describe('参加可否を答えた日付。YYYY-MM-DD 形式'),
+  /**
+   * ○×の2値に留める。`maybe` や時間帯を足すと、手で埋める側（各候補日程に手動で○×）
+   * にもそれを入れる UI が要り、非AI経路と形が揃わなくなる。「16日の午後なら大丈夫」
+   * のような入力は `message` が説明して吸収する。
+   */
+  available: z
+    .boolean()
+    .describe('その日付に参加できるなら true、できないなら false'),
+});
+
+/** 1回の応答で返せる参加可否の上限。`SKILL.md` の制約と同じ数を置く。 */
+export const MAX_AVAILABILITY_ENTRIES = 10;
+
+export const parseAvailabilityOutputSchema = z.object({
+  availability: z
+    .array(availabilitySchema)
+    .max(MAX_AVAILABILITY_ENTRIES)
+    .describe(
+      `日付ごとの参加可否。多くとも${MAX_AVAILABILITY_ENTRIES}件。読み取れない場合は空配列`,
+    ),
+  ...commonOutputFields,
+});
+
+export type ParseAvailabilityOutput = z.infer<
+  typeof parseAvailabilityOutputSchema
+>;
+
+/**
  * taskId から出力契約を引くための表。Runtime は Structured Output のスキーマとして、
  * BFF はフロントエンドへ返す前の検査として、同じものを参照する。
  */
 export const OUTPUT_SCHEMAS = {
   'ic-card.parse-reservation': parseReservationOutputSchema,
   'meeting.parse-candidates': parseCandidatesOutputSchema,
+  'meeting.parse-availability': parseAvailabilityOutputSchema,
 } satisfies Record<TaskId, z.ZodType>;

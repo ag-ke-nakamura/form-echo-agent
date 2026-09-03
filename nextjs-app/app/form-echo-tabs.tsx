@@ -1,13 +1,22 @@
 "use client";
 
 import { useState } from "react";
+import { AvailabilityPanel } from "./availability-panel";
 import { CandidatesPanel } from "./candidates-panel";
 import { ReservationPanel } from "./reservation-panel";
 
-/** タブの定義。参加可否タブは別チケットでここに1行増える。 */
+/**
+ * タブの定義。並び順は職員が触る順（予約 → 候補日程を決める → 可否を答える）に
+ * 合わせる。プロダクトオーナーがタブの切り替えだけで3機能を順に追えるようにする。
+ */
 const TABS = [
   { id: "ic-card", label: "交通IC予約", Panel: ReservationPanel },
   { id: "meeting-candidates", label: "会議候補日設定", Panel: CandidatesPanel },
+  {
+    id: "meeting-availability",
+    label: "参加可否回答",
+    Panel: AvailabilityPanel,
+  },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
