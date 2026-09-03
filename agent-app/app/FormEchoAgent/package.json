@@ -10,7 +10,10 @@
     "dev": "tsx watch main.ts",
     "format": "biome format --write .",
     "format:check": "biome check .",
-    "lint": "biome lint ."
+    "lint": "biome lint .",
+    "test": "vitest run",
+    "test:list": "vitest list",
+    "typecheck": "tsc -p tsconfig.test.json"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.0",
@@ -23,7 +26,8 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.11",
     "@types/node": "^22.0.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.7"
   },
   "overrides": {
     "bedrock-agentcore": {

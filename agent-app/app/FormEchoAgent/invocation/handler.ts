@@ -1,10 +1,23 @@
-import type { RequestContext } from 'bedrock-agentcore/runtime';
 import {
   type AiErrorResponse,
   type AiTaskSuccessResponse,
   aiTaskRequestSchema,
 } from '../contracts/index.js';
 import { invokeTask, StructuredOutputError } from './invoke-task.js';
+import type { InvocationLogger } from './logger.js';
+
+/**
+ * ハンドラが `RequestContext` から実際に使うものだけ。
+ *
+ * WHY: `logger.ts` と同じ理由で最小の形に留める。fastify の `RequestContext` は
+ * これを構造的に満たすので `main.ts` の配線はそのまま通り、テストと実測は
+ * HTTP リクエストも pino も組み立てずにこの境界を呼べる。
+ */
+export interface InvocationContext {
+  /** AgentCore が確定させたセッション ID。会話履歴の帰属先になる。 */
+  sessionId: string;
+  log: InvocationLogger;
+}
 
 /**
  * `BedrockAgentCoreApp` の invocation ハンドラ。リクエストの検査と、
@@ -22,7 +35,7 @@ import { invokeTask, StructuredOutputError } from './invoke-task.js';
  */
 export async function handleInvocation(
   payload: unknown,
-  context: RequestContext,
+  context: InvocationContext,
 ): Promise<AiTaskSuccessResponse | AiErrorResponse> {
   const parsedRequest = aiTaskRequestSchema.safeParse(payload);
   if (!parsedRequest.success) {

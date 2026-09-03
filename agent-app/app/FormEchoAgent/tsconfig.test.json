@@ -1,0 +1,11 @@
+{
+  // テストも含めて型検査するだけの設定（emit しない）。`tsconfig.json` は
+  // `dist/` にテストを混ぜないためにテストを除いており、そのままでは
+  // テストの型崩れに気付けない。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["**/*.ts", "**/*.mts"],
+  "exclude": ["node_modules", "dist"]
+}

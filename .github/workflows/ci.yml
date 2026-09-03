@@ -52,6 +52,9 @@ jobs:
       - run: npm ci
       - run: npm run format:check
       - run: npm run lint
+      # typecheck はテストまで含めて型検査する（build は dist に混ぜないため除いている）。
+      - run: npm run typecheck
+      - run: npm run test
       - run: npm run build
 
   hono-app:
