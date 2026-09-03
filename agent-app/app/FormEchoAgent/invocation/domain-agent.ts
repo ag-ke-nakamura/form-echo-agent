@@ -6,11 +6,12 @@ import { buildSystemPrompt } from './system-prompt.js';
 /**
  * ドメインエージェントの名前。taskId のドメイン部から引く。
  *
- * 2ドメイン以下なので素の表で足り、Strands の Graph / Swarm / agent-as-tool は
+ * 2ドメインなので素の表で足り、Strands の Graph / Swarm / agent-as-tool は
  * 使わない。ドメイン間で協調させる必要が出た時点で見直す。
  */
 const DOMAIN_AGENT_NAMES: Record<Domain, string> = {
   'ic-card': '交通ICドメインエージェント',
+  meeting: '会議ロジドメインエージェント',
 };
 
 const AGENT_CACHE_LIMIT = 128;
@@ -24,7 +25,8 @@ const AGENT_CACHE_LIMIT = 128;
  * 永続的な履歴が要るなら memory を付ける。
  *
  * taskId までをキーに含めるのは、明示モードでは system prompt が taskId ごとに
- * 変わり、Agent の生成時に固定されるため。
+ * 変わり、Agent の生成時に固定されるため。同じセッションでタブを切り替えても
+ * 前のタブの Skill が混ざらない。
  */
 const agentCache = new Map<string, Agent>();
 
@@ -45,6 +47,11 @@ export function getOrCreateDomainAgent(
   }
   const agent = new Agent({
     name: DOMAIN_AGENT_NAMES[domainOf(taskId)],
+    // 空配列でも省略せずに書く。「まだ足していない」のか「足さないと決めた」のかを
+    // 区別するため。会議ロジは Websearch を持たない（F-22）— 候補日程の生成は
+    // 入力文と基準日だけで閉じており、裏を取る対象が無い。交通ICだけは第3段で
+    // Websearch（AgentCore Gateway）が入るので、そのときドメインごとの表になる。
+    tools: [],
     model: loadModel(),
     systemPrompt: buildSystemPrompt(taskId),
   });

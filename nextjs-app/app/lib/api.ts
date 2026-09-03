@@ -2,9 +2,10 @@ import type {
   AiErrorCode,
   AiErrorResponse,
   AiTaskSuccessResponse,
-  ParseReservationOutput,
+  OUTPUT_SCHEMAS,
   TaskId,
 } from "@contracts/index.js";
+import type { z } from "zod";
 
 /**
  * SSG なのでビルド時に埋め込まれる。本番は CloudFront で配信した静的ファイルから
@@ -13,26 +14,47 @@ import type {
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8787";
 
-/** 出力契約の taskId 許可リストに対して型で照合される。 */
-export const RESERVATION_TASK_ID: TaskId = "ic-card.parse-reservation";
+/**
+ * 出力契約の taskId 許可リストに対して型で照合される。
+ *
+ * 注釈ではなく `satisfies` を使う。`: TaskId` と書くとリテラル型が許可リスト全体の
+ * union に広がり、`requestAiTask` の戻り値もタブ全部の出力の union になってしまう。
+ */
+export const RESERVATION_TASK_ID = "ic-card.parse-reservation" satisfies TaskId;
+export const CANDIDATES_TASK_ID = "meeting.parse-candidates" satisfies TaskId;
 
-export type ParseReservationOutcome =
-  | { ok: true; result: ParseReservationOutput }
+/**
+ * taskId から出力の型を引く表。AI チャット欄はこの表を通してタブに紐づく。
+ *
+ * 出力契約の `OUTPUT_SCHEMAS` から導く。同じ対応を手で書き写すと、taskId を
+ * 足すときの編集箇所が `ALLOWED_TASK_IDS` / `OUTPUT_SCHEMAS` / ここの3つになり、
+ * 「3者が同一の契約を見る」（ADR-002）が画面側だけで崩れる。
+ * `import type` なので zod のスキーマ本体はバンドルに乗らない。
+ */
+export type TaskOutputs = {
+  [K in TaskId]: z.infer<(typeof OUTPUT_SCHEMAS)[K]>;
+};
+
+export type AiTaskOutcome<TTaskId extends TaskId> =
+  | { ok: true; result: TaskOutputs[TTaskId] }
   | { ok: false; code: AiErrorCode };
 
-export async function parseReservation(
+/**
+ * BFF の `POST /api/ai/tasks` を叩く。
+ *
+ * taskId 以外は全タブで同じなので、経路もひとつに保つ。タブを増やしても
+ * 変わるのは出力契約の許可リストだけで、この関数もその戻り値の型も動かない。
+ */
+export async function requestAiTask<TTaskId extends TaskId>(
+  taskId: TTaskId,
   prompt: string,
-): Promise<ParseReservationOutcome> {
+): Promise<AiTaskOutcome<TTaskId>> {
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}/api/ai/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        taskId: RESERVATION_TASK_ID,
-        prompt,
-        sessionId: null,
-      }),
+      body: JSON.stringify({ taskId, prompt, sessionId: null }),
     });
   } catch {
     // BFF ごと落ちている場合。Runtime 障害と同じ案内で構わない（どちらも
@@ -47,7 +69,7 @@ export async function parseReservation(
     return { ok: false, code: code ?? "INTERNAL_ERROR" };
   }
 
-  const success = body as AiTaskSuccessResponse<ParseReservationOutput> | null;
+  const success = body as AiTaskSuccessResponse<TaskOutputs[TTaskId]> | null;
   if (!success?.result) {
     return { ok: false, code: "PARSE_FAILED" };
   }

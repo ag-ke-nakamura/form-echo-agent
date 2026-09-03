@@ -62,9 +62,54 @@ export type ParseReservationOutput = z.infer<
 >;
 
 /**
+ * 24時間表記の時刻（`HH:mm`）。日付と同じく、未解決の文字列を弾くために縛る。
+ *
+ * `<input type="time">` が受け付ける形と一致させる。「午後」「13時ごろ」のような
+ * 表現がそのまま通ると、日付欄と同様に画面が黙って空欄を表示することになる。
+ */
+const HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * 会議の候補日程ひとつ。
+ *
+ * 所要時間（`duration`）を持たない。「3時間」は `end_time - start_time` で導ける。
+ * 両方持つと、モデルがどちらかを取り違えたときに不整合な組が契約を通ってしまう。
+ */
+const candidateSchema = z.object({
+  date: z
+    .string()
+    .regex(ISO8601_DATE)
+    .describe('候補日程の日付。YYYY-MM-DD 形式'),
+  start_time: z
+    .string()
+    .regex(HH_MM)
+    .describe('開始時刻。HH:mm 形式（24時間表記）'),
+  end_time: z
+    .string()
+    .regex(HH_MM)
+    .describe('終了時刻。HH:mm 形式（24時間表記）'),
+});
+
+/** 1回の応答で返せる候補日程の上限。`SKILL.md` の制約と同じ数を置く。 */
+export const MAX_CANDIDATES = 10;
+
+export const parseCandidatesOutputSchema = z.object({
+  candidates: z
+    .array(candidateSchema)
+    .max(MAX_CANDIDATES)
+    .describe(
+      `会議の候補日程。多くとも${MAX_CANDIDATES}件。読み取れない場合は空配列`,
+    ),
+  ...commonOutputFields,
+});
+
+export type ParseCandidatesOutput = z.infer<typeof parseCandidatesOutputSchema>;
+
+/**
  * taskId から出力契約を引くための表。Runtime は Structured Output のスキーマとして、
  * BFF はフロントエンドへ返す前の検査として、同じものを参照する。
  */
 export const OUTPUT_SCHEMAS = {
   'ic-card.parse-reservation': parseReservationOutputSchema,
+  'meeting.parse-candidates': parseCandidatesOutputSchema,
 } satisfies Record<TaskId, z.ZodType>;
