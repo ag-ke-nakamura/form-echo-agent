@@ -66,8 +66,15 @@ export function FormEchoTabs() {
       扱われ、AI が候補日程を作り直したときにサンプル行の上へ積み上がる。
       会議情報だけは受け取る — 参加形式と所要時間は Runtime へ渡す与件であり、
       モックの表が持つべきものではない（`lib/availability-table.ts`）。
+      このタブだけ `active` を渡す。**AI 推論をタブが開かれた時に1回だけ走らせる**
+      ため（設計書 10.1節）で、全タブが描かれたままなのでマウントでは代われない。
     */
-    "meeting-recommend": <RecommendPanel meetingInfo={meetingInfo.info} />,
+    "meeting-recommend": (
+      <RecommendPanel
+        meetingInfo={meetingInfo.info}
+        active={activeTabId === "meeting-recommend"}
+      />
+    ),
   };
 
   return (
