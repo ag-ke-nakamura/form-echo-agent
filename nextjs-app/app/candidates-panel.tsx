@@ -5,102 +5,63 @@ import type {
   ParseCandidatesOutput,
 } from "@contracts/index.js";
 import { candidateIdOf } from "@contracts/meeting";
-import { useId, useRef, useState } from "react";
+import { AlertCircle, Info } from "lucide-react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import { AiAssistant } from "./ai-assistant";
-import {
-  AiBadge,
-  type ApplyReport,
-  type FieldSource,
-  NOTHING_APPLIED,
-} from "./field-source";
+import type { ApplyReport } from "./field-source";
 import { FormSection } from "./form-section";
 import { CANDIDATES_TASK_ID } from "./lib/api";
+import {
+  addCandidateAt,
+  type CalendarCandidate,
+  calendarDays,
+  candidateConflicts,
+  candidateSlots,
+  type ConflictedCandidate,
+  CONFLICT_NOTES,
+  dayColumnHeading,
+  isoDateOf,
+  offGridCandidates,
+  type Slot,
+  SLOT_START_TIMES,
+  slotKey,
+  slotLabel,
+  type SlotState,
+} from "./lib/candidate-calendar";
 import { candidateLimitReason } from "./lib/candidate-limit";
 import {
-  describeChange,
+  applyAiCandidates,
   newCandidatePreviewItems,
 } from "./lib/candidates-form";
-import { candidateRangeText, type MeetingInfo } from "./lib/meeting-info";
+import { candidateLabel, type MeetingInfo } from "./lib/meeting-info";
 import { type MeetingInfoApi, MeetingInfoFields } from "./meeting-info";
 import { ManualInputDivider, TabHeading } from "./screen-layout";
-
-/**
- * 職員が直接編集する欄。出力契約の候補日程から導き、UI 側で列挙し直さない
- * （契約に欄が増減したとき、型検査がこの画面まで届くようにする）。
- *
- * 終了時刻はここに無い。候補日程は終了時刻を持たず、終わる時刻は会議の所要時間から
- * 導かれる（ADR-0005）。
- */
-type CandidateField = keyof ParseCandidatesOutput["candidates"][number];
-
-/**
- * 候補日程タブのフォームの状態モデル。候補日程の**配列**である点が交通ICと違う。
- *
- * 欄ごとに `{value, source}` を持つ形は交通ICと揃える。タブ間で共有するのは
- * この「AI 由来か手入力か」の印の付け方だけで、配列という入れ物は共有しない。
- *
- * `id` は**契約に載る識別子**になった（ADR-0005）。React の key と `<label>` の
- * 紐づけに使いつつ、タブ3・タブ4が候補日程を指す鍵としてそのまま Runtime へ渡る。
- * 発番するのはこの画面で、**AI は自分では作らない** — AI が選べる識別子は渡した
- * 一覧の中にしか無い。
- */
-export type CandidateRow = {
-  id: string;
-  fields: Record<CandidateField, { value: string; source: FieldSource }>;
-};
-
-function blankRow(id: string): CandidateRow {
-  return {
-    id,
-    fields: {
-      date: { value: "", source: "manual" },
-      start_time: { value: "", source: "manual" },
-    },
-  };
-}
-
-/**
- * バッジを出すかどうか。欄がひとつでも AI 由来なら出す。
- *
- * WHY: 日付だけ直して時刻は AI のまま、という状態で印が消えると、AI が出した
- * 値が手入力に見えてしまう（統制「透明性」が守りたいのは逆の向き）。
- */
-function hasAiField(row: CandidateRow): boolean {
-  return Object.values(row.fields).some((field) => field.source === "ai");
-}
-
-/** 職員が実際に何か書き込んだ行か。AI の出力を作り直すときに残す対象。 */
-function hasManualInput(row: CandidateRow): boolean {
-  return Object.values(row.fields).some(
-    (field) => field.value !== "" && field.source === "manual",
-  );
-}
-
-/**
- * 非AI経路の起点。空の1行から始めれば、AI を一度も呼ばずに手で埋めきれる。
- *
- * 識別子を固定値にするのは SSG のため。初期状態で乱数や連番を採ると、
- * ビルド時に描いた HTML とブラウザの初回描画が食い違う。形と発番は契約が持つ
- * （`contracts/meeting.ts` の `candidateIdOf`）— 画面だけの識別子だった頃は `row-0` で
- * 足りたが、いまは Runtime と BFF が同じ形で検査する。
- */
-const INITIAL_ROWS: CandidateRow[] = [blankRow(candidateIdOf(0))];
 
 /**
  * 候補日程タブの状態を外から持てるようにしたもの。
  *
  * WHY: 参加可否タブが答える対象は、このタブが持っている候補日程である。どちらかの
  * タブの内側に状態を置くと相手から見えないので、状態の持ち主を `FormEchoTabs` に上げる。
- * **状態モデルの定義はこのファイルに残す**（#23 Implementation Decisions:
- * フォームの状態モデルはタブごとに分ける）。
+ *
+ * **状態モデル（`CalendarCandidate`）は `app/lib` にある**（#69）。行のフォームだった
+ * 頃はこのファイルに置いていたが、カレンダーになった今は純関数がすべてその形を受けて
+ * 返すので、タブ側に置くと `app/lib` から掘りに行くことになる。
+ *
+ * 所要時間を受け取るのは、クリックの受け付け（重なり・業務時間への収まり）が所要時間
+ * 抜きには決まらないため。**候補日程は終了時刻を持たない**（ADR-0005）。
  */
-export type CandidateRowsApi = {
-  rows: CandidateRow[];
-  setField: (id: string, field: CandidateField, value: string) => void;
-  addRow: () => void;
-  removeRow: (id: string) => void;
+export type CandidateCalendarApi = {
+  candidates: CalendarCandidate[];
+  /** 升目のクリック。空いていれば候補日程にし、埋まっていればその候補日程を解除する。 */
+  toggleSlot: (slot: Slot) => void;
+  /** 識別子で解除する。カレンダーに描けない候補日程の一覧が引く。 */
+  removeCandidate: (id: string) => void;
+  /** 「すべて解除」（設計書 5.4節）。AI が選んだ分も手で選んだ分も落とす。 */
+  clearAll: () => void;
   applyResult: (result: ParseCandidatesOutput) => ApplyReport;
   reset: () => void;
+  /** 直近のクリックを受け付けなかった理由。受け付けたら `null` に戻る。 */
+  rejected: string | null;
 };
 
 /**
@@ -110,143 +71,200 @@ export type CandidateRowsApi = {
 export type SelectedCandidate = ParseAvailabilityInput["candidates"][number];
 
 /**
- * 他のタブと Runtime へ渡す候補日程。
+ * 他のタブと Runtime へ渡す候補日程。**印（`source`）を落とす。**
  *
- * 日付か開始時刻が空の行を落とす。埋まっていない行を渡すと、参加可否タブに
- * 「日付の無い候補日程」が並び、Runtime へは入力契約に適合しない `input` が飛ぶ。
+ * AI が選んだのか職員がクリックしたのかは、このタブがどう見せるかの話であって
+ * 契約には無い。渡すと Runtime が「AI が選んだ候補日程」を特別扱いしうる。
  */
-export function selectedCandidates(rows: CandidateRow[]): SelectedCandidate[] {
-  return rows
-    .filter(
-      (row) =>
-        row.fields.date.value !== "" && row.fields.start_time.value !== "",
-    )
-    .map((row) => ({
-      id: row.id,
-      date: row.fields.date.value,
-      start_time: row.fields.start_time.value,
-    }));
+export function selectedCandidates(
+  candidates: readonly CalendarCandidate[],
+): SelectedCandidate[] {
+  return candidates.map(({ id, date, start_time }) => ({
+    id,
+    date,
+    start_time,
+  }));
 }
 
-export function useCandidateRows(): CandidateRowsApi {
-  const [rows, setRows] = useState<CandidateRow[]>(INITIAL_ROWS);
-  // 初期行の id と衝突しない位置から始める。
-  const nextRowNumber = useRef(INITIAL_ROWS.length);
+/**
+ * 起点の日付は時計を読むだけで、変わったことを知らせる相手がいない（週送りナビも
+ * 無い）。購読の解除だけを返す。
+ */
+function subscribeToNothing(): () => void {
+  return () => {};
+}
 
-  /** 識別子を配る。setState の updater は純粋に保つので、必ず外側で呼ぶ。 */
-  function takeRowIds(count: number): string[] {
-    const ids = Array.from({ length: count }, (_, offset) =>
-      candidateIdOf(nextRowNumber.current + offset),
+export function useCandidateCalendar(
+  durationMinutes: MeetingInfo["durationMinutes"],
+): CandidateCalendarApi {
+  /**
+   * 選択済みの候補日程。**初期は空**。
+   *
+   * 行のフォームだった頃は空の1行から始めていた（手で埋めきる起点として）。カレンダーは
+   * 升目そのものが起点なので、空の候補日程を置く必要が無い。SSG で問題になる初期値
+   * （乱数・連番・時計）も持たない。
+   */
+  const [candidates, setCandidates] = useState<CalendarCandidate[]>([]);
+  const [rejected, setRejected] = useState<string | null>(null);
+  const nextSequence = useRef(0);
+
+  /**
+   * 升目のクリック。**1クリックが候補日程1件**（#69）。
+   *
+   * 埋まっている升目を押すと、その升目を持っている候補日程が解除される。所要時間を
+   * 伸ばして重なった場合、升目を持つのは後から始まる側（`candidateSlots`）で、
+   * 押したときに消えるのもそれである。
+   */
+  function toggleSlot(slot: Slot) {
+    const occupied = candidateSlots(candidates, durationMinutes).get(
+      slotKey(slot),
     );
-    nextRowNumber.current += count;
-    return ids;
-  }
+    if (occupied !== undefined) {
+      setRejected(null);
+      setCandidates((current) =>
+        current.filter((candidate) => candidate.id !== occupied.candidateId),
+      );
+      return;
+    }
 
-  function setField(id: string, field: CandidateField, value: string) {
-    setRows((current) =>
-      current.map((row) =>
-        row.id === id
-          ? {
-              ...row,
-              // 手を入れた欄だけが AI 由来ではなくなる。同じ行の他の欄は
-              // AI のままなので、印もその欄の分だけ落とす。
-              fields: { ...row.fields, [field]: { value, source: "manual" } },
-            }
-          : row,
-      ),
+    /*
+      識別子は受け付けられたときだけ進める。受け付けられないクリック（重なり・業務
+      時間・上限）で番号を飛ばすと、飛んだ理由が後から誰にも読めない。
+    */
+    const added = addCandidateAt(
+      candidates,
+      slot,
+      durationMinutes,
+      candidateIdOf(nextSequence.current),
     );
+    setRejected(added.rejected);
+    if (added.rejected !== null) return;
+    nextSequence.current += 1;
+    setCandidates(added.candidates);
   }
 
-  function addRow() {
-    const [id] = takeRowIds(1);
-    setRows((current) => [...current, blankRow(id)]);
-  }
-
-  function removeRow(id: string) {
-    setRows((current) => current.filter((row) => row.id !== id));
+  function removeCandidate(id: string) {
+    setRejected(null);
+    setCandidates((current) =>
+      current.filter((candidate) => candidate.id !== id),
+    );
   }
 
   /**
-   * 「水曜は避けたい」のような追加の指示で候補日程の列を作り直す。
+   * AI の結果をカレンダーへ反映する。**加算**（設計書 5.1節）で、判断は
+   * `applyAiCandidates` が持つ（重なるものを見送る・件数の上限）。
    *
-   * **守る単位は行**（交通ICは欄単位）。欄ごとに混ぜられないのは、作り直された列と
-   * 既にある行を対応付ける手がかりが無いため — AI は候補日程の識別子を返さない
-   * （返せない。作っているのは新しい候補日程で、既存の識別子を選ぶ場面ではない）ので、
-   * AI が返した3件目が既にある3行目の作り直しなのか別物なのかを知る方法がない。
-   * 職員が1欄でも書き込んだ行はその行ごと残す。
+   * 判断を setState の updater の中に置けないのは、何を反映して何を見送ったかを
+   * **同期で**返す必要があるため（updater は純粋に保つ約束があり、実行も後になる）。
    */
   function applyResult(result: ParseCandidatesOutput): ApplyReport {
-    // 読み取れなかった場合（空配列）は何も触らない。職員が先に手で入れていた
-    // 候補日程を消してしまわないため。何が足りなかったかは message が言う。
-    if (result.candidates.length === 0) return NOTHING_APPLIED;
-
-    const ids = takeRowIds(result.candidates.length);
-    // 手つかずの AI 由来の行は新しい結果で置き換える（同じ条件を言い直したときに
-    // 候補日程が二重に積み上がらない）。職員が何か書き込んだ行は、AI が埋めた値を
-    // 直したものであっても残す。空のままの行だけは畳む。
-    const kept = rows.filter(hasManualInput);
-    // 置き換えられる（= 手つかずの AI 由来の）行。何が入れ替わったかを言うために取る。
-    const replaced = rows.filter((row) => !hasManualInput(row));
-    setRows([
-      ...kept,
-      ...result.candidates.map((candidate, index) => ({
-        id: ids[index],
-        fields: {
-          // 出力契約が YYYY-MM-DD / HH:mm を保証するので、`<input type="date">`
-          // `<input type="time">` へそのまま渡せる。整形は要らない。
-          date: { value: candidate.date, source: "ai" as const },
-          start_time: { value: candidate.start_time, source: "ai" as const },
-        },
-      })),
-    ]);
-
-    return {
-      /*
-        行そのものではなく日付と開始時刻に落として渡す。行の形はこのタブの状態モデル
-        なので、`app/lib` から掘りに行かせない（`lib/candidates-form.ts`）。
-      */
-      updated: describeChange(
-        replaced.map((row) => ({
-          date: row.fields.date.value,
-          start_time: row.fields.start_time.value,
-        })),
-        result.candidates,
-      ),
-      preserved: kept.length > 0 ? [`手を入れた候補日程 ${kept.length}件`] : [],
-    };
+    const applied = applyAiCandidates(
+      candidates,
+      result,
+      durationMinutes,
+      nextSequence.current,
+    );
+    // 反映した分だけ番号が進む（`applyAiCandidates` が返す）。見送った候補日程で
+    // 飛ばさないのは、クリックを断ったときと同じ約束である。
+    nextSequence.current = applied.nextSequence;
+    setRejected(null);
+    setCandidates(applied.candidates);
+    return applied.report;
   }
 
   /**
-   * 識別子の採番は戻さない。戻すと、作り直しの直後に足した行が消えた行と同じ識別子を
-   * 持ちうる（React の key が重複し、参加可否タブとタブ4の突き合わせも壊れる）。
+   * 識別子の採番は戻さない。戻すと、解除の直後に選んだ候補日程が消えた候補日程と
+   * 同じ識別子を持ちうる（参加可否タブとタブ4の突き合わせが壊れる）。
    */
-  function reset() {
-    setRows(INITIAL_ROWS);
+  function clearAll() {
+    setRejected(null);
+    setCandidates([]);
   }
 
-  return { rows, setField, addRow, removeRow, applyResult, reset };
+  return {
+    candidates,
+    toggleSlot,
+    removeCandidate,
+    clearAll,
+    applyResult,
+    // 「最初からやり直す」でやることは「すべて解除」と同じ。会話の側は
+    // `AiAssistant` が畳む。
+    reset: clearAll,
+    rejected,
+  };
 }
 
 export function CandidatesPanel({
   candidates,
   meetingInfo,
 }: {
-  candidates: CandidateRowsApi;
+  candidates: CandidateCalendarApi;
   meetingInfo: MeetingInfoApi;
 }) {
-  const { rows, setField, addRow, removeRow, applyResult, reset } = candidates;
+  const durationMinutes = meetingInfo.info.durationMinutes;
+
+  /**
+   * 「保存」を押した後か。**押した後に候補日程を触ったら下ろす。**
+   *
+   * WHY: 永続化も送信APIも無い（#69）ので、完了メッセージが表すのは「この内容で
+   * 保存した」という職員の操作だけである。保存後の編集を反映せずに出し続けると、
+   * 画面に見えている候補日程と完了メッセージが指すものが食い違う。所要時間の変更も
+   * 同じ — 候補日程の長さが全部変わるので、保存した内容ではなくなる。
+   */
+  const [saved, setSaved] = useState(false);
+
+  /**
+   * カレンダーの起点。**ブラウザで描くときだけ決まる。**
+   *
+   * WHY こう取るか: 起点は職員が見ている「今日」だが、SSG なのでビルド時に描いた
+   * HTML とブラウザの初回描画が食い違ってはならない（ビルド機の「今日」は職員の
+   * 「今日」ではない）。`useSyncExternalStore` はサーバー側の値（`null`）と
+   * ブラウザ側の値を別に取れるので、React が食い違いを起こさずに描き直す。
+   *
+   * 返すのは日付の**文字列**である。ここで配列を作ると呼ばれるたびに別物になり、
+   * React が「snapshot が安定していない」と見て描き直し続ける。
+   */
+  const today = useSyncExternalStore(
+    subscribeToNothing,
+    () => isoDateOf(new Date()),
+    () => null,
+  );
+  const days = today === null ? null : calendarDays(today);
+
   /*
-    上限は入力契約が持つ（`contracts/meeting.ts`）。足せてしまうと、超えた瞬間に
+    どちらも起点が決まるまで挙げない。決まる前は全件が「表示範囲外」に見えるので、
+    読み込みの一瞬だけ一覧が出てしまう。
+  */
+  const offGrid =
+    days === null ? [] : offGridCandidates(candidates.candidates, days);
+  const conflicted =
+    days === null
+      ? []
+      : candidateConflicts(candidates.candidates, durationMinutes, days);
+  /*
+    上限は入力契約が持つ（`contracts/meeting.ts`）。選べてしまうと、超えた瞬間に
     タブ3・タブ4の AI だけが INVALID_INPUT で使えなくなり、画面のどこにも
     「多すぎる」と出ない。
   */
-  const limitReason = candidateLimitReason(rows.length + 1);
+  const limitReason = candidateLimitReason(candidates.candidates.length + 1);
 
   return (
-    <div className="mx-auto max-w-3xl">
+    /*
+      設計書 7.1節はこの画面を max-w-4xl と書いている。他タブ（max-w-3xl）より広いのは
+      カレンダーが14列を横に並べるためで、狭めると常に横スクロールになる。
+    */
+    <div className="mx-auto max-w-4xl">
       <TabHeading>会議作成 STEP3: 候補日程</TabHeading>
 
-      <MeetingInfoFields meetingInfo={meetingInfo} />
+      <MeetingInfoFields
+        meetingInfo={{
+          ...meetingInfo,
+          setDurationMinutes: (minutes) => {
+            setSaved(false);
+            meetingInfo.setDurationMinutes(minutes);
+          },
+        }}
+      />
 
       <AiAssistant
         taskId={CANDIDATES_TASK_ID}
@@ -255,190 +273,380 @@ export function CandidatesPanel({
           送らない — 「来月の午後」→「火曜と木曜だけにして」という書き直しの往復は
           `sessionId` の会話履歴で成立する。
         */
-        input={{ duration_minutes: meetingInfo.info.durationMinutes }}
-        nonAiPathHint="AI を使わなくても、「候補日程を追加」から手で足せます。"
+        input={{ duration_minutes: durationMinutes }}
+        /*
+          上限に達していたら送らせない。返ってきた候補日程が全部見送りになるだけで、
+          職員から見ると AI が何も生成しなかったように読める。
+        */
+        submitBlockedReason={limitReason}
+        nonAiPathHint="AI を使わなくても、カレンダーの升目をクリックすれば候補日程を選べます。"
         description={
           "自然な言葉で候補日程を入力すると、AIが自動的にカレンダーに反映します。\n" +
           "例: 「来月の午後、できれば火曜か木曜」「10月第2週の14時から」"
         }
         placeholder="候補日程を自然な言葉で入力してください..."
-        followUpPlaceholder="水曜は避けたい"
+        followUpPlaceholder="火曜と木曜だけにしてください"
         submitLabel="AIで候補日程を生成"
         pendingLabel="生成中..."
         generatingMessage="AIが候補日程を生成しています..."
-        /*
-          設計書 3.6.5節は「カレンダーに反映」だが、そのカレンダーはまだ無い（#69）。
-          区切り線の文言と同じ扱いにする — **その非AI経路が設計書の形になったタブだけが
-          設計書の文言を名乗る**（`screen-layout.tsx`）。
-        */
-        applyLabel="この内容で候補日程に入力"
+        /* 設計書 3.6.5節の文言。カレンダーが画面に入ったので名乗れる。 */
+        applyLabel="カレンダーに反映"
         emptyItemText="（生成できませんでした）"
+        /*
+          プレビューは**いまの選択**を見て組む。加算で入らない候補日程（既に選んだ
+          ものと重なる分・上限を超える分）に錠が付くのは、反映と同じ判断を引いて
+          いるからである（`candidates-form.ts`）。
+        */
         previewItems={(result) =>
           newCandidatePreviewItems(
+            candidates.candidates,
             result.candidates,
-            meetingInfo.info.durationMinutes,
+            durationMinutes,
           )
         }
-        onApply={applyResult}
-        onReset={reset}
+        onApply={(result) => {
+          setSaved(false);
+          return candidates.applyResult(result);
+        }}
+        onReset={() => {
+          setSaved(false);
+          candidates.reset();
+        }}
       />
 
-      <ManualInputDivider />
+      <ManualInputDivider label="または、カレンダーで直接選択" />
 
       <FormSection taskId={CANDIDATES_TASK_ID}>
-        <ul className="grid gap-4">
-          {rows.map((row, index) => (
-            <li key={row.id}>
-              <CandidateFields
-                row={row}
-                index={index}
-                durationMinutes={meetingInfo.info.durationMinutes}
-                onChange={setField}
-                onRemove={removeRow}
-              />
-            </li>
-          ))}
-        </ul>
+        {conflicted.length > 0 && (
+          <ConflictNotice
+            conflicted={conflicted}
+            durationMinutes={durationMinutes}
+          />
+        )}
 
-        {rows.length === 0 && (
+        {days === null ? (
           <p className="text-dns-14N-130 text-solid-gray-700">
-            候補日程がありません。下のボタンで足すか、AI に作らせてください。
+            カレンダーの日付を読み込んでいます...
+          </p>
+        ) : (
+          <CandidateCalendar
+            days={days}
+            candidates={candidates.candidates}
+            durationMinutes={durationMinutes}
+            onToggle={(slot) => {
+              setSaved(false);
+              candidates.toggleSlot(slot);
+            }}
+          />
+        )}
+
+        {/*
+          クリックを受け付けなかった理由（設計書に無い。#69 の設計判断）。**黙って
+          無視しない** — 効かない升目があるように見えるだけで、なぜかは画面のどこにも
+          出ない。赤にしないのは、もう一度押しても同じという類の失敗ではないため。
+        */}
+        {candidates.rejected !== null && (
+          <p
+            role="status"
+            className="mt-3 flex items-center gap-2 rounded-md border-l-4 border-solid-yellow-700 bg-solid-yellow-50 p-3 text-dns-14N-130 text-solid-gray-900"
+          >
+            <AlertCircle
+              aria-hidden="true"
+              className="size-5 shrink-0 text-solid-yellow-800"
+            />
+            {candidates.rejected}
           </p>
         )}
 
-        <button
-          type="button"
-          onClick={addRow}
-          disabled={limitReason !== null}
-          className="mt-6 rounded-md border border-solid-gray-600 bg-white px-4 py-2 text-dns-14M-130 text-solid-gray-900 disabled:opacity-40"
-        >
-          候補日程を追加
-        </button>
+        <div className="mt-4 flex flex-wrap items-center gap-4">
+          {/* 設計書 2.1節の「選択済み 4件」。反映で何件増えたかはここで分かる。 */}
+          <p role="status" className="text-dns-14M-130 text-solid-gray-900">
+            選択済み {candidates.candidates.length}件
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setSaved(false);
+              candidates.clearAll();
+            }}
+            disabled={candidates.candidates.length === 0}
+            className="rounded-md border border-solid-gray-600 bg-white px-3 py-1.5 text-dns-12M-130 text-solid-gray-900 disabled:opacity-40"
+          >
+            すべて解除
+          </button>
+          {/*
+            設計書 5.2節の案B（緑のボーダー）を採ったので、色だけが手掛かりになる。
+            凡例を添え、読み上げには `slotLabel` が語で言う。
+          */}
+          <p className="flex items-center gap-2 text-dns-12N-130 text-solid-gray-700">
+            <span
+              aria-hidden="true"
+              className="inline-block size-4 border-2 border-solid-green-500 bg-solid-blue-500"
+            />
+            AI が選んだ候補日程
+          </p>
+        </div>
+
         {limitReason !== null && (
           <p className="mt-1 text-dns-12N-130 text-solid-gray-600">
             {limitReason}
           </p>
         )}
+
+        {offGrid.length > 0 && (
+          <OffGridNotice
+            candidates={offGrid}
+            durationMinutes={durationMinutes}
+            onRemove={(id) => {
+              setSaved(false);
+              candidates.removeCandidate(id);
+            }}
+          />
+        )}
+
+        <div className="mt-8">
+          <button
+            type="button"
+            onClick={() => setSaved(true)}
+            disabled={candidates.candidates.length === 0}
+            className="rounded-md bg-solid-blue-700 px-4 py-2 text-dns-16M-130 text-white disabled:opacity-40"
+          >
+            保存
+          </button>
+          {saved && (
+            <p
+              role="status"
+              className="mt-3 border-l-4 border-solid-blue-700 bg-solid-blue-50 p-3 text-dns-14N-130 text-solid-gray-900"
+            >
+              候補日程 {candidates.candidates.length}
+              件を保存しました。この検証環境では保存されないので、画面を読み込み直すと
+              消えます。
+            </p>
+          )}
+        </div>
       </FormSection>
     </div>
   );
 }
 
-type CandidateFieldsProps = {
-  row: CandidateRow;
-  index: number;
-  durationMinutes: MeetingInfo["durationMinutes"];
-  onChange: (id: string, field: CandidateField, value: string) => void;
-  onRemove: (id: string) => void;
-};
-
-function CandidateFields({
-  row,
-  index,
+/**
+ * 2週間 × 9:00–18:00 の30分カレンダー（設計書 2.1節）。
+ *
+ * **升目は表示単位であって選択単位ではない**（`CONTEXT.md`「スロット」）。1クリックが
+ * 所要時間ぶんを占める1件の候補日程になる。週送りナビゲーション・早朝表示／夜間表示・
+ * 矩形範囲選択は作らない（#64 Out of Scope）。
+ *
+ * `role="grid"` を書かないのは設計書 8.2節からの意図的なずれである。grid を名乗ると
+ * 矢印キーでの移動を支援技術に約束することになるが、中身は素のボタンで Tab で辿る。
+ * 名乗らなければ表として読まれ、行見出し（時刻）と列見出し（日付）から升目の位置が
+ * そのまま読み上げられる。
+ */
+function CandidateCalendar({
+  days,
+  candidates,
   durationMinutes,
-  onChange,
-  onRemove,
-}: CandidateFieldsProps) {
-  const dateId = useId();
-  const startId = useId();
+  onToggle,
+}: {
+  days: readonly string[];
+  candidates: readonly CalendarCandidate[];
+  durationMinutes: MeetingInfo["durationMinutes"];
+  onToggle: (slot: Slot) => void;
+}) {
+  /*
+    被覆は描画のたびに導き直す。集合として抱えると、所要時間を変えたときに塗りだけが
+    古い長さのまま残る（候補日程は終了時刻を持たない。ADR-0005）。
+  */
+  const slots = candidateSlots(candidates, durationMinutes);
 
   return (
-    <div className="rounded-md border border-solid-gray-300 p-4">
-      <div className="flex items-center gap-2">
-        <span className="text-dns-14M-130 text-solid-gray-900">
-          候補日程 {index + 1}
-        </span>
-        {hasAiField(row) && <AiBadge />}
-        <button
-          type="button"
-          onClick={() => onRemove(row.id)}
-          className="ml-auto text-dns-12N-130 text-solid-gray-600 underline underline-offset-2"
-        >
-          削除
-        </button>
-      </div>
-
-      <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
-        <div>
-          <label
-            htmlFor={dateId}
-            className="text-dns-12M-130 text-solid-gray-700"
-          >
-            日付
-          </label>
-          <input
-            id={dateId}
-            type="date"
-            value={row.fields.date.value}
-            onChange={(event) => onChange(row.id, "date", event.target.value)}
-            className="mt-1 w-full rounded-md border border-solid-gray-600 bg-white px-3 py-2 text-dns-16N-130 text-solid-gray-900"
-          />
-        </div>
-        <div>
-          <label
-            htmlFor={startId}
-            className="text-dns-12M-130 text-solid-gray-700"
-          >
-            開始時刻
-          </label>
-          <input
-            id={startId}
-            type="time"
-            value={row.fields.start_time.value}
-            onChange={(event) =>
-              onChange(row.id, "start_time", event.target.value)
-            }
-            className="mt-1 w-full rounded-md border border-solid-gray-600 bg-white px-3 py-2 text-dns-16N-130 text-solid-gray-900"
-          />
-        </div>
-        {/*
-          終了時刻は入力欄ではなく表示に変わった（ADR-0005）。所要時間から導かれる
-          ので、ここで独立に選べると2つの与件が食い違う組を職員が作れてしまう。
-          変えたいときに触る先は会議情報の「所要時間」であることが分かるよう、
-          導出元をそのまま添える。
-        */}
-        <div>
-          <span className="text-dns-12M-130 text-solid-gray-700">終了時刻</span>
-          <p className="mt-1 px-3 py-2 text-dns-16N-130 text-solid-gray-900">
-            <EndTime
-              startTime={row.fields.start_time.value}
-              durationMinutes={durationMinutes}
-            />
-          </p>
-        </div>
-      </div>
+    /* 設計書 7.2節・7.3節: 狭い画面では横スクロールで見せる。 */
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-3xl table-fixed border-collapse">
+        <caption className="mb-2 text-left text-dns-14N-130 text-solid-gray-700">
+          升目を1回押すと、所要時間（{durationMinutes}
+          分）ぶんが1件の候補日程になります。押し直すと解除されます。
+        </caption>
+        <thead>
+          <tr>
+            <th
+              scope="col"
+              className="w-14 border border-solid-gray-300 bg-solid-gray-50 p-1 text-dns-12M-130 text-solid-gray-700"
+            >
+              時刻
+            </th>
+            {days.map((day) => (
+              <th
+                key={day}
+                scope="col"
+                className="border border-solid-gray-300 bg-solid-gray-50 p-1 text-dns-12M-130 text-solid-gray-700"
+              >
+                {dayColumnHeading(day)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {SLOT_START_TIMES.map((time) => (
+            <tr key={time}>
+              <th
+                scope="row"
+                className="border border-solid-gray-300 bg-solid-gray-50 p-1 text-dns-12N-130 text-solid-gray-700"
+              >
+                {time}
+              </th>
+              {days.map((day) => {
+                const slot = { date: day, start_time: time };
+                const state = slots.get(slotKey(slot));
+                return (
+                  <td key={day} className="border border-solid-gray-300 p-0">
+                    <button
+                      type="button"
+                      /*
+                        選択そのものは `aria-pressed` が言う。AI が選んだことだけを
+                        `slotLabel` が語で足す（設計書 8.3節）。
+                      */
+                      aria-pressed={state !== undefined}
+                      aria-label={slotLabel(slot, state)}
+                      onClick={() => onToggle(slot)}
+                      className={slotClassName(state)}
+                    />
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
-function EndTime({
-  startTime,
+/**
+ * 升目の見た目（設計書 5.2節）。
+ *
+ * 手で選んだ升目と AI が選んだ升目は**どちらも青で塗る**。違うのは緑のボーダーだけ
+ * （案B）で、角バッジ（案A）を採らなかったのは30分の升目にバッジを置くと時刻が
+ * 読めなくなるためでもある。
+ */
+function slotClassName(state: SlotState | undefined): string {
+  const base =
+    "block h-6 w-full box-border focus:outline-none focus:ring-2 focus:ring-inset focus:ring-solid-blue-700";
+  if (state === undefined) {
+    return `${base} bg-white hover:bg-solid-blue-100`;
+  }
+  if (state.source !== "ai") {
+    return `${base} bg-solid-blue-500`;
+  }
+
+  // 候補日程1件を1つの枠に見せる。中で線が入らないよう、上下は端の升目だけが持つ。
+  return [
+    base,
+    "bg-solid-blue-500 border-x-2 border-solid-green-500",
+    state.isStart ? "border-t-2" : "",
+    state.isEnd ? "border-b-2" : "",
+  ]
+    .filter((token) => token !== "")
+    .join(" ");
+}
+
+/**
+ * 所要時間を伸ばした後に残る不整合（#69 の設計判断）。
+ *
+ * WHY 出すか: 伸縮は導出なので、所要時間を長くすると職員が選んだ候補日程が互いに
+ * 重なるか業務時間を越える。**クリックでは作れない状態**が画面に残るので、黙って
+ * いると重なった升目を押したときにどちらが消えるのかも説明できない。自動で解除
+ * しないのは、職員が選んだ候補日程が操作なしで消えるのを避けるため。
+ */
+function ConflictNotice({
+  conflicted,
   durationMinutes,
 }: {
-  startTime: string;
+  conflicted: readonly ConflictedCandidate[];
   durationMinutes: MeetingInfo["durationMinutes"];
 }) {
-  if (startTime === "") {
-    return (
-      <span className="text-solid-gray-600">開始時刻を入れると出ます</span>
-    );
-  }
-  const range = candidateRangeText(startTime, durationMinutes);
-  // 導けなかった場合、`candidateRangeText` は開始時刻だけを返す。日をまたぐ会議は
-  // 無いものとして扱うので、そのまま置くと欄が黙って開始時刻を繰り返す。
-  if (range === startTime) {
-    return (
-      <span className="text-solid-gray-600">
-        日をまたぐため所要時間ぶんが取れません
-      </span>
-    );
-  }
   return (
-    <>
-      {range.split("–")[1]}
-      <span className="ml-2 text-dns-12N-130 text-solid-gray-600">
-        （所要時間 {durationMinutes}分）
-      </span>
-    </>
+    <div
+      role="status"
+      className="mb-6 rounded-md border-l-4 border-solid-yellow-700 bg-solid-yellow-50 p-3"
+    >
+      <p className="flex items-center gap-2 text-dns-14M-130 text-solid-yellow-900">
+        <AlertCircle
+          aria-hidden="true"
+          className="size-5 shrink-0 text-solid-yellow-800"
+        />
+        所要時間（{durationMinutes}分）では収まらない候補日程が{" "}
+        {conflicted.length}件あります。
+      </p>
+      <ul className="mt-2 list-disc pl-5 text-dns-14N-130 text-solid-gray-900">
+        {conflicted.map(({ candidate, conflict }) => (
+          <li key={candidate.id}>
+            {candidateLabel(candidate, durationMinutes)} —{" "}
+            <span className="text-solid-gray-700">
+              {CONFLICT_NOTES[conflict]}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-dns-14N-130 text-solid-gray-700">
+        升目を押して解除するか、会議情報の所要時間を戻してください。
+      </p>
+    </div>
+  );
+}
+
+/**
+ * カレンダーに描けない候補日程（#69 の設計判断）。
+ *
+ * WHY 出すか: AI は「来月の午後」と言われれば2週間の外の日付を返し、時刻も升目の
+ * 刻みから外れうる。週送りナビゲーションは無い（#64 Out of Scope）ので、ここに
+ * 出さないと**画面のどこにも現れないまま選択済み件数だけが増える。** 候補日程
+ * としては有効なので捨てない — タブ3・タブ4はそのまま使える。
+ */
+function OffGridNotice({
+  candidates,
+  durationMinutes,
+  onRemove,
+}: {
+  candidates: readonly CalendarCandidate[];
+  durationMinutes: MeetingInfo["durationMinutes"];
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <div
+      role="status"
+      className="mt-6 rounded-md border-l-4 border-solid-yellow-700 bg-solid-yellow-50 p-3"
+    >
+      <p className="flex items-center gap-2 text-dns-14M-130 text-solid-yellow-900">
+        <Info
+          aria-hidden="true"
+          className="size-5 shrink-0 text-solid-yellow-800"
+        />
+        カレンダーに描けない候補日程が {candidates.length}件あります。
+      </p>
+      <p className="mt-1 text-dns-12N-130 text-solid-gray-700">
+        2週間の外、または 9:00–18:00
+        の30分刻みに載らない日時です。候補日程としては
+        有効で、参加可否タブと日程確定タブでは使えます。
+      </p>
+      <ul className="mt-2 grid gap-1 text-dns-14N-130 text-solid-gray-900">
+        {candidates.map((candidate) => (
+          <li key={candidate.id} className="flex items-center gap-2">
+            {candidateLabel(candidate, durationMinutes)}
+            {candidate.source === "ai" && (
+              <span className="text-dns-12N-130 text-solid-green-900">
+                AIが選択
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => onRemove(candidate.id)}
+              className="text-dns-12N-130 text-solid-gray-600 underline underline-offset-2"
+            >
+              解除
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

@@ -62,10 +62,12 @@ export function AiPendingNotice({
  */
 export function ApplyReportView({ report }: { report: ApplyReport }) {
   const dropped = report.dropped ?? [];
+  const skipped = report.skipped ?? [];
   if (
     report.updated.length === 0 &&
     report.preserved.length === 0 &&
-    dropped.length === 0
+    dropped.length === 0 &&
+    skipped.length === 0
   ) {
     return (
       <p className="mt-3 text-dns-12N-130 text-solid-gray-600">
@@ -93,6 +95,12 @@ export function ApplyReportView({ report }: { report: ApplyReport }) {
         <div className="flex gap-2">
           <dt className="shrink-0 text-solid-gray-600">当てる先が無く未反映</dt>
           <dd className="text-solid-gray-900">{dropped.join(" / ")}</dd>
+        </div>
+      )}
+      {skipped.length > 0 && (
+        <div className="flex gap-2">
+          <dt className="shrink-0 text-solid-gray-600">未反映</dt>
+          <dd className="text-solid-gray-900">{skipped.join(" / ")}</dd>
         </div>
       )}
     </dl>
@@ -282,6 +290,14 @@ export function AiPreview({
 }
 
 /**
+ * 行の見出し。**値の欄を持たない行（候補日程）では区切りの `:` を出さない** — 付けると
+ * 「10月15日(木) 14:00–15:00:」で文が終わる。
+ */
+function labelText(item: PreviewItem): string {
+  return item.value === undefined ? item.label : `${item.label}:`;
+}
+
+/**
  * プレビューの1行（設計書 3.6.1節）。
  *
  * 3通りある。埋まった行は緑のチェック、埋まらなかった行は黄色の `AlertCircle`、
@@ -316,9 +332,9 @@ function PreviewRow({
     return (
       <p className="flex items-center gap-2 text-dns-14N-130 text-solid-gray-600">
         <Lock aria-hidden="true" className="size-5 shrink-0" />
-        <span className="text-solid-gray-700">{item.label}:</span>
+        <span className="text-solid-gray-700">{labelText(item)}</span>
         {item.value}
-        <span>（手入力のため変更しません）</span>
+        <span>（{item.preservedReason ?? "手入力のため変更しません"}）</span>
       </p>
     );
   }
@@ -326,12 +342,8 @@ function PreviewRow({
   return (
     <p className="flex items-center gap-2">
       <Check aria-hidden="true" className="size-5 shrink-0 text-success-1" />
-      {/*
-        値の欄を持たない行（候補日程）は見出しそのものが結果なので、区切りの `:` も
-        値も出さない。付けると「10月15日(木) 14:00–15:00:」で文が終わる。
-      */}
       <span className="text-dns-14M-130 text-solid-gray-700">
-        {item.value === undefined ? item.label : `${item.label}:`}
+        {labelText(item)}
       </span>
       {item.value !== undefined && (
         <span className="text-dns-16N-130 text-solid-gray-900">

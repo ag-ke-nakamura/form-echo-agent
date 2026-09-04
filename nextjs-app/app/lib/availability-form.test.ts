@@ -6,8 +6,6 @@ import {
   type AvailabilityAnswers,
   availabilityChoicesFor,
   availabilityPreviewItems,
-  candidateLabel,
-  dateHeadingText,
   groupCandidatesByDate,
   normalizeAvailability,
   unjudgedCandidates,
@@ -155,29 +153,6 @@ describe("groupCandidatesByDate", () => {
 
   it("候補日程が無ければ組も無い", () => {
     expect(groupCandidatesByDate([])).toEqual([]);
-  });
-});
-
-describe("dateHeadingText", () => {
-  it("設計書 4.6.1節の書式で出す", () => {
-    expect(dateHeadingText("2026-10-15")).toBe("10月15日(木)");
-  });
-
-  it("月と日の先頭の0を落とす", () => {
-    expect(dateHeadingText("2026-01-05")).toBe("1月5日(月)");
-  });
-
-  it("日付の形になっていなければそのまま返す", () => {
-    // 候補日程の日付は出力契約が YYYY-MM-DD を保証するが、手入力の途中の値が
-    // ここへ来ることがある。整形できないことを見出しから隠さない。
-    expect(dateHeadingText("")).toBe("");
-    expect(dateHeadingText("2026-13-45")).toBe("2026-13-45");
-  });
-});
-
-describe("candidateLabel", () => {
-  it("日付と時間帯を並べる", () => {
-    expect(candidateLabel(CANDIDATES[0], 60)).toBe("10月15日(木) 14:00–15:00");
   });
 });
 

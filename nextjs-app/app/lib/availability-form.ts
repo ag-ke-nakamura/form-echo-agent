@@ -10,7 +10,7 @@ import type { PreviewItem } from "./ai-preview";
 import type { ParseAvailabilityOutput } from "@contracts/index.js";
 import type { Availability, MeetingFormat } from "@contracts/meeting";
 import { AVAILABILITY_ORDER, isAttending } from "@contracts/meeting";
-import { type CandidateTime, candidateRangeText } from "./meeting-info";
+import { candidateLabel } from "./meeting-info";
 
 /**
  * 参加可否回答フォームの組み立て（#70）。
@@ -143,47 +143,6 @@ export function groupCandidatesByDate(
         left.start_time.localeCompare(right.start_time),
       ),
     }));
-}
-
-const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
-
-/**
- * 日付グループの見出し（設計書 4.6.1節の `M月D日(曜)`）。
- *
- * WHY 曜日を出すか: 参加者が自分の予定と突き合わせる単位は曜日であることが多い
- * （「火曜は毎週埋まっている」）。ISO の日付だけだと、参加者は毎回カレンダーを
- * 開いて数え直すことになる。
- *
- * `Intl` を使わないのは SSG のため。ビルド環境とブラウザでロケールが違うと、
- * ビルド時に描いた HTML と初回描画が食い違う。
- */
-export function dateHeadingText(date: string): string {
-  const parsed = new Date(`${date}T00:00:00Z`);
-  if (Number.isNaN(parsed.getTime())) return date;
-  // 桁揃えの緩さ（`2026-1-1`）を落とす。`isCalendarDate`（契約側）と同じ突き合わせ。
-  if (!parsed.toISOString().startsWith(`${date}T`)) return date;
-
-  return `${parsed.getUTCMonth() + 1}月${parsed.getUTCDate()}日(${WEEKDAYS[parsed.getUTCDay()]})`;
-}
-
-/**
- * 候補日程ひとつの表示名。反映の報告・聞き返しの一覧・プレビューの一覧が引く。
- *
- * 日付まで含めるのは、どれも**日付グループの外**に出る文字列だから。時間帯だけを
- * 挙げると、同じ時刻の候補日程が別の日に2つあるときに区別が付かない。
- *
- * 受けるのは識別子を持たない形（日付と開始時刻だけ）。候補日程タブのプレビューは
- * **まだ発番されていない候補日程**を並べる（識別子を配るのは反映のとき）ので、
- * `SelectedCandidate` を要求すると同じ書式をもう1箇所に書くことになる。
- */
-export function candidateLabel(
-  candidate: CandidateTime,
-  durationMinutes: number,
-): string {
-  return `${dateHeadingText(candidate.date)} ${candidateRangeText(
-    candidate.start_time,
-    durationMinutes,
-  )}`;
 }
 
 /**
