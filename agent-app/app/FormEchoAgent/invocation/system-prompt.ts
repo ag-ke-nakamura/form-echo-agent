@@ -1,6 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Skill } from '@strands-agents/sdk/vended-plugins/skills';
 import type { TaskId } from '../contracts/index.js';
 
 /**
@@ -27,16 +28,14 @@ function findPackageRoot(): string {
 const PACKAGE_ROOT = findPackageRoot();
 
 /**
- * 明示モードの Skill 読み込み。taskId が Skill を一意に決め、`SKILL.md` の本文を
- * そのまま system prompt に注入する。ドメインエージェントに選ばせる自動モードは
- * `AgentSkills` プラグインを入れるチケットで足す。
+ * 明示モードの Skill 読み込み。taskId が Skill を一意に決め、`SKILL.md` の本文
+ * （frontmatter を除いた instructions）を system prompt に注入する。ドメインエージェント
+ * に選ばせる自動モードは `AgentSkills` プラグインを入れるチケットで足す。
  */
 function loadSkill(taskId: TaskId): string {
   const [domain, task] = taskId.split('.');
-  return readFileSync(
-    join(PACKAGE_ROOT, 'skills', domain, task, 'SKILL.md'),
-    'utf8',
-  );
+  return Skill.fromFile(join(PACKAGE_ROOT, 'skills', domain, task))
+    .instructions;
 }
 
 /**
