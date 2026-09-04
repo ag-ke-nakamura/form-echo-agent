@@ -27,7 +27,13 @@ export const checkJapanesePii: GuardrailBackend = async (text) => {
   const verdict: GuardrailVerdict = {
     blocked: matched,
     findings: matched
-      ? [{ checkType: 'sensitiveInformation', detail: 'my_number(regex)' }]
+      ? [
+          {
+            checkType: 'sensitiveInformation',
+            detail: 'my_number(regex)',
+            source: 'code-regex',
+          },
+        ]
       : [],
   };
   return verdict;

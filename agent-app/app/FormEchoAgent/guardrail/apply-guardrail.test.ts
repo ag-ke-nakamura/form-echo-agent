@@ -46,7 +46,11 @@ describe('verdictFromApplyGuardrailResponse', () => {
 
     expect(verdict.blocked).toBe(true);
     expect(verdict.findings).toEqual([
-      { checkType: 'contentFilter', detail: 'INSULTS(HIGH)' },
+      {
+        checkType: 'contentFilter',
+        detail: 'INSULTS(HIGH)',
+        source: 'strategy',
+      },
     ]);
   });
 
@@ -70,7 +74,11 @@ describe('verdictFromApplyGuardrailResponse', () => {
     );
 
     expect(verdict.findings).toEqual([
-      { checkType: 'promptAttack', detail: 'PROMPT_ATTACK(HIGH)' },
+      {
+        checkType: 'promptAttack',
+        detail: 'PROMPT_ATTACK(HIGH)',
+        source: 'strategy',
+      },
     ]);
   });
 
@@ -96,8 +104,15 @@ describe('verdictFromApplyGuardrailResponse', () => {
     );
 
     expect(verdict.blocked).toBe(true);
+    // source: 'strategy' が付くことで、コード側の常時実行の正規表現（`pii.ts`、
+    // 同じ detail "my_number(regex)" を返しうる）とは区別できる — 案Bの
+    // regexesConfig 自体がマイナンバーを検知できたかを findings から読み取れる。
     expect(verdict.findings).toEqual([
-      { checkType: 'sensitiveInformation', detail: 'my_number(regex)' },
+      {
+        checkType: 'sensitiveInformation',
+        detail: 'my_number(regex)',
+        source: 'strategy',
+      },
     ]);
   });
 

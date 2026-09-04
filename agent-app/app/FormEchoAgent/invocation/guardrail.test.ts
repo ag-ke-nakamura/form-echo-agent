@@ -35,7 +35,13 @@ const VALID_OUTPUT = {
 
 const BLOCKED = {
   blocked: true,
-  findings: [{ checkType: 'promptAttack' as const, detail: 'JAILBREAK(1)' }],
+  findings: [
+    {
+      checkType: 'promptAttack' as const,
+      detail: 'JAILBREAK(1)',
+      source: 'strategy' as const,
+    },
+  ],
 };
 
 describe('Guardrail', () => {

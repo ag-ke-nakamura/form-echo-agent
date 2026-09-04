@@ -14,7 +14,11 @@ describe('checkJapanesePii', () => {
 
     expect(verdict.blocked).toBe(true);
     expect(verdict.findings).toEqual([
-      { checkType: 'sensitiveInformation', detail: 'my_number(regex)' },
+      {
+        checkType: 'sensitiveInformation',
+        detail: 'my_number(regex)',
+        source: 'code-regex',
+      },
     ]);
   });
 

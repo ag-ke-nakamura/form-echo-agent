@@ -53,6 +53,7 @@ export function verdictFromApplyGuardrailResponse(
       findings.push({
         checkType,
         detail: `${filter.type}(${filter.confidence})`,
+        source: 'strategy',
       });
     }
     for (const entity of assessment.sensitiveInformationPolicy?.piiEntities ??
@@ -61,15 +62,23 @@ export function verdictFromApplyGuardrailResponse(
       findings.push({
         checkType: 'sensitiveInformation',
         detail: entity.type ?? 'unknown',
+        source: 'strategy',
       });
     }
-    // カスタム正規表現（マイナンバー等、F-16）。コード側の `pii.ts` と重複しうるが、
-    // どちらの方式が実際に検知したかを比較するのがこのチケットの目的の一つ。
+    /*
+      カスタム正規表現（マイナンバー等、F-16）。コード側の `pii.ts` の常時実行の
+      正規表現と重複して検知しうるが、`source: 'strategy'` を付けることで
+      区別する — どちらも検知した場合に `detail` が同じ `"my_number(regex)"` に
+      なるので、`source` が無いと「案Bの regexesConfig 自体が検知できたか」を
+      findings から読み取れなくなる（コード側の常時実行の正規表現と見分けが
+      付かない）。
+    */
     for (const regex of assessment.sensitiveInformationPolicy?.regexes ?? []) {
       if (regex.action !== 'BLOCKED') continue;
       findings.push({
         checkType: 'sensitiveInformation',
         detail: `${regex.name}(regex)`,
+        source: 'strategy',
       });
     }
   }

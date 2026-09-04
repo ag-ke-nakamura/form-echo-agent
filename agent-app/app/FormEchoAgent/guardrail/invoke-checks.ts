@@ -66,7 +66,11 @@ function findingsAbove(
   if (threshold === null) return [];
   return entries
     .filter((entry) => entry.score >= threshold)
-    .map((entry) => ({ checkType, detail: `${entry.label}(${entry.score})` }));
+    .map((entry) => ({
+      checkType,
+      detail: `${entry.label}(${entry.score})`,
+      source: 'strategy' as const,
+    }));
 }
 
 /**

@@ -45,7 +45,11 @@ describe('verdictFromChecksResults', () => {
 
     expect(verdict.blocked).toBe(true);
     expect(verdict.findings).toEqual([
-      { checkType: 'promptAttack', detail: 'JAILBREAK(0.8)' },
+      {
+        checkType: 'promptAttack',
+        detail: 'JAILBREAK(0.8)',
+        source: 'strategy',
+      },
     ]);
   });
 
