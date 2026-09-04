@@ -6,10 +6,11 @@
 */
 import type { SelectedCandidate } from "../candidates-panel";
 import type { ApplyReport, FieldSource } from "../field-source";
+import type { PreviewItem } from "./ai-preview";
 import type { ParseAvailabilityOutput } from "@contracts/index.js";
 import type { Availability, MeetingFormat } from "@contracts/meeting";
 import { AVAILABILITY_ORDER, isAttending } from "@contracts/meeting";
-import { candidateRangeText } from "./meeting-info";
+import { type CandidateTime, candidateRangeText } from "./meeting-info";
 
 /**
  * 参加可否回答フォームの組み立て（#70）。
@@ -166,13 +167,17 @@ export function dateHeadingText(date: string): string {
 }
 
 /**
- * 候補日程ひとつの表示名。反映の報告と聞き返しの一覧が引く。
+ * 候補日程ひとつの表示名。反映の報告・聞き返しの一覧・プレビューの一覧が引く。
  *
- * 日付まで含めるのは、どちらも**日付グループの外**に出る文字列だから。時間帯だけを
+ * 日付まで含めるのは、どれも**日付グループの外**に出る文字列だから。時間帯だけを
  * 挙げると、同じ時刻の候補日程が別の日に2つあるときに区別が付かない。
+ *
+ * 受けるのは識別子を持たない形（日付と開始時刻だけ）。候補日程タブのプレビューは
+ * **まだ発番されていない候補日程**を並べる（識別子を配るのは反映のとき）ので、
+ * `SelectedCandidate` を要求すると同じ書式をもう1箇所に書くことになる。
  */
 export function candidateLabel(
-  candidate: SelectedCandidate,
+  candidate: CandidateTime,
   durationMinutes: number,
 ): string {
   return `${dateHeadingText(candidate.date)} ${candidateRangeText(
@@ -298,4 +303,83 @@ export function applyAvailabilityResult(
     report: { updated, preserved, dropped },
     judgedCandidateIds,
   };
+}
+
+/**
+ * 参加可否ひとつを、その参加形式で職員（参加者）が読む語に写す。
+ *
+ * WHY 選択肢の表から引くか: プレビューに出す語とラジオの文言が食い違うと、押す前に
+ * 見たものと押した後にラジオへ入るものが違って見える（現地のみの会議では
+ * `attend_remote` が「出席」に畳まれる）。寄せ方も文言も1箇所から引けば食い違わない。
+ */
+function choiceLabelFor(
+  format: MeetingFormat,
+  availability: Availability,
+): string {
+  const normalized = normalizeAvailability(format, availability);
+  const choice = availabilityChoicesFor(format).find(
+    (candidate) => candidate.value === normalized,
+  );
+  // 寄せた先は必ず選択肢にある（どちらも `ATTENDING_FORM` から導く）。取れなかった
+  // ときに英語の値が画面へ漏れないよう既定を置く。
+  return choice?.label ?? CHOICE_LABELS[normalized];
+}
+
+/**
+ * AI が返した参加可否をプレビューの一覧へ写す（ADR-0006、設計書 4.6.1節）。
+ *
+ * **並べるのは応答ではなく画面の候補日程。** 判定できなかった候補日程は出力契約では
+ * 要素の不在でしか表れない（`null` を返させない）ので、応答だけを並べると「答えな
+ * かった」が一覧から消え、聞き返しの判断（`previewTone`）も全部埋まったと読む。
+ *
+ * 備考も一緒に出す。反映すると備考欄まで書き換わるので、プレビューに出さないと
+ * **見せていないものがフォームへ入る**（ADR-0006 が閉じたかった経路）。
+ *
+ * 応答に載っているのに画面から消えている候補日程（`dropped`）はここに出ない。行を
+ * 起こす先が無く、反映のときに `ApplyReport` が報告する。
+ */
+export function availabilityPreviewItems(
+  answers: Readonly<AvailabilityAnswers>,
+  result: ParseAvailabilityOutput,
+  { candidates, format, durationMinutes }: ApplyContext,
+): PreviewItem[] {
+  const judged = new Map(
+    result.availability.map((entry) => [entry.candidate_id, entry]),
+  );
+
+  return candidates.map((candidate) => {
+    const entry = judged.get(candidate.id);
+    const label = candidateLabel(candidate, durationMinutes);
+    if (entry === undefined) return { key: candidate.id, label, value: null };
+
+    const choice = choiceLabelFor(format, entry.availability);
+    const current = answers[candidate.id];
+    /*
+      手で選んだ可否は反映しても変わらない（`applyAvailabilityResult` が守る）。
+      緑のチェックで並べると、プレビューが「押したら入る」と偽って見せる。
+    */
+    if (current?.source === "manual") {
+      return { key: candidate.id, label, value: choice, preserved: true };
+    }
+
+    /*
+      備考も同じ。手で書いた備考は守られるので、AI が返した備考をそのまま出すと
+      入らないものを見せることになる。守られることを言い添える（文言は
+      `applyAvailabilityResult` の報告と揃える）。
+    */
+    if (current?.noteSource === "manual" && current.note !== "") {
+      return {
+        key: candidate.id,
+        label,
+        value: `${choice}（備考は保持）`,
+      };
+    }
+
+    const note = entry.note ?? "";
+    return {
+      key: candidate.id,
+      label,
+      value: note === "" ? choice : `${choice}（備考: ${note}）`,
+    };
+  });
 }

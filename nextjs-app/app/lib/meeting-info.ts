@@ -109,6 +109,21 @@ export function meetingSubInfoText(info: MeetingInfo): string {
   return `開催時間: ${info.durationMinutes}分 | 参加形式: ${MEETING_FORMAT_LABELS[info.format]}`;
 }
 
+/**
+ * 候補日程を指すのに要る最小限の組。
+ *
+ * WHY 名前を付けるか: 日付と開始時刻はいつも一緒に運ばれる（表示名の組み立て・
+ * 前後の突き合わせ・Runtime へ渡す与件）。組で受ける関数が3つになった時点で、
+ * 引数2つを並べ続けると呼び出し側が順番を取り違えられる。
+ *
+ * 識別子は持たない。**発番済みのもの（`SelectedCandidate`）と、AI が作ったばかりで
+ * まだ識別子の無いもの（出力契約の候補日程）の両方**がこの形に収まる必要がある。
+ */
+export type CandidateTime = {
+  date: string;
+  start_time: string;
+};
+
 const MINUTES_PER_DAY = 24 * 60;
 
 /**
