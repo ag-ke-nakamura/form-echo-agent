@@ -1,36 +1,42 @@
 "use client";
 
-import type {
-  CandidateFields,
-  RecommendScheduleInput,
-  RecommendScheduleOutput,
-} from "@contracts/index.js";
+import type { RecommendScheduleOutput } from "@contracts/index.js";
 // 値として引くのはこのモジュールだけ（理由は `ai-assistant.tsx` の同じ import）。
-import { candidateKey } from "@contracts/candidate-key";
+import { isAttending } from "@contracts/meeting";
 import { Info } from "lucide-react";
 import { useId, useMemo, useRef, useState } from "react";
 import { AiErrorNotice, AiPendingNotice, ApplyReportView } from "./ai-notice";
 import { AiBadge, type ApplyReport, type FieldSource } from "./field-source";
 import { FormSection } from "./form-section";
+import { RECOMMEND_TASK_ID, requestAiTask } from "./lib/api";
 import {
-  countAvailable,
+  type AvailabilityTable,
+  countAttending,
   generateAvailabilityTable,
   INITIAL_TABLE_SEED,
+  type TableCandidate,
 } from "./lib/availability-table";
-import { RECOMMEND_TASK_ID, requestAiTask } from "./lib/api";
 import { type ErrorGuidance, errorGuidanceFor } from "./lib/error-guidance";
+import {
+  AVAILABILITY_LABELS,
+  candidateRangeText,
+  type MeetingInfo,
+} from "./lib/meeting-info";
 import { TabHeading } from "./screen-layout";
 
 /**
  * 会議をどの日程で開くかの決定。**この画面で職員が触れるのはここだけ**で、
  * 参加可否表は読み取り専用の与件である。
  *
+ * 候補日程は識別子で指す（ADR-0005）。3項目を連結した鍵を組み立てていたのは契約に
+ * 識別子が無かったからで、その理由は消えた。
+ *
  * 順位そのものは持たない。順位は AI の説明のための道具で、職員が手で作りたいものでは
  * ない（数値を手入力させると重複と抜けの検査 UI が要る）。非AI経路は「候補日程を
  * 1つ選ぶ」に留め、AI が付ける1位と職員が選んだものが**同じ場所の同じ印**になるよう
  * にする。どちらの判断で決まったかは `source` が持つ。
  */
-type Decision = { key: string; source: FieldSource };
+type Decision = { candidateId: string; source: FieldSource };
 
 /**
  * 表と、それに対して作られたもの（提案・決定）を組で持つ。
@@ -46,15 +52,23 @@ function currentValue<T>(held: ForTable<T> | null, seed: number): T | null {
   return held !== null && held.seed === seed ? held.value : null;
 }
 
-/** 候補日程の表示名。`candidateKey` は突き合わせ用なので、見せる形は別に持つ。 */
-function candidateLabel(fields: CandidateFields): string {
-  return `${fields.date} ${fields.start_time}–${fields.end_time}`;
+/**
+ * 候補日程の表示名。終わる時刻は会議の所要時間から導く（ADR-0005）。
+ *
+ * 識別子（`candidate-1`）はそのまま見せない。職員が読みたいのは日時であって、
+ * 識別子は突き合わせのための内部の値である。
+ */
+function candidateLabel(
+  candidate: TableCandidate,
+  meetingInfo: MeetingInfo,
+): string {
+  return `${candidate.date} ${candidateRangeText(candidate.start_time, meetingInfo.durationMinutes)}`;
 }
 
 /** 非AI経路の一文。失敗の案内に添える（他タブは `AiAssistant` の prop で渡す）。 */
 const NON_AI_PATH_HINT = "AI を使わなくても、表から候補日程を1つ選べます。";
 
-export function RecommendPanel() {
+export function RecommendPanel({ meetingInfo }: { meetingInfo: MeetingInfo }) {
   const [tableSeed, setTableSeed] = useState(INITIAL_TABLE_SEED);
   const table = useMemo(
     () => generateAvailabilityTable(tableSeed),
@@ -86,9 +100,9 @@ export function RecommendPanel() {
   const submitSerial = useRef(0);
 
   /**
-   * AI の提案をフォームへ写す（ADR-0004 の突き合わせ）。
+   * AI の提案をフォームへ写す。
    *
-   * 写像は素直に留める — 3項目の組で引いて順位と理由を出すだけで、条件分岐を育てない
+   * 写像は素直に留める — 識別子で引いて順位と理由を出すだけで、条件分岐を育てない
    * （#23 の線引き）。提案が入力の候補日程と一致していることは BFF が検査済みなので、
    * ここで落ちた分を数える必要は無い（参加可否タブとの違い）。
    *
@@ -114,16 +128,24 @@ export function RecommendPanel() {
       return;
     }
     const top = result.recommendations.find((entry) => entry.rank === 1);
+    const topCandidate = table.candidates.find(
+      (candidate) => candidate.id === top?.candidate_id,
+    );
     if (top) {
       setDecision({
         seed: tableSeed,
-        value: { key: candidateKey(top), source: "ai" },
+        value: { candidateId: top.candidate_id, source: "ai" },
       });
     }
     setReport({
       seed: tableSeed,
       value: {
-        updated: [ranked, ...(top ? [`1位 ${candidateLabel(top)}`] : [])],
+        updated: [
+          ranked,
+          ...(topCandidate
+            ? [`1位 ${candidateLabel(topCandidate, meetingInfo)}`]
+            : []),
+        ],
         preserved: [],
       },
     });
@@ -133,8 +155,9 @@ export function RecommendPanel() {
    * AI に提案させる。
    *
    * **自然文の入力欄を持たない**（設計書のタブ4）。ここでの AI の提案は叩き台で
-   * あって対話相手ではない、という位置づけを画面の形で示すため。送るのは参加可否表
-   * （構造化入力。ADR-0004）だけで、`sessionId` も引き継がない — 続きの会話が無い。
+   * あって対話相手ではない、という位置づけを画面の形で示すため。送るのは会議情報と
+   * 参加可否表（構造化入力。ADR-0005）だけで、`sessionId` も引き継がない
+   * — 続きの会話が無い。
    */
   async function requestRecommendation() {
     if (pending) return;
@@ -147,7 +170,11 @@ export function RecommendPanel() {
       taskId: RECOMMEND_TASK_ID,
       prompt: null,
       sessionId: null,
-      input: table,
+      input: {
+        meeting_format: meetingInfo.format,
+        duration_minutes: meetingInfo.durationMinutes,
+        ...table,
+      },
     });
     if (serial !== submitSerial.current) return;
 
@@ -179,8 +206,8 @@ export function RecommendPanel() {
     reset();
   }
 
-  function chooseManually(key: string) {
-    setDecision({ seed: tableSeed, value: { key, source: "manual" } });
+  function chooseManually(candidateId: string) {
+    setDecision({ seed: tableSeed, value: { candidateId, source: "manual" } });
   }
 
   return (
@@ -214,8 +241,9 @@ export function RecommendPanel() {
           を使わずに、開催する候補日程を1つ選ぶこともできます。
         </p>
 
-        <AvailabilityTable
+        <AvailabilityTableView
           table={table}
+          meetingInfo={meetingInfo}
           recommendations={shownRecommendations}
           decision={shownDecision}
           onChoose={chooseManually}
@@ -257,30 +285,36 @@ export function RecommendPanel() {
         )}
 
         {shownRecommendations && (
-          <ReasonList recommendations={shownRecommendations} />
+          <ReasonList
+            recommendations={shownRecommendations}
+            table={table}
+            meetingInfo={meetingInfo}
+          />
         )}
       </FormSection>
     </div>
   );
 }
 
-type AvailabilityTableProps = {
-  table: RecommendScheduleInput;
+type AvailabilityTableViewProps = {
+  table: AvailabilityTable;
+  meetingInfo: MeetingInfo;
   recommendations: RecommendScheduleOutput["recommendations"] | null;
   decision: Decision | null;
-  onChoose: (key: string) => void;
+  onChoose: (candidateId: string) => void;
 };
 
-function AvailabilityTable({
+function AvailabilityTableView({
   table,
+  meetingInfo,
   recommendations,
   decision,
   onChoose,
-}: AvailabilityTableProps) {
+}: AvailabilityTableViewProps) {
   // ラジオは表全体でひとつのグループ。会議は1つの日程で開くので、印も1つでよい。
   const groupName = useId();
-  const rankByKey = new Map(
-    recommendations?.map((entry) => [candidateKey(entry), entry.rank]) ?? [],
+  const rankById = new Map(
+    recommendations?.map((entry) => [entry.candidate_id, entry.rank]) ?? [],
   );
 
   return (
@@ -304,7 +338,7 @@ function AvailabilityTable({
               </th>
             ))}
             <th scope="col" className="py-2 pr-3 text-center text-dns-14M-130">
-              ○の数
+              参加可能
             </th>
             <th scope="col" className="py-2 text-center text-dns-14M-130">
               順位
@@ -313,27 +347,26 @@ function AvailabilityTable({
         </thead>
         <tbody>
           {table.candidates.map((candidate) => {
-            const key = candidateKey(candidate);
-            const rank = rankByKey.get(key);
-            const chosen = decision?.key === key;
+            const rank = rankById.get(candidate.id);
+            const chosen = decision?.candidateId === candidate.id;
             return (
-              <tr key={key} className="border-b border-solid-gray-100">
+              <tr key={candidate.id} className="border-b border-solid-gray-100">
                 <td className="py-2 pr-3">
                   <label className="flex items-center gap-2">
                     <input
                       type="radio"
                       name={groupName}
                       checked={chosen}
-                      onChange={() => onChoose(key)}
+                      onChange={() => onChoose(candidate.id)}
                     />
                     <span className="sr-only">
-                      {candidateLabel(candidate)}で開催する
+                      {candidateLabel(candidate, meetingInfo)}で開催する
                     </span>
                     {chosen && decision?.source === "ai" && <AiBadge />}
                   </label>
                 </td>
                 <th scope="row" className="py-2 pr-3 text-left font-normal">
-                  {candidateLabel(candidate)}
+                  {candidateLabel(candidate, meetingInfo)}
                 </th>
                 {table.participants.map((participant) => (
                   <td key={participant} className="py-2 pr-3 text-center">
@@ -344,7 +377,7 @@ function AvailabilityTable({
                   </td>
                 ))}
                 <td className="py-2 pr-3 text-center tabular-nums">
-                  {countAvailable(candidate)}
+                  {countAttending(candidate)}
                 </td>
                 <td className="py-2 text-center tabular-nums">
                   {rank === undefined ? (
@@ -371,17 +404,17 @@ function AvailabilityTable({
 }
 
 /**
- * セルひとつ。**未回答を×と書き分ける**（ストーリー11）。
+ * セルひとつ。**未回答を回答と書き分ける**（ストーリー11）。
  *
  * 表は疎で、未回答はセルが存在しないことで表される（ADR-0004）。「まだ答えていない
- * 参加者」を×として描くと、職員も AI も見ている表が「全員参加できない候補日程」に
- * 化ける。記号ではなく語で書くのは、○×と並べたときに一目で別種と分かるようにするため。
+ * 参加者」を欠席として描くと、職員も AI も見ている表が「全員参加できない候補日程」に
+ * 化ける。未定（答えたが決まっていない）とも書き分ける（`CONTEXT.md`「未定」）。
  */
 function AnswerCell({
   candidate,
   participant,
 }: {
-  candidate: RecommendScheduleInput["candidates"][number];
+  candidate: TableCandidate;
   participant: string;
 }) {
   const answer = candidate.answers.find(
@@ -391,8 +424,14 @@ function AnswerCell({
     return <span className="text-dns-12N-130 text-solid-gray-600">未回答</span>;
   }
   return (
-    <span aria-label={answer.available ? "参加できる" : "参加できない"}>
-      {answer.available ? "○" : "×"}
+    <span
+      className={
+        isAttending(answer.availability)
+          ? "text-dns-14M-130 text-solid-gray-900"
+          : "text-dns-14N-130 text-solid-gray-600"
+      }
+    >
+      {AVAILABILITY_LABELS[answer.availability]}
     </span>
   );
 }
@@ -403,35 +442,50 @@ function AnswerCell({
  * 表とは別に順位の順で並べる。表は候補日程の並びで固定しておくほうが与件として
  * 読みやすく、順位の順に並べ替えると差し替え前後の見比べができなくなる。落ちた
  * 候補日程の理由こそが職員の知りたいものなので、上位だけを出すことはしない。
+ *
+ * AI が返すのは識別子なので、日時は表から引き直す。BFF が「入力に無い識別子」を
+ * 弾いているので引けない提案はここまで来ないが、型の上では起こりうるので識別子を
+ * そのまま出す経路を残す。
  */
 function ReasonList({
   recommendations,
+  table,
+  meetingInfo,
 }: {
   recommendations: RecommendScheduleOutput["recommendations"];
+  table: AvailabilityTable;
+  meetingInfo: MeetingInfo;
 }) {
   const ordered = [...recommendations].sort((a, b) => a.rank - b.rank);
   return (
     <section className="mt-8">
       <h3 className="text-dns-16M-130 text-solid-gray-900">提案の理由</h3>
       <ol className="mt-3 grid gap-3">
-        {ordered.map((entry) => (
-          <li
-            key={candidateKey(entry)}
-            className="rounded-md border border-solid-gray-300 p-3"
-          >
-            <div className="flex flex-wrap items-baseline gap-x-2">
-              <span className="text-dns-14M-130 tabular-nums text-solid-gray-900">
-                {entry.rank}位
-              </span>
-              <span className="text-dns-14N-130 text-solid-gray-900">
-                {candidateLabel(entry)}
-              </span>
-            </div>
-            <p className="mt-1 text-dns-14N-130 text-solid-gray-700">
-              {entry.reason}
-            </p>
-          </li>
-        ))}
+        {ordered.map((entry) => {
+          const candidate = table.candidates.find(
+            (item) => item.id === entry.candidate_id,
+          );
+          return (
+            <li
+              key={entry.candidate_id}
+              className="rounded-md border border-solid-gray-300 p-3"
+            >
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <span className="text-dns-14M-130 tabular-nums text-solid-gray-900">
+                  {entry.rank}位
+                </span>
+                <span className="text-dns-14N-130 text-solid-gray-900">
+                  {candidate
+                    ? candidateLabel(candidate, meetingInfo)
+                    : entry.candidate_id}
+                </span>
+              </div>
+              <p className="mt-1 text-dns-14N-130 text-solid-gray-700">
+                {entry.reason}
+              </p>
+            </li>
+          );
+        })}
       </ol>
     </section>
   );

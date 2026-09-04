@@ -1,12 +1,14 @@
 "use client";
 
-import { useId, useState } from "react";
 import {
   DURATION_OPTIONS,
+  type MeetingFormat,
+  MEETING_FORMAT_ORDER,
+} from "@contracts/meeting";
+import { useId, useState } from "react";
+import {
   INITIAL_MEETING_INFO,
   MEETING_FORMAT_LABELS,
-  MEETING_FORMAT_ORDER,
-  type MeetingFormat,
   type MeetingInfo,
   meetingHeadingText,
   meetingSubInfoText,
@@ -15,7 +17,7 @@ import {
 export type MeetingInfoApi = {
   info: MeetingInfo;
   setName: (name: string) => void;
-  setDurationMinutes: (durationMinutes: number) => void;
+  setDurationMinutes: (durationMinutes: MeetingInfo["durationMinutes"]) => void;
   setFormat: (format: MeetingFormat) => void;
 };
 
@@ -94,7 +96,18 @@ export function MeetingInfoFields({
           <select
             id={durationId}
             value={info.durationMinutes}
-            onChange={(event) => setDurationMinutes(Number(event.target.value))}
+            /*
+              値域は契約が持つ（`contracts/meeting.ts`）。`Number()` の結果を
+              そのまま渡さないのは、`<select>` の値が文字列で来る一方、所要時間が
+              Runtime へ渡す与件になった（ADR-0005）ため — 選択肢の外の値を
+              入れられると BFF の門で弾かれる。選択肢そのものから引き直す。
+            */
+            onChange={(event) => {
+              const chosen = DURATION_OPTIONS.find(
+                (minutes) => String(minutes) === event.target.value,
+              );
+              if (chosen !== undefined) setDurationMinutes(chosen);
+            }}
             className="mt-1.5 w-full rounded-md border border-solid-gray-600 bg-white px-3 py-2 text-dns-16N-130 text-solid-gray-900"
           >
             {DURATION_OPTIONS.map((minutes) => (

@@ -12,7 +12,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { AiErrorNotice, AiPendingNotice, ApplyReportView } from "./ai-notice";
 import type { ApplyReport } from "./field-source";
-import { requestAiTask, type TaskOutputs } from "./lib/api";
+import { requestAiTask, type TaskInputs, type TaskOutputs } from "./lib/api";
 import { type ErrorGuidance, errorGuidanceFor } from "./lib/error-guidance";
 
 /**
@@ -29,6 +29,15 @@ type Turn = { id: string; prompt: string } & (
 type AiAssistantProps<TTaskId extends TaskId> = {
   taskId: TTaskId;
   /**
+   * このタブが Runtime へ渡す画面の状態（ADR-0005）。
+   *
+   * **毎回そのまま送る。** Runtime 側の会話履歴はコールドスタートで消えるので、
+   * 初回だけ送ると2回目が「与件の無いリクエスト」になる。省略できないよう必須の
+   * prop にしてある — 交通ICのように構造化入力を持たない taskId では型が
+   * `undefined` になるので、書き忘れと「送らないと決めた」が型で区別される。
+   */
+  input: TaskInputs[TTaskId];
+  /**
    * 説明テキストと例文（設計書 3.3節）。改行を含むので `whitespace-pre-line` で描く。
    * どう書けば AI が理解するのかの見当をここで付けてもらう。
    */
@@ -41,6 +50,17 @@ type AiAssistantProps<TTaskId extends TaskId> = {
    * 「すべての項目を埋められます」で済ませると、空のフォームへ運んだ先で嘘になる。
    */
   nonAiPathHint: string;
+  /**
+   * 送信できない理由。`null` なら送れる。
+   *
+   * WHY: 構造化入力が入力契約を満たさない画面状態がありうる（参加可否タブの候補日程が
+   * 0件のとき）。押させると BFF の門で必ず INVALID_INPUT になり、職員は自分の書いた
+   * 自然文が悪かったのかと読む。押す前に理由を出すほうが短い。
+   *
+   * 判断そのものはタブが持つ。ここで `INPUT_SCHEMAS` を値として引くと zod が SSG の
+   * バンドルに乗る（`lib/api.ts` の `TaskInputs` が型だけを取り込んでいるのと同じ理由）。
+   */
+  submitBlockedReason?: string | null;
   /** 初回の指示の例。 */
   placeholder: string;
   /** 追加の指示の例。初回とは書くことが違うので別に持つ。 */
@@ -73,6 +93,8 @@ type AiAssistantProps<TTaskId extends TaskId> = {
  */
 export function AiAssistant<TTaskId extends TaskId>({
   taskId,
+  input,
+  submitBlockedReason = null,
   description,
   nonAiPathHint,
   placeholder,
@@ -129,7 +151,7 @@ export function AiAssistant<TTaskId extends TaskId>({
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     const sent = prompt.trim();
-    if (pending) return;
+    if (pending || submitBlockedReason !== null) return;
     if (promptRequired && sent === "") return;
     const serial = ++submitSerial.current;
     setPending(true);
@@ -140,6 +162,8 @@ export function AiAssistant<TTaskId extends TaskId>({
       // 「空を書いた」を区別する必要はなく、契約は任意フィールドの欠落で表す。
       prompt: sent === "" ? null : sent,
       sessionId,
+      // 送信のたびに今の画面の状態を送る（`AiAssistantProps` の `input`）。
+      input,
     });
     // 待っている間にやり直されていたら、この結果は捨てる（`pending` は
     // `handleReset` が下ろしている）。
@@ -247,10 +271,19 @@ export function AiAssistant<TTaskId extends TaskId>({
             placeholder={continuing ? followUpPlaceholder : placeholder}
             className="w-full rounded-md border border-solid-gray-600 bg-white p-3 text-dns-16N-130 text-solid-gray-900 focus:outline-none focus:ring-2 focus:ring-solid-blue-700"
           />
+          {submitBlockedReason !== null && (
+            <p className="mt-2 text-dns-12N-130 text-solid-gray-600">
+              {submitBlockedReason}
+            </p>
+          )}
           <div className="mt-3 flex justify-end">
             <button
               type="submit"
-              disabled={pending || (promptRequired && prompt.trim() === "")}
+              disabled={
+                pending ||
+                submitBlockedReason !== null ||
+                (promptRequired && prompt.trim() === "")
+              }
               className="rounded-md bg-solid-blue-700 px-4 py-2 text-dns-16M-130 text-white disabled:opacity-40"
             >
               {pending ? pendingLabel : submitLabel}

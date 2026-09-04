@@ -23,23 +23,42 @@ BFF の再検査の両方が引く。
 
 ## リクエストに何が載るか
 
-**抽出系3タスクのリクエストは `{taskId, prompt, sessionId}` だけで、画面が持っているフォームの
-状態を Runtime へ渡さない。`prompt` にシステムが組み立てた文脈を埋め込むこともしない**（ADR-003）。
-突き合わせはフロントエンドが行う。
+**交通ICを除く3タスクが構造化入力 `input` として画面の状態を受け取る**（ADR-0005 が ADR-0003 を
+撤回した）。何を載せるかは taskId ごとに違い、`INPUT_SCHEMAS` が正典。
 
-**推薦系 `meeting.recommend-schedule` だけは構造化入力 `input` を渡す**（ADR-0004）。`input` は
-サニタイズも Guardrail チェックも通さないので**自由文字列を置かない**。入力契約は `INPUT_SCHEMAS`、
+| taskId | `input` |
+| --- | --- |
+| `ic-card.parse-reservation` | `null`（送るべき画面状態が無い。基準時刻は system prompt が持つ） |
+| `meeting.parse-candidates` | 所要時間のみ。既に選択済みの候補日程は送らない |
+| `meeting.parse-availability` | 参加形式・所要時間・候補日程の一覧 |
+| `meeting.recommend-schedule` | 参加形式・所要時間・参加者の名簿・参加可否表 |
+
+**`input` はサニタイズも Guardrail チェックも通さないので自由文字列を置かない**（ADR-0004 の制約が
+3タスクへ広がった）。候補日程は `/^candidate-\d{1,6}$/`、参加者は `/^参加者[A-Z]$/`。参加者の実名を
+送らないのは ADR-0008。
+
+**識別子はフロントエンドが発番し、AI は自分では作らない。** 候補日程を選ぶ出力
+（`meeting.recommend-schedule`）は `candidate_id` だけを返し、日付や開始時刻を写さない。入力に無い
+識別子が返っていないかは `findRecommendationMismatch` が見る（Runtime の再試行と BFF の再検査の
+両方から `outputSchemaFor` 越しに引かれる）。新しい候補日程を作る `meeting.parse-candidates` は
+逆に識別子を返さない — 選ぶべき既存の識別子が無いため。
+
+**候補日程は終了時刻を持たない。** 終わる時刻は会議の所要時間から導く。導出が要るのは画面だけ
+なので、関数は `nextjs-app/app/lib/meeting-info.ts` にある（誰も引かない関数を契約に置かない）。
+
 自然文の必須性は `PROMPT_REQUIREMENT`（`prompt-requirement.ts`）が taskId ごとに持つ
-（`OUTPUT_SCHEMAS` と対称。自然文だけのタスクは `null` を明示）。参加者の形と「毎回送り直す」
-理由は ADR-0004 にある。
-
-> #67 が ADR-0005 で ADR-003 を撤回し、3タスクが `input` を受け取るようになる。着手時にこの節を
-> 書き換えること。
+（`OUTPUT_SCHEMAS` / `INPUT_SCHEMAS` と対称）。「毎回送り直す」理由は ADR-0004 にある。
 
 ## zod を import してはいけないファイル
 
-`candidate-key.ts` と `prompt-requirement.ts`。フロントエンドがこの2つだけを**値として**引くので、
+`meeting.ts` と `prompt-requirement.ts`。フロントエンドがこの2つだけを**値として**引くので、
 スキーマと同じモジュールに置くと SSG のバンドルに zod が丸ごと乗る。
+
+`meeting.ts` が持つのは**値域と、値域だけで答えられること**（参加形式3値・参加可否4状態・
+所要時間の選択肢・候補日程の識別子の形と発番・件数の上限・`isAttending`）。Zod スキーマは
+`fields.ts` がここから導く。画面が値として要るものはここに置くしかないので、**「zod を使わずに
+書けるか」が置き場所の基準**になる。集計や導出はここではない — 参加可能人数を数えるのは
+`nextjs-app/app/lib`、AI評価ラベルの導出は #71 が置く場所を決める。
 
 ## 参照のしかたはプロジェクトごとに違う
 

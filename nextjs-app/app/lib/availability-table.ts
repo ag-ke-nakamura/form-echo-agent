@@ -1,3 +1,9 @@
+// 値として引くのは `meeting.ts` だけ（zod を持たないので SSG のバンドルに乗らない）。
+import {
+  type Availability,
+  candidateIdOf,
+  isAttending,
+} from "@contracts/meeting";
 import type { RecommendScheduleInput } from "@contracts/index.js";
 
 /**
@@ -9,6 +15,20 @@ import type { RecommendScheduleInput } from "@contracts/index.js";
  * デモの最中に自明な表が出る** — 純関数として切り出してテストを持つ理由がここにある
  * （#58 のシーム3）。
  */
+
+/**
+ * 生成器が作る範囲。**会議情報（参加形式・所要時間）は含まない。**
+ *
+ * WHY: あの2つはタブ2で職員が決めるもので、サンプルの表と一緒に振り直してよい値では
+ * ない（差し替えのたびに会議の性質が変わってしまう）。リクエストに載せる形へ組み立てるのは
+ * 画面の仕事で、生成器が持つのは参加者 × 候補日程の部分だけにする。
+ */
+export type AvailabilityTable = Pick<
+  RecommendScheduleInput,
+  "participants" | "candidates"
+>;
+
+export type TableCandidate = AvailabilityTable["candidates"][number];
 
 /**
  * 初期表示の参加可否表を決めるシード。固定値で焼き込む。
@@ -31,7 +51,7 @@ const MAX_UNANSWERED = 2;
  * 候補日程の日付を数える起点。固定値にする。
  *
  * WHY: フロントエンドは SSG なので、初期状態に「今日」を採るとビルド時に描いた
- * HTML とブラウザの初回描画が食い違う（候補日程タブの行識別子を固定値にしてあるのと
+ * HTML とブラウザの初回描画が食い違う（候補日程タブの識別子を固定値にしてあるのと
  * 同じ理由）。読み込むたび同じ表になるのはデモでは利点で、同じ入力に対する AI の
  * 出力の揺れだけを観察できる。
  */
@@ -46,27 +66,31 @@ const BASE_DATE = "2026-10-05";
 const WEEKDAY_OFFSETS = [0, 1, 2, 3, 4, 7, 8, 9, 10, 11];
 
 /**
- * 候補日程の時間帯。日付は全件異なるので、時間帯は表を見分けやすくするために振る。
+ * 候補日程の開始時刻。日付は全件異なるので、時間帯は表を見分けやすくするために振る。
  *
- * 同じ日に2つの候補日程を置く形（契約が3項目の組をキーにしている理由そのもの）は
- * このモックでは作らない。不変条件を1つ増やすほど自明でない表を作る自由度が減り、
- * 生成器が「最多○の同数を2つ」を満たせなくなる余地が出る。3項目の組で引くことは
- * 画面と BFF の突き合わせで常に効いている。
+ * 終了時刻を持たないのは候補日程が終了時刻を持たなくなったため（ADR-0005）。表示上の
+ * 終わる時刻は会議の所要時間から導く。
  */
-const SLOTS = [
-  { start_time: "09:00", end_time: "12:00" },
-  { start_time: "10:00", end_time: "12:00" },
-  { start_time: "13:00", end_time: "16:00" },
-  { start_time: "14:00", end_time: "17:00" },
-  { start_time: "15:00", end_time: "18:00" },
-];
+const START_TIMES = ["09:00", "10:00", "13:00", "14:00", "15:00"];
 
 /**
- * 最多○の人数。全員（5人）は作らないので4が上限。
+ * 参加可能人数の最多。全員（5人）は作らないので4が上限。
  *
  * 3を下回ると「誰も集まれない表」になり、順位の説明が「どれも駄目」で済んでしまう。
  */
 const MAX_AVAILABLE_CHOICES = [3, 4];
+
+/** 出席の2通り。参加形式との整合は画面が持つので、生成器は両方を混ぜる。 */
+const ATTENDING: Availability[] = ["attend_onsite", "attend_remote"];
+
+/**
+ * 出席しない側の2通り。**欠席と未定を混ぜる**（`CONTEXT.md`「未定」）。
+ *
+ * WHY: 未定を作らないと、AI が「未定」と「未回答」を書き分けられているかを見る材料が
+ * 表に無くなる。`SKILL.md` はこの2つを取り違えないことを制約として書いており、
+ * 検証環境が確かめたいのはまさにそこである。
+ */
+const NOT_ATTENDING: Availability[] = ["absent", "undecided"];
 
 /**
  * シードから決まる擬似乱数（mulberry32）。
@@ -87,6 +111,10 @@ function createRandom(seed: number): () => number {
 
 function pickIndex(random: () => number, length: number): number {
   return Math.floor(random() * length);
+}
+
+function pick<T>(random: () => number, items: readonly T[]): T {
+  return items[pickIndex(random, items.length)];
 }
 
 /** 先頭 `count` 件だけを使う前提の部分シャッフル（Fisher-Yates）。 */
@@ -111,15 +139,15 @@ function participantAt(index: number): string {
 }
 
 /**
- * その候補日程に参加できると答えた人数。未回答は数えない。
+ * その候補日程に参加できると答えた人数。**欠席・未定・未回答は数えない。**
  *
- * 画面（○の数の列）とテスト（最多○の同数が2つ）の両方から引く。数え方を2箇所に
- * 書くと、片方が未回答を×に畳んだ瞬間に表の見え方と不変条件が食い違う。
+ * 画面（参加可能人数の列）とテスト（最多が同数の候補日程を2つ）の両方から引く。
+ * 数え方を2箇所に書くと、片方が未定を出席に畳んだ瞬間に表の見え方と不変条件が
+ * 食い違う。4状態のうちどれが出席かは `contracts/meeting.ts` の `isAttending` が持つ。
  */
-export function countAvailable(
-  candidate: RecommendScheduleInput["candidates"][number],
-): number {
-  return candidate.answers.filter((answer) => answer.available).length;
+export function countAttending(candidate: TableCandidate): number {
+  return candidate.answers.filter((answer) => isAttending(answer.availability))
+    .length;
 }
 
 /**
@@ -127,19 +155,17 @@ export function countAvailable(
  *
  * 偏りを乱数任せにせず、3つの制約を構成的に満たす。
  *
- * 1. **全員が○の候補日程を作らない** — 自明な1位があると提案の余地が無い
- * 2. **最多○が同数の候補日程を2つ作る** — AI に順位付けの説明を強制する
+ * 1. **全員が参加できる候補日程を作らない** — 自明な1位があると提案の余地が無い
+ * 2. **参加可能人数が最多の候補日程を2つ作る** — AI に順位付けの説明を強制する
  *    （同順位は出力契約が弾くので、どちらを上に置いたかを言うしかなくなる）
- * 3. **未回答を1〜2セル置く** — 疎な表が実際に効いているか、AI が未回答を×と
+ * 3. **未回答を1〜2セル置く** — 疎な表が実際に効いているか、AI が未回答を欠席と
  *    混同しないかを見る
  *
  * 純粋な乱数（各セルを独立に振る）だと、たまたま自明な表になった回にプロダクト
  * オーナーへ見せてしまう。棄却法で振り直す形も採らない — 何回振れば条件を満たすかが
  * シードに依存し、「同じシードから同じ表」以外の保証が弱くなる。
  */
-export function generateAvailabilityTable(
-  seed: number,
-): RecommendScheduleInput {
+export function generateAvailabilityTable(seed: number): AvailabilityTable {
   const random = createRandom(seed);
 
   const participants = Array.from({ length: PARTICIPANT_COUNT }, (_, index) =>
@@ -149,9 +175,9 @@ export function generateAvailabilityTable(
   const offsets = shuffled(random, WEEKDAY_OFFSETS)
     .slice(0, CANDIDATE_COUNT)
     .sort((a, b) => a - b);
-  const slots = shuffled(random, SLOTS).slice(0, CANDIDATE_COUNT);
+  const startTimes = shuffled(random, START_TIMES).slice(0, CANDIDATE_COUNT);
 
-  // 最多○を2つの候補日程に配り、残りはそれより少ない数にする。
+  // 参加可能人数の最多を2つの候補日程に配り、残りはそれより少ない数にする。
   const maxAvailable =
     MAX_AVAILABLE_CHOICES[pickIndex(random, MAX_AVAILABLE_CHOICES.length)];
   const tiedIndexes = shuffled(
@@ -165,31 +191,31 @@ export function generateAvailabilityTable(
   );
 
   const candidates = availableCounts.map((availableCount, index) => {
-    const available = new Set(
+    const attending = new Set(
       shuffled(random, participants).slice(0, availableCount),
     );
     return {
+      id: candidateIdOf(index + 1),
       date: addDays(BASE_DATE, offsets[index]),
-      ...slots[index],
+      start_time: startTimes[index],
       answers: participants.map((participant) => ({
         participant,
-        available: available.has(participant),
+        availability: attending.has(participant)
+          ? pick(random, ATTENDING)
+          : pick(random, NOT_ATTENDING),
       })),
     };
   });
 
-  // 未回答は×のセルからだけ落とす。○を落とすと最多○の同数が崩れる。
+  // 未回答は出席していないセルからだけ落とす。出席を落とすと最多の同数が崩れる。
   const unansweredCount =
     MIN_UNANSWERED + pickIndex(random, MAX_UNANSWERED - MIN_UNANSWERED + 1);
-  const negativeCells = candidates.flatMap((candidate, candidateIndex) =>
+  const absentCells = candidates.flatMap((candidate, candidateIndex) =>
     candidate.answers
-      .map((answer, answerIndex) => ({ candidateIndex, answerIndex, answer }))
-      .filter((cell) => !cell.answer.available),
+      .map((answer) => ({ candidateIndex, answer }))
+      .filter((cell) => !isAttending(cell.answer.availability)),
   );
-  for (const cell of shuffled(random, negativeCells).slice(
-    0,
-    unansweredCount,
-  )) {
+  for (const cell of shuffled(random, absentCells).slice(0, unansweredCount)) {
     const candidate = candidates[cell.candidateIndex];
     candidate.answers = candidate.answers.filter(
       (answer) => answer !== cell.answer,

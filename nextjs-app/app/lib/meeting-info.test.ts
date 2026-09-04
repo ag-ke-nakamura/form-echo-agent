@@ -1,8 +1,15 @@
+import {
+  AVAILABILITY_ORDER,
+  DURATION_OPTIONS,
+  MEETING_FORMAT_ORDER,
+} from "@contracts/meeting";
 import { describe, expect, it } from "vitest";
 import {
+  AVAILABILITY_LABELS,
+  candidateEndTime,
+  candidateRangeText,
   INITIAL_MEETING_INFO,
   MEETING_FORMAT_LABELS,
-  MEETING_FORMAT_ORDER,
   meetingHeadingText,
   meetingSubInfoText,
 } from "./meeting-info";
@@ -23,6 +30,25 @@ describe("MEETING_FORMAT_LABELS", () => {
       onsite: "現地のみ",
       online: "オンラインのみ",
     });
+  });
+});
+
+describe("AVAILABILITY_LABELS", () => {
+  it("4状態すべてに表示名がある", () => {
+    // 記号（○×）に畳まない。2記号では現地とリモート、欠席と未定を区別できない。
+    expect(AVAILABILITY_LABELS).toEqual({
+      attend_onsite: "現地",
+      attend_remote: "リモート",
+      absent: "欠席",
+      undecided: "未定",
+    });
+  });
+
+  it("どの値も別の語で呼ばれる", () => {
+    const labels = AVAILABILITY_ORDER.map(
+      (availability) => AVAILABILITY_LABELS[availability],
+    );
+    expect(new Set(labels).size).toBe(AVAILABILITY_ORDER.length);
   });
 });
 
@@ -73,5 +99,49 @@ describe("INITIAL_MEETING_INFO", () => {
     expect(INITIAL_MEETING_INFO.format).toBe("hybrid");
     expect(INITIAL_MEETING_INFO.durationMinutes).toBe(30);
     expect(INITIAL_MEETING_INFO.name).toBe("");
+  });
+});
+
+/**
+ * 候補日程が終了時刻を持たなくなった（ADR-0005）ので、終わる時刻はここでしか
+ * 出てこない。導出を間違えると、画面に出る時間帯だけが所要時間と食い違う。
+ */
+describe("candidateEndTime", () => {
+  it("開始時刻に所要時間を足す", () => {
+    expect(candidateEndTime("13:00", 60)).toBe("14:00");
+    expect(candidateEndTime("13:30", 30)).toBe("14:00");
+    expect(candidateEndTime("09:15", 120)).toBe("11:15");
+  });
+
+  it("ちょうど24時に終わる候補日程は成立する", () => {
+    expect(candidateEndTime("23:00", 60)).toBe("00:00");
+  });
+
+  it("日をまたぐ候補日程は成立しない", () => {
+    // 丸めて 23:59 を返すと、画面には収まっているように見えるのに所要時間ぶんの
+    // 時間が取れていない候補日程が出る。
+    expect(candidateEndTime("23:30", 60)).toBeNull();
+  });
+
+  it("時刻の形になっていなければ導けない", () => {
+    expect(candidateEndTime("", 60)).toBeNull();
+    expect(candidateEndTime("午後1時", 60)).toBeNull();
+  });
+
+  it("どの所要時間でも 09:00 開始は同じ日に収まる", () => {
+    for (const minutes of DURATION_OPTIONS) {
+      expect(candidateEndTime("09:00", minutes), `${minutes}分`).not.toBeNull();
+    }
+  });
+});
+
+describe("candidateRangeText", () => {
+  it("開始と終了を並べる", () => {
+    expect(candidateRangeText("13:00", 90)).toBe("13:00–14:30");
+  });
+
+  it("終わる時刻が出せないときは開始時刻だけを出す", () => {
+    // 「〜」の右が空のまま並ぶと、読み取り漏れなのか日をまたいだのかが読めない。
+    expect(candidateRangeText("23:30", 60)).toBe("23:30");
   });
 });

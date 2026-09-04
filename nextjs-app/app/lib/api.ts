@@ -2,6 +2,7 @@ import type {
   AiErrorCode,
   AiErrorResponse,
   AiTaskSuccessResponse,
+  INPUT_SCHEMAS,
   OUTPUT_SCHEMAS,
   TaskId,
 } from "@contracts/index.js";
@@ -38,6 +39,25 @@ export type TaskOutputs = {
   [K in TaskId]: z.infer<(typeof OUTPUT_SCHEMAS)[K]>;
 };
 
+/**
+ * taskId から構造化入力の型を引く表（ADR-0005）。`TaskOutputs` と対称に置く。
+ *
+ * 契約の `INPUT_SCHEMAS` から導く。画面側で「このタブはこれを送る」と書き写すと、
+ * 契約が入力の形を変えたときにフロントエンドだけが古い形を送り続け、失敗するのは
+ * BFF の門（INVALID_INPUT）になる — 画面のコードは型検査を通ったままなので、
+ * どこが古いのかが分からない。
+ *
+ * 構造化入力を持たない taskId（交通IC）は `undefined` になり、**送らないことが
+ * 型で決まる。** `import type` なので zod のスキーマ本体はバンドルに乗らない。
+ */
+export type TaskInputs = {
+  [K in TaskId]: (typeof INPUT_SCHEMAS)[K] extends infer TSchema
+    ? TSchema extends z.ZodType
+      ? z.infer<TSchema>
+      : undefined
+    : never;
+};
+
 export type AiTaskOutcome<TTaskId extends TaskId> =
   | { ok: true; sessionId: string; result: TaskOutputs[TTaskId] }
   | { ok: false; code: AiErrorCode };
@@ -48,13 +68,13 @@ export type AiTaskRequestArgs<TTaskId extends TaskId> = {
   prompt: string | null;
   sessionId: string | null;
   /**
-   * 構造化入力。持たない taskId では省略する。
+   * 構造化入力（ADR-0005）。持たない taskId では `undefined` を渡す。
    *
    * **追加の指示のときも毎回そのまま送る。** Runtime 側の会話履歴は
-   * コールドスタートで消えるので、初回だけ送ると2回目が「表の無いリクエスト」に
+   * コールドスタートで消えるので、初回だけ送ると2回目が「与件の無いリクエスト」に
    * なる（ADR-0004）。
    */
-  input?: unknown;
+  input: TaskInputs[TTaskId];
 };
 
 /**
@@ -64,8 +84,8 @@ export type AiTaskRequestArgs<TTaskId extends TaskId> = {
  * 変わるのは出力契約の許可リストだけで、この関数もその戻り値の型も動かない。
  *
  * `sessionId` は初回 null、2回目以降は前回の応答が返したものを渡す。これが
- * 追加の指示を同じ会話の続きとして届ける唯一の手立てになる（抽出系は ADR-003 に
- * より画面の状態を運ばないので、前の指示の内容は Runtime 側の会話履歴にしかない）。
+ * 追加の指示を同じ会話の続きとして届ける唯一の手立てになる — `input` が運ぶのは
+ * 画面の**今の**状態だけで、前に何を指示したかは Runtime 側の会話履歴にしかない。
  */
 export async function requestAiTask<TTaskId extends TaskId>({
   taskId,

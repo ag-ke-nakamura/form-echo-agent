@@ -1,35 +1,19 @@
+// 値として引くので `index.js` ではなくモジュール直指し（理由は `ai-assistant.tsx` の
+// 同じ import）。`meeting.ts` は zod を持たないので、バンドルにスキーマが乗らない。
+import type { Availability, MeetingFormat } from "@contracts/meeting";
+import { DURATION_OPTIONS } from "@contracts/meeting";
+
 /**
- * 会議情報（会議名・所要時間・参加形式）の値域と表示文字列。
+ * 会議情報（会議名・所要時間・参加形式）の表示文字列と、そこから導かれる時刻。
  *
- * WHY 画面から切り離すか: この3つはタブ2で入れてタブ3が読むという**タブをまたぐ
+ * WHY 画面から切り離すか: 表示文字列はタブ2で入れてタブ3が読むという**タブをまたぐ
  * 取り決め**で、書式は設計書 3節が決めている。JSX の中に埋め込むと画面を描かない
  * 限り確かめられない（`error-guidance.ts` の文言と同じ理由でここにある）。
- */
-
-/**
- * 参加形式の値域と、ラジオに並べる順。**配列を正典にして型をここから導く。**
  *
- * WHY: 値を足したときに `MEETING_FORMAT_LABELS`（`Record<MeetingFormat, string>`）が
- * 型検査で表示名の追加を要求し、ラジオの列も自動で増える。列挙を2箇所に書くと、
- * 選択肢に出るのに表示名の無い参加形式が作れてしまう。
+ * **値域そのものは `contracts/meeting.ts` にある**（#67 / ADR-0005）。参加形式と
+ * 所要時間は Runtime へ渡す構造化入力に載るようになったので、3プロジェクトの共有語彙に
+ * なった。ここに残るのは画面だけが要るもの — 表示名と、終わる時刻の導出である。
  */
-export const MEETING_FORMAT_ORDER = ["hybrid", "onsite", "online"] as const;
-
-/**
- * 参加形式。会議ごとに1つ決まり、参加者に見せる参加可否の選択肢を決める
- * （`CONTEXT.md`「参加形式」）。
- *
- * 設計書（`temp/design/guest-response-ai-screen-design.md` 3.2節）は「未定」も
- * 挙げているが値域に置かない。未定のときに参加可否の選択肢を4つ出すのか3つに
- * 畳むのかが一意に決まらず、設計書自身がその出し分けを「暫定」と書いている。
- *
- * WHY 契約（`contracts/`）ではなくここか: 参加形式が3プロジェクトの共有語彙に
- * なるのは Runtime へ画面の状態を渡すとき（#67 / ADR-0005）で、今はどのタスクの
- * `input` にも載らない。先に契約へ置くと誰も引かない値域が生えるので、画面が
- * 使い始めるこの段では画面側に置き、#67 が `inputs.ts` へ移す。
- */
-export type MeetingFormat = (typeof MEETING_FORMAT_ORDER)[number];
-
 /**
  * 参加形式の表示名。`CONTEXT.md` の用語集の語をそのまま使う。
  *
@@ -44,18 +28,18 @@ export const MEETING_FORMAT_LABELS: Record<MeetingFormat, string> = {
 };
 
 /**
- * 所要時間の選択肢（分）。自由入力にせず30分刻みに縛る。
+ * 参加可否の表示名。**記号（○×）に畳まない。**
  *
- * WHY: 用語集（`CONTEXT.md`「スロット」）が候補日程の表示単位を30分の升目と
- * 決めており、職員の1クリックは所要時間ぶんの連続したスロットになる。刻みから
- * 外れた値（45分など）を入れられるようにすると、1クリックが半端なスロットに
- * 掛かる場合の描画を決めなければならなくなる。
- *
- * 設計書 5節の「所要時間未設定時はデフォルト30分枠」に当たる状態は持たない。
- * 未設定を選べない代わりに既定が30分なので、職員が何もしなければ設計書と同じ
- * 30分枠になる。
+ * WHY: 4状態になった以上、2記号では現地とリモート、欠席と未定を区別できず、職員と AI が
+ * 見ている表が食い違う（`CONTEXT.md`「参加可否」は○×を _Avoid_ にしている）。未回答は
+ * ここに無い — 回答の不在はセルが存在しないことで表され、参加可否の値ではない。
  */
-export const DURATION_OPTIONS = [30, 60, 90, 120] as const;
+export const AVAILABILITY_LABELS: Record<Availability, string> = {
+  attend_onsite: "現地",
+  attend_remote: "リモート",
+  absent: "欠席",
+  undecided: "未定",
+};
 
 /**
  * 会議情報。タブ2で職員が入れ、タブ3のヘッダーとタブ4の内訳表示が読む。
@@ -66,7 +50,7 @@ export const DURATION_OPTIONS = [30, 60, 90, 120] as const;
  */
 export type MeetingInfo = {
   name: string;
-  durationMinutes: number;
+  durationMinutes: (typeof DURATION_OPTIONS)[number];
   format: MeetingFormat;
 };
 
@@ -108,4 +92,46 @@ export function meetingHeadingText(info: MeetingInfo): string {
  */
 export function meetingSubInfoText(info: MeetingInfo): string {
   return `開催時間: ${info.durationMinutes}分 | 参加形式: ${MEETING_FORMAT_LABELS[info.format]}`;
+}
+
+const MINUTES_PER_DAY = 24 * 60;
+
+/**
+ * 候補日程が終わる時刻。**候補日程は終了時刻を持たない**（ADR-0005）ので、
+ * 開始時刻と会議の所要時間から導く。
+ *
+ * WHY 画面側にあるか: この導出を要るのは画面だけである。Runtime には所要時間を
+ * 与件として渡してあり（モデルは開始時刻だけを決める）、BFF は候補日程の中身を
+ * 見ない。共有していない計算を `contracts/` に置くと、契約が誰も引かない関数を持つ。
+ *
+ * 日をまたぐ会議は無いものとして扱う（`SKILL.md` の制約と同じ）ので、24時を越えたら
+ * `null` を返す。丸めて `23:59` を返すと、画面には収まっているように見えるのに
+ * 所要時間ぶんの時間が取れていない候補日程が出る。
+ */
+export function candidateEndTime(
+  startTime: string,
+  durationMinutes: number,
+): string | null {
+  const [hours, minutes] = startTime.split(":").map(Number);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return null;
+
+  const end = hours * 60 + minutes + durationMinutes;
+  if (end > MINUTES_PER_DAY) return null;
+
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(Math.floor(end / 60) % 24)}:${pad(end % 60)}`;
+}
+
+/**
+ * 候補日程ひとつの表示名。日付と、所要時間から導いた時間帯を並べる。
+ *
+ * 終わる時刻が出せない場合は開始時刻だけを出す。「〜」の右が空のまま並ぶと、
+ * 読み取り漏れなのか日をまたいだのかが画面から区別できない。
+ */
+export function candidateRangeText(
+  startTime: string,
+  durationMinutes: number,
+): string {
+  const end = candidateEndTime(startTime, durationMinutes);
+  return end === null ? startTime : `${startTime}–${end}`;
 }
