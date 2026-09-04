@@ -165,3 +165,63 @@ export function candidateRangeText(
   const end = candidateEndTime(startTime, durationMinutes);
   return end === null ? startTime : `${startTime}–${end}`;
 }
+
+const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+
+/**
+ * その日付の曜日。暦に無い日付と桁揃えの緩い日付（`2026-9-8`）には `null` を返す。
+ *
+ * WHY 画面側の共有語彙に置くか: 参加可否タブの日付見出し（`M月D日(曜)`）と候補日程
+ * タブのカレンダーの列見出し（`M/D(曜)`）が同じ曜日を要る。数え方を2箇所に書くと、
+ * 片方だけがずれても**両方の画面が同じ日を違う曜日で呼ぶ**ところまで進まないと
+ * 気付けない。
+ *
+ * `Intl` を使わないのは SSG のため。ビルド環境とブラウザでロケールが違うと、
+ * ビルド時に描いた HTML と初回描画が食い違う。
+ */
+export function weekdayOf(date: string): string | null {
+  const parsed = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  // 桁揃えの緩さ（`2026-1-1`）を落とす。`isCalendarDate`（契約側）と同じ突き合わせ。
+  if (!parsed.toISOString().startsWith(`${date}T`)) return null;
+
+  return WEEKDAYS[parsed.getUTCDay()];
+}
+
+/**
+ * 日付グループの見出し（設計書 4.6.1節の `M月D日(曜)`）。
+ *
+ * WHY 曜日を出すか: 参加者が自分の予定と突き合わせる単位は曜日であることが多い
+ * （「火曜は毎週埋まっている」）。ISO の日付だけだと、参加者は毎回カレンダーを
+ * 開いて数え直すことになる。
+ *
+ * 曜日の数え方は同じファイルの `weekdayOf`（カレンダーの列見出しも同じものを引く）。
+ * 読めない日付はそのまま返す — 見出しが消えると、どの候補日程の話なのかが無くなる。
+ */
+export function dateHeadingText(date: string): string {
+  const weekday = weekdayOf(date);
+  if (weekday === null) return date;
+
+  const [, month, day] = date.split("-").map(Number);
+  return `${month}月${day}日(${weekday})`;
+}
+
+/**
+ * 候補日程ひとつの表示名。反映の報告・聞き返しの一覧・プレビューの一覧が引く。
+ *
+ * 日付まで含めるのは、どれも**日付グループの外**に出る文字列だから。時間帯だけを
+ * 挙げると、同じ時刻の候補日程が別の日に2つあるときに区別が付かない。
+ *
+ * 受けるのは識別子を持たない形（日付と開始時刻だけ）。候補日程タブのプレビューは
+ * **まだ発番されていない候補日程**を並べる（識別子を配るのは反映のとき）ので、
+ * `SelectedCandidate` を要求すると同じ書式をもう1箇所に書くことになる。
+ */
+export function candidateLabel(
+  candidate: CandidateTime,
+  durationMinutes: number,
+): string {
+  return `${dateHeadingText(candidate.date)} ${candidateRangeText(
+    candidate.start_time,
+    durationMinutes,
+  )}`;
+}

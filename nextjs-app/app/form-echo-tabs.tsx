@@ -5,7 +5,7 @@ import { AvailabilityPanel } from "./availability-panel";
 import {
   CandidatesPanel,
   selectedCandidates,
-  useCandidateRows,
+  useCandidateCalendar,
 } from "./candidates-panel";
 import { useMeetingInfo } from "./meeting-info";
 import { RecommendPanel } from "./recommend-panel";
@@ -29,25 +29,30 @@ export function FormEchoTabs() {
   const [activeTabId, setActiveTabId] = useState<TabId>(TABS[0].id);
 
   /**
-   * 候補日程はタブ層で持つ。
-   *
-   * WHY: 参加可否タブが○×を付ける対象は候補日程タブが作った日付であり、AI は
-   * 既にある候補日程へ○×を付けるだけで候補日程そのものは作らない。どちらかの
-   * タブの内側に置くと相手から見えず、参加可否タブは対象がないまま必ず空振りする。
-   * 状態モデルの定義は `candidates-panel.tsx` に残してあり、ここに上がったのは
-   * 置き場所だけ（#23: フォームの状態モデルはタブごとに分ける）。
-   */
-  const candidates = useCandidateRows();
-
-  /**
-   * 会議情報（会議名・所要時間・参加形式）もタブ層で持つ。
+   * 会議情報（会議名・所要時間・参加形式）はタブ層で持つ。
    *
    * WHY: 入れるのはタブ2だが、読むのはタブ3のヘッダー（何の会議に答えているのか）
    * とタブ4（参加可否表とともに Runtime へ渡す与件。ADR-0005）である。所要時間は
-   * 候補日程の終わる時刻も決めるので、タブ2の表示自体もここから引く。候補日程と
-   * 同じ形で、上がったのは置き場所だけ — 状態モデルの定義は `meeting-info.tsx` に残す。
+   * 候補日程の終わる時刻も決めるので、タブ2の表示自体もここから引く。上がったのは
+   * 置き場所だけ — 状態モデルの定義は `meeting-info.tsx` に残す。
    */
   const meetingInfo = useMeetingInfo();
+
+  /**
+   * 候補日程もタブ層で持つ。
+   *
+   * WHY: 参加可否タブが可否を付ける対象は候補日程タブが選んだ候補日程であり、AI は
+   * 既にある候補日程へ可否を付けるだけで候補日程そのものは作らない。どちらかの
+   * タブの内側に置くと相手から見えず、参加可否タブは対象がないまま必ず空振りする。
+   * 状態モデルは `app/lib/candidate-calendar.ts` にあり、ここに上がったのは
+   * 置き場所だけ（#23: フォームの状態モデルはタブごとに分ける）。
+   *
+   * 所要時間を渡すのは、カレンダーのクリックの受け付け（重なり・業務時間への収まり）が
+   * 所要時間抜きには決まらないため。だから会議情報より後に置く。カレンダーが見せる
+   * 14日はこのフックが自分で決める（起点は職員の「今日」で、SSG のためブラウザ側でしか
+   * 決まらない）。
+   */
+  const candidates = useCandidateCalendar(meetingInfo.info.durationMinutes);
 
   const panels: Record<TabId, ReactNode> = {
     "ic-card": <ReservationPanel />,
@@ -56,7 +61,7 @@ export function FormEchoTabs() {
     ),
     "meeting-availability": (
       <AvailabilityPanel
-        candidates={selectedCandidates(candidates.rows)}
+        candidates={selectedCandidates(candidates.candidates)}
         meetingInfo={meetingInfo.info}
       />
     ),

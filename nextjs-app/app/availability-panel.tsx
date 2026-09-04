@@ -16,13 +16,16 @@ import {
   applyAvailabilityResult,
   availabilityChoicesFor,
   availabilityPreviewItems,
-  candidateLabel,
-  dateHeadingText,
   groupCandidatesByDate,
   unjudgedCandidates,
 } from "./lib/availability-form";
 import { candidateLimitReason } from "./lib/candidate-limit";
-import { candidateRangeText, type MeetingInfo } from "./lib/meeting-info";
+import {
+  candidateLabel,
+  candidateRangeText,
+  dateHeadingText,
+  type MeetingInfo,
+} from "./lib/meeting-info";
 import { MeetingInfoHeader } from "./meeting-info";
 import { ManualInputDivider, TabHeading } from "./screen-layout";
 

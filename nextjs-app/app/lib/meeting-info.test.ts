@@ -7,11 +7,14 @@ import { describe, expect, it } from "vitest";
 import {
   AVAILABILITY_LABELS,
   candidateEndTime,
+  candidateLabel,
   candidateRangeText,
+  dateHeadingText,
   INITIAL_MEETING_INFO,
   MEETING_FORMAT_LABELS,
   meetingHeadingText,
   meetingSubInfoText,
+  weekdayOf,
 } from "./meeting-info";
 
 /**
@@ -143,5 +146,55 @@ describe("candidateRangeText", () => {
   it("終わる時刻が出せないときは開始時刻だけを出す", () => {
     // 「〜」の右が空のまま並ぶと、読み取り漏れなのか日をまたいだのかが読めない。
     expect(candidateRangeText("23:30", 60)).toBe("23:30");
+  });
+});
+
+/**
+ * 曜日（日付見出しと、カレンダーの列見出しが引く）。
+ *
+ * WHY テストを持つか: `Intl` を使えない（SSG なのでビルド環境とブラウザでロケールが
+ * 違う）ので、曜日は自分で数える。数え方を間違えると、日付見出しとカレンダーの列が
+ * 揃って1日ずれる — 揃ってずれるので画面を並べても気付けない。
+ */
+describe("weekdayOf", () => {
+  it("曜日を返す", () => {
+    expect(weekdayOf("2026-09-08")).toBe("火");
+    expect(weekdayOf("2026-09-13")).toBe("日");
+  });
+
+  it("暦に無い日付と桁揃えの緩い日付は null", () => {
+    expect(weekdayOf("2026-02-30")).toBeNull();
+    expect(weekdayOf("2026-9-8")).toBeNull();
+  });
+});
+
+/**
+ * 候補日程の表示文字列（#70 のシーム。#69 でここへ移した）。
+ *
+ * WHY ここにあるか: 日付見出しは参加可否タブが、候補日程の表示名は3タブの `app/lib` が
+ * 引く。タブ3のモジュールに置いたままだと、候補日程タブがそこから掘りに行くことになる。
+ */
+describe("dateHeadingText", () => {
+  it("設計書 4.6.1節の書式で出す", () => {
+    expect(dateHeadingText("2026-10-15")).toBe("10月15日(木)");
+  });
+
+  it("月と日の先頭の0を落とす", () => {
+    expect(dateHeadingText("2026-01-05")).toBe("1月5日(月)");
+  });
+
+  it("日付の形になっていなければそのまま返す", () => {
+    // 候補日程の日付は出力契約が YYYY-MM-DD を保証するが、手入力の途中の値が
+    // ここへ来ることがある。整形できないことを見出しから隠さない。
+    expect(dateHeadingText("")).toBe("");
+    expect(dateHeadingText("2026-13-45")).toBe("2026-13-45");
+  });
+});
+
+describe("candidateLabel", () => {
+  it("日付と時間帯を並べる", () => {
+    expect(
+      candidateLabel({ date: "2026-10-15", start_time: "14:00" }, 60),
+    ).toBe("10月15日(木) 14:00–15:00");
   });
 });

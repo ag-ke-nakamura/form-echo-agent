@@ -3,6 +3,7 @@ import {
   availabilitySchema,
   candidateFieldsSchema,
   durationMinutesSchema,
+  isoDateSchema,
   meetingFormatSchema,
 } from './fields.js';
 import { MAX_INPUT_CANDIDATES } from './meeting.js';
@@ -36,16 +37,41 @@ const meetingContextFields = {
 };
 
 /**
- * `meeting.parse-candidates` の入力。**所要時間だけ**を渡す（ADR-0005）。
+ * `meeting.parse-candidates` の入力（所要時間と、カレンダーの表示範囲）。
  *
  * 既に選択済みの候補日程は送らない。「来月の午後」→「火曜と木曜だけにして」という
  * 書き直しの往復は `sessionId` の会話履歴で成立する。カレンダーで手動選択した分を
  * AI に教える必要があるのは設計書 6.3節だが、設計書はそこを「既存の選択に加算される」
  * という画面側の挙動としてのみ規定していて、AI に既存を教えるとは書いていない。
+ *
+ * **表示範囲を渡すのは #69 の帰結。** 候補日程を選ぶ非AI経路が2週間のカレンダーに
+ * なり、週送りナビゲーションを持たない（#64 Out of Scope）ので、**職員が選べる日付は
+ * この範囲にしか無い。** 範囲を渡さないと、AI は「来月の午後」と言われれば素直に
+ * 来月を返し、返ってきた候補日程は1件もカレンダーに置けない — 職員から見ると
+ * 生成には成功したのに画面が何も変わらない。範囲外だと分かるのは AI の側でしか
+ * ないので（暦を解決するのは AI）、与件として渡して**範囲外なら聞き返させる**。
  */
-export const parseCandidatesInputSchema = z.object({
-  duration_minutes: durationMinutesSchema,
-});
+export const parseCandidatesInputSchema = z
+  .object({
+    duration_minutes: durationMinutesSchema,
+    calendar_start: isoDateSchema.describe(
+      'カレンダーが見せている最初の日。職員が選べるのはこの日から',
+    ),
+    calendar_end: isoDateSchema.describe(
+      'カレンダーが見せている最後の日。職員が選べるのはこの日まで',
+    ),
+  })
+  /*
+    順序だけ見る。範囲の長さ（2週間）は縛らない — カレンダーが何日ぶん見せるかは
+    画面の都合で、契約が決めることではない。逆向きの範囲は条件として成立しないので、
+    AI に渡す前に弾く（渡すと必ず0件になり、職員には理由が出ない）。
+  */
+  .refine(
+    ({ calendar_start, calendar_end }) => calendar_start <= calendar_end,
+    {
+      error: 'カレンダーの表示範囲の終わりが始まりより前です',
+    },
+  );
 
 export type ParseCandidatesInput = z.infer<typeof parseCandidatesInputSchema>;
 
