@@ -103,14 +103,22 @@ async function main(): Promise<void> {
         ],
       },
       sensitiveInformationPolicyConfig: {
-        // 汎用 PII（案Aの SENSITIVE_INFORMATION_ENTITIES と同じ顔ぶれ）。
+        /*
+          案Aの SENSITIVE_INFORMATION_ENTITIES（invoke-checks.ts）と同じ顔ぶれ。
+          EMAIL / PHONE / NAME / ADDRESS は含めない — 日本語でも高い confidence で
+          検知できる（F-06）のが逆に仇になり、ic-card.parse-reservation の正常な
+          出力（行き先という住所そのもの）まで検知してしまう（実機で確認済み）。
+          残すのは、どのタスクの正常な出力にも本来含まれ得ない識別子だけ。
+        */
         piiEntitiesConfig: [
-          { type: 'EMAIL', action: 'BLOCK' },
-          { type: 'PHONE', action: 'BLOCK' },
-          { type: 'NAME', action: 'BLOCK' },
-          { type: 'ADDRESS', action: 'BLOCK' },
           { type: 'US_SOCIAL_SECURITY_NUMBER', action: 'BLOCK' },
           { type: 'CREDIT_DEBIT_CARD_NUMBER', action: 'BLOCK' },
+          { type: 'US_PASSPORT_NUMBER', action: 'BLOCK' },
+          { type: 'DRIVER_ID', action: 'BLOCK' },
+          { type: 'AWS_ACCESS_KEY', action: 'BLOCK' },
+          { type: 'AWS_SECRET_KEY', action: 'BLOCK' },
+          { type: 'PASSWORD', action: 'BLOCK' },
+          { type: 'PIN', action: 'BLOCK' },
         ],
         // マイナンバー（F-03・F-16）。コード側の正規表現（`pii.ts`）と同じ
         // パターン文字列を使う — 結果の違いが出るならパターンの解釈の違いに

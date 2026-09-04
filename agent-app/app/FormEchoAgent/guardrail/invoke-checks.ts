@@ -1,13 +1,12 @@
 import {
-  BedrockRuntimeClient,
   type GuardrailChecksResults,
   InvokeGuardrailChecksCommand,
 } from '@aws-sdk/client-bedrock-runtime';
 import {
-  AWS_REGION,
   type GuardrailThresholds,
   resolveGuardrailThresholds,
 } from '../config.js';
+import { bedrockRuntimeClient } from './bedrock-runtime-client.js';
 import type {
   GuardrailBackend,
   GuardrailCheckType,
@@ -36,24 +35,28 @@ const PROMPT_ATTACK_CATEGORIES = [
   'PROMPT_INJECTION',
   'PROMPT_LEAKAGE',
 ] as const;
-/** F-03: 日本固有の識別子はここに無い。`pii.ts` の正規表現が別に見る。 */
+/**
+ * F-03: 日本固有の識別子（マイナンバー等）はここに無い。`pii.ts` の正規表現が別に見る。
+ *
+ * **`ADDRESS` / `NAME` / `PHONE` / `EMAIL` 等の汎用カテゴリはここに含めない。**
+ * 日本語でも高い confidence で検知できる（F-06: 「NAME 1.0 / ADDRESS 1.0」）のが
+ * 逆に仇になる — `ic-card.parse-reservation` の仕事は行き先という**住所そのもの**を
+ * 抽出することで、正常な入力（「大阪出張」）ですら `ADDRESS(1)` として検知され、
+ * ブロックしてしまう（実機で確認した実際の誤検知）。
+ *
+ * 残すのは、この4タスクのどれの正常な出力にも本来含まれ得ない、資格情報・
+ * 金融/政府発行の識別子だけにする。
+ */
 const SENSITIVE_INFORMATION_ENTITIES = [
-  'ADDRESS',
-  'AGE',
-  'EMAIL',
-  'NAME',
-  'PHONE',
-  'URL',
-  'USERNAME',
   'US_SOCIAL_SECURITY_NUMBER',
   'CREDIT_DEBIT_CARD_NUMBER',
+  'US_PASSPORT_NUMBER',
+  'DRIVER_ID',
+  'AWS_ACCESS_KEY',
+  'AWS_SECRET_KEY',
+  'PASSWORD',
+  'PIN',
 ] as const;
-
-let client: BedrockRuntimeClient | undefined;
-function guardrailChecksClient(): BedrockRuntimeClient {
-  client ??= new BedrockRuntimeClient({ region: AWS_REGION });
-  return client;
-}
 
 function findingsAbove(
   checkType: GuardrailCheckType,
@@ -109,7 +112,7 @@ export const invokeGuardrailChecks: GuardrailBackend = async (
   text,
   direction,
 ) => {
-  const response = await guardrailChecksClient().send(
+  const response = await bedrockRuntimeClient().send(
     new InvokeGuardrailChecksCommand({
       checks: {
         contentFilter: {

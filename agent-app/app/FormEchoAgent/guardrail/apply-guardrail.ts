@@ -1,9 +1,9 @@
 import {
   ApplyGuardrailCommand,
   type ApplyGuardrailCommandOutput,
-  BedrockRuntimeClient,
 } from '@aws-sdk/client-bedrock-runtime';
-import { AWS_REGION, resolveGuardrailResource } from '../config.js';
+import { resolveGuardrailResource } from '../config.js';
+import { bedrockRuntimeClient } from './bedrock-runtime-client.js';
 import type {
   GuardrailBackend,
   GuardrailFinding,
@@ -16,15 +16,9 @@ import type {
  * なくリソースの設定（`scripts/create-guardrail.ts`）が持つ。
  */
 
-let client: BedrockRuntimeClient | undefined;
-function applyGuardrailClient(): BedrockRuntimeClient {
-  client ??= new BedrockRuntimeClient({ region: AWS_REGION });
-  return client;
-}
-
 export const applyGuardrail: GuardrailBackend = async (text, direction) => {
   const { identifier, version } = resolveGuardrailResource();
-  const response = await applyGuardrailClient().send(
+  const response = await bedrockRuntimeClient().send(
     new ApplyGuardrailCommand({
       guardrailIdentifier: identifier,
       guardrailVersion: version,
