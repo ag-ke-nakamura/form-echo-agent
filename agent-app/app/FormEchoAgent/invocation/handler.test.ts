@@ -147,19 +147,19 @@ const VALID_OUTPUTS = {
     sources: [],
   },
   'meeting.recommend-schedule': {
-    recommendations: [
+    evaluations: [
       {
         candidate_id: 'candidate-1',
-        rank: 1,
-        reason: '参加者A・参加者Bの2人とも参加できます。',
+        score: 0.9,
+        comment: '参加者A・参加者Bの2人とも参加できます。',
       },
       {
         candidate_id: 'candidate-2',
-        rank: 2,
-        reason: '参加者Aが欠席、参加者Bは未回答です。',
+        score: 0.3,
+        comment: '参加者Aが欠席、参加者Bは未回答です。',
       },
     ],
-    message: '10月15日を推奨します。',
+    message: '参加できる人数を基準に評点を付けました。',
     sources: [],
   },
 } satisfies { [K in TaskId]: z.infer<(typeof OUTPUT_SCHEMAS)[K]> };
@@ -539,13 +539,25 @@ describe('出力契約が弾く形', () => {
       },
     },
     {
-      name: '順位が 1 から始まる連番でない',
+      // 評点が値域を外れると、ラベルの導出が破綻するのではなく黙って「推奨」に
+      // 倒れる（`recommendation.ts`）。契約の側で止める必要がある。
+      name: '評点が値域の外',
       taskId: 'meeting.recommend-schedule',
       output: {
         ...VALID_OUTPUTS['meeting.recommend-schedule'],
-        recommendations: VALID_OUTPUTS[
+        evaluations: VALID_OUTPUTS[
           'meeting.recommend-schedule'
-        ].recommendations.map((entry) => ({ ...entry, rank: 1 })),
+        ].evaluations.map((entry) => ({ ...entry, score: 1.5 })),
+      },
+    },
+    {
+      name: '評点が負',
+      taskId: 'meeting.recommend-schedule',
+      output: {
+        ...VALID_OUTPUTS['meeting.recommend-schedule'],
+        evaluations: VALID_OUTPUTS[
+          'meeting.recommend-schedule'
+        ].evaluations.map((entry) => ({ ...entry, score: -0.1 })),
       },
     },
     {
@@ -553,12 +565,12 @@ describe('出力契約が弾く形', () => {
       taskId: 'meeting.recommend-schedule',
       output: {
         ...VALID_OUTPUTS['meeting.recommend-schedule'],
-        recommendations: [
+        evaluations: [
           {
-            ...VALID_OUTPUTS['meeting.recommend-schedule'].recommendations[0],
+            ...VALID_OUTPUTS['meeting.recommend-schedule'].evaluations[0],
             candidate_id: 'candidate-99',
           },
-          VALID_OUTPUTS['meeting.recommend-schedule'].recommendations[1],
+          VALID_OUTPUTS['meeting.recommend-schedule'].evaluations[1],
         ],
       },
     },
@@ -567,8 +579,8 @@ describe('出力契約が弾く形', () => {
       taskId: 'meeting.recommend-schedule',
       output: {
         ...VALID_OUTPUTS['meeting.recommend-schedule'],
-        recommendations: [
-          VALID_OUTPUTS['meeting.recommend-schedule'].recommendations[0],
+        evaluations: [
+          VALID_OUTPUTS['meeting.recommend-schedule'].evaluations[0],
         ],
       },
     },
@@ -577,9 +589,9 @@ describe('出力契約が弾く形', () => {
       taskId: 'meeting.recommend-schedule',
       output: {
         ...VALID_OUTPUTS['meeting.recommend-schedule'],
-        recommendations: VALID_OUTPUTS[
+        evaluations: VALID_OUTPUTS[
           'meeting.recommend-schedule'
-        ].recommendations.map((entry) => ({
+        ].evaluations.map((entry) => ({
           ...entry,
           candidate_id: '2026-10-15 13:00',
         })),

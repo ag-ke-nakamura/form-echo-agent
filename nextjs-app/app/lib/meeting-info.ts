@@ -1,5 +1,6 @@
 // 値として引くので `index.js` ではなくモジュール直指し（理由は `ai-assistant.tsx` の
 // 同じ import）。`meeting.ts` は zod を持たないので、バンドルにスキーマが乗らない。
+import type { AiEvaluationLabel } from "@contracts/recommendation";
 import type { Availability, MeetingFormat } from "@contracts/meeting";
 import { DURATION_OPTIONS } from "@contracts/meeting";
 
@@ -39,6 +40,20 @@ export const AVAILABILITY_LABELS: Record<Availability, string> = {
   attend_remote: "リモート",
   absent: "欠席",
   undecided: "未定",
+};
+
+/**
+ * AI評価ラベルの表示名（設計書 4.3節）。`CONTEXT.md`「AI評価ラベル」の語をそのまま使う。
+ *
+ * **AI はこの語を返さない。** ラベルは評点と回答率から導かれる（ADR-0007）ので、
+ * ここにあるのは英語の値域を職員の言葉に写す表だけである。
+ */
+export const AI_EVALUATION_LABELS: Record<AiEvaluationLabel, string> = {
+  recommended: "推奨",
+  backup: "予備に提案",
+  consider: "要検討",
+  rejected: "条件合わず",
+  unanswered: "参加入力未済",
 };
 
 /**

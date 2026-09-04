@@ -146,54 +146,52 @@ export type ParseAvailabilityOutput = z.infer<
 >;
 
 /**
- * 候補日程ひとつに対する順位と理由。
+ * 候補日程ひとつに対する**評点と根拠**（ADR-0007）。
  *
- * **候補日程は識別子で指す**（ADR-0005）。3項目を連結した鍵で突き合わせていたのは、
- * 契約に識別子が無かったからで、その理由は消えた。日付と開始時刻を写させると、
- * 同じものを2通りで指すことになり、片方だけ書き間違えた組が契約を通ってしまう。
+ * **候補日程は識別子で指す**（ADR-0005）。日付と開始時刻を写させると、同じものを
+ * 2通りで指すことになり、片方だけ書き間違えた組が契約を通ってしまう。
+ *
+ * WHY 順位ではなく評点か: 設計書 7.2節は同じ判断を評点・ラベル・専用フィールド
+ * （`recommended_candidate_id` / `backup_candidate_ids`）の3箇所に置いている。3通りの
+ * 言い方で同じことを返させると矛盾した組が出て、ラベルの境界値のたびに再試行が走る。
+ * AI に返させるのは評点と根拠だけにし、AI評価ラベルと初期選択は `recommendation.ts` が
+ * 導く。**順位が 1..N の順列であること**という欄をまたぐ不変条件も、これで不要になった。
  */
-const recommendationSchema = z.object({
+const candidateEvaluationSchema = z.object({
   candidate_id: candidateIdSchema.describe(
-    '順位を付けた候補日程の識別子。入力の candidates にあるものだけを使う',
+    '評点を付けた候補日程の識別子。入力の candidates にあるものだけを使う',
   ),
-  rank: z
-    .int()
-    .min(1)
-    .describe('順位。1が最も推奨。全候補日程で重複しない 1..N の値'),
-  reason: z
+  /**
+   * この候補日程の適切さ。0.0〜1.0。
+   *
+   * 範囲を縛るのは、閾値（`recommendation.ts` の `SCORE_THRESHOLDS`）が範囲の中の
+   * 位置として書かれているため。`1.5` や `-1` が通ると、ラベルの導出が破綻するのでは
+   * なく**黙って「推奨」に倒れる** — 職員には AI が強く推したように見える。
+   */
+  score: z
+    .number()
+    .min(0)
+    .max(1)
+    .describe('この候補日程の適切さ。0.0（不適）〜1.0（最適）'),
+  /**
+   * 評点の根拠（`CONTEXT.md`「候補日提案」）。
+   *
+   * WHY `comment` か: 用語集は「コメント」を _Avoid_ にしているが、それは**備考**
+   * （参加者が書く自由記述）と紛れるためで、こちらは AI が書く根拠である。設計書
+   * 7.1節の欄名をそのまま採り、日本語では「根拠」と呼ぶ。
+   */
+  comment: z
     .string()
     .describe(
-      'この候補日程がこの順位になった理由。参加できない参加者や未回答の参加者に触れる',
+      'この評点になった根拠。参加できない参加者や未回答の参加者に触れる。全体の中の順位には触れない',
     ),
 });
 
-/**
- * 順位が 1..N の順列であること。
- *
- * WHY: モックの参加可否表は参加可能人数が最多の候補日程を2つ作るので、AI は同数をどう
- * 捌くかを説明せざるを得ない。同順位（両方1位）を許すと、その説明を回避できてしまう。
- * 抜け（1,2,4,5）も同じで、順位が全体の中の位置を表さなくなる。
- *
- * 欄をまたぐ不変条件なので JSON Schema には写らない。`safeParse` の段で初めて弾かれて
- * 再試行に回るため、同じ制約を `SKILL.md` にも書く。
- */
-function isRankPermutation(
-  recommendations: readonly { rank: number }[],
-): boolean {
-  const ranks = recommendations
-    .map((entry) => entry.rank)
-    .sort((a, b) => a - b);
-  return ranks.every((rank, index) => rank === index + 1);
-}
-
 export const recommendScheduleOutputSchema = z.object({
-  recommendations: z
-    .array(recommendationSchema)
+  evaluations: z
+    .array(candidateEvaluationSchema)
     .min(1)
-    .refine(isRankPermutation, {
-      error: '順位は 1 から始まる連番で、重複も抜けもあってはいけません',
-    })
-    .describe('全候補日程の順位と理由。入力の候補日程と同数'),
+    .describe('全候補日程の評点と根拠。入力の候補日程と同数'),
   ...commonOutputFields,
 });
 

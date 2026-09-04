@@ -53,16 +53,28 @@ BFF の再検査の両方が引く。
 自然文の必須性は `PROMPT_REQUIREMENT`（`prompt-requirement.ts`）が taskId ごとに持つ
 （`OUTPUT_SCHEMAS` / `INPUT_SCHEMAS` と対称）。「毎回送り直す」理由は ADR-0004 にある。
 
-## zod を import してはいけないファイル
+## フロントエンドが値として引くファイル
 
-`meeting.ts` と `prompt-requirement.ts`。フロントエンドがこの2つだけを**値として**引くので、
-スキーマと同じモジュールに置くと SSG のバンドルに zod が丸ごと乗る。
+`meeting.ts`・`recommendation.ts`・`prompt-requirement.ts`。この3つには2つの制約が掛かる。
+
+**zod を import しない。** スキーマと同じモジュールに置くと SSG のバンドルに zod が丸ごと乗る。
+
+**`contracts/` の他のモジュールも値として import しない。** 引けるのは `import type` だけである。
+相対 import の `.js` は Runtime の NodeNext が要求する形だが、フロントエンドのバンドラ
+（Turbopack / webpack）はそれを `.ts` に読み替えない — `moduleResolution: bundler` の読み替えは
+tsc の中だけの話で、`next.config.ts` から効かせる手も無い（`resolveAlias` も `resolveExtensions` も
+届かない）。型だけの import は emit 時に消えるので、この制約は**値として引くモジュールにだけ**掛かる。
+`next build` が「Module not found: Can't resolve './meeting.js'」で落ちたらこれである。
 
 `meeting.ts` が持つのは**値域と、値域だけで答えられること**（参加形式3値・参加可否4状態・
 所要時間の選択肢・候補日程の識別子の形と発番・件数の上限・`isAttending`）。Zod スキーマは
 `fields.ts` がここから導く。画面が値として要るものはここに置くしかないので、**「zod を使わずに
-書けるか」が置き場所の基準**になる。集計や導出はここではない — 参加可能人数を数えるのは
-`nextjs-app/app/lib`、AI評価ラベルの導出は #71 が置く場所を決める。
+書けるか」が置き場所の基準**になる。
+
+`recommendation.ts` が持つのは**候補日提案の導出と集計**（ADR-0007）— AI評価ラベルの閾値と導出、
+参加可否表からの集計（参加可能人数・現地／リモートの内訳・欠席者・未回答者数）、AI 提案の発火閾値、
+開催日・予備日の初期選択。**AI に数えさせない**ための場所である。上の制約から `isAttending` を
+呼べないので、参加可否4状態を1つの `switch` で網羅して内訳の和を採る。
 
 ## 参照のしかたはプロジェクトごとに違う
 

@@ -90,7 +90,7 @@ const candidateWithAnswersSchema = candidateFieldsSchema.extend({
 /**
  * `meeting.recommend-schedule` の入力（参加形式・所要時間・名簿・参加可否表）。
  *
- * 候補日程を主キーにネストする。出力が候補日程ごとの順位なので、AI が数える単位と
+ * 候補日程を主キーにネストする。出力が候補日程ごとの評点なので、AI が数える単位と
  * 並びが揃う。セルを平坦に並べると同じ候補日程が全セルで繰り返され、参照ドキュメント
  * 13.1節の入力想定を無駄に食う。
  *
@@ -108,7 +108,7 @@ export const recommendScheduleInputSchema = z.object({
     .array(candidateWithAnswersSchema)
     .min(1)
     .max(MAX_INPUT_CANDIDATES)
-    .describe('順位を付ける対象の候補日程'),
+    .describe('評点を付ける対象の候補日程'),
 });
 
 export type RecommendScheduleInput = z.infer<

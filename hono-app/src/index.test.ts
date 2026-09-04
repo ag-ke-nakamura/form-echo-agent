@@ -132,19 +132,19 @@ const VALID_RESULTS = {
     sources: [],
   },
   'meeting.recommend-schedule': {
-    recommendations: [
+    evaluations: [
       {
         candidate_id: 'candidate-1',
-        rank: 1,
-        reason: '参加者A・参加者Bの2人とも参加できます。',
+        score: 0.9,
+        comment: '参加者A・参加者Bの2人とも参加できます。',
       },
       {
         candidate_id: 'candidate-2',
-        rank: 2,
-        reason: '参加者Aが欠席、参加者Bは未回答です。',
+        score: 0.3,
+        comment: '参加者Aが欠席、参加者Bは未回答です。',
       },
     ],
-    message: '10月15日を推奨します。',
+    message: '参加できる人数を基準に評点を付けました。',
     sources: [],
   },
 } satisfies { [K in TaskId]: z.infer<(typeof OUTPUT_SCHEMAS)[K]> }
@@ -605,19 +605,19 @@ describe('出力契約の再検査', () => {
     // 通り抜けたものが、フロントエンドへ出る前にここで最後に落ちる（ADR-0005）。
     fakeRuntimeScript.write(
       runtimeReturns({
-        recommendations: [
+        evaluations: [
           {
             candidate_id: 'candidate-99',
-            rank: 1,
-            reason: '入力の参加可否表に無い候補日程。',
+            score: 0.9,
+            comment: '入力の参加可否表に無い候補日程。',
           },
           {
             candidate_id: 'candidate-2',
-            rank: 2,
-            reason: '参加者Aが欠席です。',
+            score: 0.3,
+            comment: '参加者Aが欠席です。',
           },
         ],
-        message: '入力に無い候補日程を推奨します。',
+        message: '入力に無い候補日程に評点を付けました。',
         sources: [],
       }),
     )
@@ -703,18 +703,18 @@ describe('出力契約の再検査', () => {
   })
 
   it('入力の候補日程を落とした提案を通さない', async () => {
-    // 順位は 1..N の順列なので、落ちた分は出力契約だけでは検出できない
-    // （1件だけ返せば「1」で順列になる）。
+    // 出力契約だけでは検出できない。1件だけでも評点は値域に収まるので、落ちた
+    // 候補日程は AI評価ラベルを持てないまま画面に並ぶ（`findRecommendationMismatch`）。
     fakeRuntimeScript.write(
       runtimeReturns({
-        recommendations: [
+        evaluations: [
           {
             candidate_id: 'candidate-1',
-            rank: 1,
-            reason: '2人とも参加できます。',
+            score: 0.9,
+            comment: '2人とも参加できます。',
           },
         ],
-        message: '10月15日を推奨します。',
+        message: '参加できる人数を基準に評点を付けました。',
         sources: [],
       }),
     )

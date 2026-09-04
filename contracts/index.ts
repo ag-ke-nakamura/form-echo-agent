@@ -6,5 +6,6 @@ export * from './meeting.js';
 export * from './output-schema.js';
 export * from './outputs.js';
 export * from './prompt-requirement.js';
+export * from './recommendation.js';
 export * from './task-ids.js';
 export * from './task-input.js';

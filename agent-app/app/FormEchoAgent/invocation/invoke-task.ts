@@ -21,7 +21,7 @@ export interface TaskInvocation {
    *
    * **追加の指示のときも毎回届く。** Agent キャッシュはベストエフォートで、
    * コールドスタートで会話履歴ごと消える（`domain-agent.ts`）。初回だけ送る形に
-   * すると、履歴が消えた後の2回目が「表の無いリクエスト」になり、AI は順位を
+   * すると、履歴が消えた後の2回目が「表の無いリクエスト」になり、AI は評点を
    * 付ける対象を持たないまま実行させられる。
    */
   input?: unknown;
@@ -64,7 +64,7 @@ export async function invokeTask(
     agent,
     buildUserMessage(taskId, prompt, input),
     // 入力を見ないと言えない不変条件（提案が入力の候補日程と過不足なく対応して
-    // いるか）もここに載せる。順位の重複や抜けと同じく作り直しに回す。
+    // いるか）もここに載せる。値域を外れた評点と同じく作り直しに回す。
     outputSchemaFor(taskId, input),
     log,
   );
