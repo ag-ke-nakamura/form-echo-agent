@@ -1,7 +1,8 @@
 "use client";
 
 import type { ParseReservationOutput } from "@contracts/index.js";
-import { useId, useState } from "react";
+import { Plus, Trash2 } from "lucide-react";
+import { useId, useRef, useState } from "react";
 import { AiAssistant } from "./ai-assistant";
 import { AiBadge, type ApplyReport, type FieldSource } from "./field-source";
 import { FormSection } from "./form-section";
@@ -13,15 +14,44 @@ import {
   type FieldName,
   type FormState,
   reservationPreviewItems,
-  TRANSPORT_LABELS,
+  SELECT_LABELS,
+  type SelectFieldName,
 } from "./lib/reservation-form";
 import { ManualInputDivider, TabHeading } from "./screen-layout";
 
+/** 同行者の行ひとつ。**AI は埋めない**ので `FieldSource` を持たない（#68）。 */
+type CompanionRow = { id: string; name: string };
+
 export function ReservationPanel() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  /*
+    同行者とICカード利用枚数は出力契約に載せず、AI にも埋めさせない（#68）。
+    `FormState` の外に置くのはそのため — 中に入れると `applyToForm` の写す規則が
+    掛かる欄に見え、「AI が推測すべき値ではない」という判断がコードから消える。
+  */
+  const [companions, setCompanions] = useState<CompanionRow[]>([]);
+  const [cardCount, setCardCount] = useState("");
+  // 行の識別子は React の key にしか使わないので、画面の中だけで連番を配る。
+  const nextCompanionNumber = useRef(0);
 
   function setField(name: FieldName, value: string) {
     setForm((current) => ({ ...current, [name]: { value, source: "manual" } }));
+  }
+
+  function addCompanion() {
+    const id = `companion-${nextCompanionNumber.current}`;
+    nextCompanionNumber.current += 1;
+    setCompanions((current) => [...current, { id, name: "" }]);
+  }
+
+  function removeCompanion(id: string) {
+    setCompanions((current) => current.filter((row) => row.id !== id));
+  }
+
+  function setCompanionName(id: string, name: string) {
+    setCompanions((current) =>
+      current.map((row) => (row.id === id ? { ...row, name } : row)),
+    );
   }
 
   /**
@@ -37,6 +67,10 @@ export function ReservationPanel() {
 
   function resetForm() {
     setForm(EMPTY_FORM);
+    // 同行者と利用枚数も戻す。「最初からやり直す」は AI 由来の欄だけを消す操作
+    // ではなく、フォームを初期状態へ戻す操作である（手で入れた欄も消える）。
+    setCompanions([]);
+    setCardCount("");
   }
 
   return (
@@ -55,10 +89,11 @@ export function ReservationPanel() {
         nonAiPathHint="AI を使わなくても、すべての項目を手で埋められます。"
         description={
           "自然な言葉で予約内容を入力すると、AIが自動的にフォームに入力します。\n" +
-          "例: 「来月15日から3泊4日で大阪出張、新幹線で往復」"
+          "例: 「来月15日から3泊4日で大阪出張、新幹線で往復」\n" +
+          "同行者とICカード利用枚数は対象外です。手で入力してください。"
         }
         placeholder="予約内容を自然な言葉で入力してください..."
-        followUpPlaceholder="往路は10月16日でした"
+        followUpPlaceholder="借りるのは9時、返すのは18時です"
         submitLabel="AIで入力内容を生成"
         pendingLabel="生成中..."
         generatingMessage="AIが内容を生成しています..."
@@ -78,16 +113,20 @@ export function ReservationPanel() {
 
       <FormSection taskId={RESERVATION_TASK_ID}>
         <div className="grid gap-5 sm:grid-cols-2">
+          {/*
+            借りる日時・返す日時は日付ではなく時点なので `datetime-local`（#68）。
+            出力契約が `YYYY-MM-DDTHH:mm` を保証するので、この欄の値の形と一致する。
+          */}
           <Field
-            name="departure_date"
-            type="date"
-            state={form.departure_date}
+            name="borrow_at"
+            type="datetime-local"
+            state={form.borrow_at}
             onChange={setField}
           />
           <Field
-            name="return_date"
-            type="date"
-            state={form.return_date}
+            name="return_at"
+            type="datetime-local"
+            state={form.return_at}
             onChange={setField}
           />
           <Field
@@ -102,8 +141,28 @@ export function ReservationPanel() {
             state={form.destination}
             onChange={setField}
           />
-          <TransportField state={form.transport} onChange={setField} />
+          <SelectField
+            name="transport"
+            state={form.transport}
+            onChange={setField}
+          />
+          <SelectField
+            name="purpose"
+            state={form.purpose}
+            onChange={setField}
+          />
         </div>
+
+        <div className="mt-5 grid gap-5 sm:grid-cols-2">
+          <CardCountField value={cardCount} onChange={setCardCount} />
+        </div>
+
+        <CompanionRows
+          rows={companions}
+          onAdd={addCompanion}
+          onRemove={removeCompanion}
+          onChangeName={setCompanionName}
+        />
       </FormSection>
     </div>
   );
@@ -121,69 +180,210 @@ function ClearButton({ onClick }: { onClick: () => void }) {
   );
 }
 
+/**
+ * AI が埋めない欄の但し書き（#68）。
+ *
+ * WHY 画面に出すか: 同行者と利用枚数は出力契約に無いので、自然文に「田中さんと2人で」
+ * と書いても行は増えない。画面が黙っていると、職員には**AI が読み落としたのか初めから
+ * 対象外なのか区別が付かない** — 同じ文を足して往復を繰り返すことになる。SKILL.md は
+ * モデルに `message` でこの2欄へ触れることを禁じているので、聞き返しからも分からない。
+ *
+ * 設計書 12章も「同行者情報のAI抽出」を**未対応**として将来の項目に挙げており、
+ * 「対応しない」ではなく「いまは対象外」であることまで画面が言う必要はない。
+ */
+function ManualOnlyNote({ id }: { id: string }) {
+  return (
+    <p id={id} className="mt-1 text-dns-12N-130 text-solid-gray-600">
+      この項目は AI が入力しません。手で入力してください。
+    </p>
+  );
+}
+
+/** 入力欄の見た目。見出しの下に置く欄は `mt-1.5` を足す（同行者の行は詰める）。 */
+const INPUT_CLASS =
+  "w-full rounded-md border border-solid-gray-600 bg-white px-3 py-2 text-dns-16N-130 text-solid-gray-900";
+
+/** 欄の見出し。ラベル・AI バッジ・「消す」の並びは全欄で同じ。 */
+function FieldHeader({
+  htmlFor,
+  label,
+  source,
+  onClear,
+}: {
+  htmlFor: string;
+  label: string;
+  source?: FieldSource;
+  onClear?: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <label htmlFor={htmlFor} className="text-dns-14M-130 text-solid-gray-900">
+        {label}
+      </label>
+      {source === "ai" && <AiBadge />}
+      {onClear !== undefined && <ClearButton onClick={onClear} />}
+    </div>
+  );
+}
+
 type FieldProps = {
   name: FieldName;
-  type: "date" | "text";
   state: { value: string; source: FieldSource };
   onChange: (name: FieldName, value: string) => void;
 };
 
-function Field({ name, type, state, onChange }: FieldProps) {
+function Field({
+  name,
+  type,
+  state,
+  onChange,
+}: FieldProps & { type: "datetime-local" | "text" }) {
   const id = useId();
   return (
     <div>
-      <div className="flex items-center gap-2">
-        <label htmlFor={id} className="text-dns-14M-130 text-solid-gray-900">
-          {FIELD_LABELS[name]}
-        </label>
-        {state.source === "ai" && <AiBadge />}
-        {state.value !== "" && (
-          <ClearButton onClick={() => onChange(name, "")} />
-        )}
-      </div>
+      <FieldHeader
+        htmlFor={id}
+        label={FIELD_LABELS[name]}
+        source={state.source}
+        onClear={state.value === "" ? undefined : () => onChange(name, "")}
+      />
       <input
         id={id}
         type={type}
         value={state.value}
         onChange={(event) => onChange(name, event.target.value)}
-        className="mt-1.5 w-full rounded-md border border-solid-gray-600 bg-white px-3 py-2 text-dns-16N-130 text-solid-gray-900"
+        className={`mt-1.5 ${INPUT_CLASS}`}
       />
     </div>
   );
 }
 
-function TransportField({
+/**
+ * 選択肢の欄（交通手段・利用目的）。値は契約のもの、表示は職員が読む語。
+ *
+ * 表示名の対応は `lib/reservation-form.ts` が持つ（プレビューが同じ表を引く）。
+ */
+function SelectField({
+  name,
   state,
   onChange,
-}: {
-  state: { value: string; source: FieldSource };
-  onChange: (name: FieldName, value: string) => void;
-}) {
+}: Omit<FieldProps, "name"> & { name: SelectFieldName }) {
   const id = useId();
   return (
     <div>
-      <div className="flex items-center gap-2">
-        <label htmlFor={id} className="text-dns-14M-130 text-solid-gray-900">
-          {FIELD_LABELS.transport}
-        </label>
-        {state.source === "ai" && <AiBadge />}
-        {state.value !== "" && (
-          <ClearButton onClick={() => onChange("transport", "")} />
-        )}
-      </div>
+      <FieldHeader
+        htmlFor={id}
+        label={FIELD_LABELS[name]}
+        source={state.source}
+        onClear={state.value === "" ? undefined : () => onChange(name, "")}
+      />
       <select
         id={id}
         value={state.value}
-        onChange={(event) => onChange("transport", event.target.value)}
-        className="mt-1.5 w-full rounded-md border border-solid-gray-600 bg-white px-3 py-2 text-dns-16N-130 text-solid-gray-900"
+        onChange={(event) => onChange(name, event.target.value)}
+        className={`mt-1.5 ${INPUT_CLASS}`}
       >
         <option value="">未選択</option>
-        {Object.entries(TRANSPORT_LABELS).map(([value, label]) => (
+        {Object.entries(SELECT_LABELS[name]).map(([value, label]) => (
           <option key={value} value={value}>
             {label}
           </option>
         ))}
       </select>
     </div>
+  );
+}
+
+/**
+ * ICカードの利用枚数。**AI は埋めない**ので AI バッジを持たない（#68）。
+ */
+function CardCountField({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const id = useId();
+  const noteId = `${id}-note`;
+  return (
+    <div>
+      <FieldHeader
+        htmlFor={id}
+        label="ICカード利用枚数"
+        onClear={value === "" ? undefined : () => onChange("")}
+      />
+      <ManualOnlyNote id={noteId} />
+      <input
+        id={id}
+        type="number"
+        min={1}
+        value={value}
+        aria-describedby={noteId}
+        onChange={(event) => onChange(event.target.value)}
+        className={`mt-1.5 ${INPUT_CLASS}`}
+      />
+    </div>
+  );
+}
+
+/**
+ * 同行者。行として足したり消したりする（#68）。**AI は埋めない。**
+ *
+ * 何人になるか決まっていないので固定の欄にできない。行が1つも無い状態を初期値に
+ * するのは、同行者がいない出張のほうが普通で、空行が1つあると「埋めるべき欄」に
+ * 見えるため。
+ */
+function CompanionRows({
+  rows,
+  onAdd,
+  onRemove,
+  onChangeName,
+}: {
+  rows: CompanionRow[];
+  onAdd: () => void;
+  onRemove: (id: string) => void;
+  onChangeName: (id: string, name: string) => void;
+}) {
+  const noteId = useId();
+  return (
+    <fieldset className="mt-5" aria-describedby={noteId}>
+      <legend className="text-dns-14M-130 text-solid-gray-900">同行者</legend>
+      <ManualOnlyNote id={noteId} />
+      {rows.length === 0 && (
+        <p className="mt-1.5 text-dns-14N-130 text-solid-gray-600">
+          同行者はいません。
+        </p>
+      )}
+      <ul className="mt-1.5 grid gap-2">
+        {rows.map((row, index) => (
+          <li key={row.id} className="flex items-center gap-2">
+            <input
+              type="text"
+              value={row.name}
+              aria-label={`同行者${index + 1}`}
+              onChange={(event) => onChangeName(row.id, event.target.value)}
+              className={INPUT_CLASS}
+            />
+            <button
+              type="button"
+              onClick={() => onRemove(row.id)}
+              aria-label={`同行者${index + 1}を削除`}
+              className="shrink-0 rounded-md border border-solid-gray-600 p-2 text-solid-gray-600"
+            >
+              <Trash2 aria-hidden="true" className="size-4" />
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        onClick={onAdd}
+        className="mt-2 flex items-center gap-1 rounded-md border border-solid-gray-600 px-3 py-2 text-dns-14M-130 text-solid-gray-900"
+      >
+        <Plus aria-hidden="true" className="size-4" />
+        同行者を追加
+      </button>
+    </fieldset>
   );
 }

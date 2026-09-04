@@ -3,6 +3,7 @@ import {
   availabilitySchema,
   candidateIdSchema,
   isoDateSchema,
+  isoDateTimeSchema,
   timeOfDaySchema,
 } from './fields.js';
 import { MAX_INPUT_CANDIDATES } from './meeting.js';
@@ -25,13 +26,44 @@ const commonOutputFields = {
     .describe('参照元 URL のリスト。Web 検索を使っていない場合は空配列'),
 };
 
+/**
+ * ICカードの利用目的（#68）。**自由文字列にしない。**
+ *
+ * WHY 選択肢か: 自由文字列だと「打合せ」「打ち合わせ」「ミーティング」が同じ目的の
+ * 別表記として並び、画面の `<select>` がどれにも一致しない（結果として未選択に
+ * 見える）。設計書 5.4節は `transport`（交通手段）を目的に流用しようとして
+ * 「直接マッピングできない」と自分で書いているので、独立した欄として AI に読ませる。
+ *
+ * WHY 打ち合わせが `discussion` か: `meeting` は会議ロジのドメイン接頭辞
+ * （`meeting.parse-candidates` 等）と同じ語で、grep したときに交通ICの利用目的が
+ * 会議ロジの一部に見える。
+ *
+ * `MEETING_FORMAT_ORDER` 等と違って `..._ORDER` と呼ばないのは、並び順を使う消費者が
+ * いないため。`<select>` の並びは画面側の表示名の表が決める。
+ */
+const PURPOSE_VALUES = [
+  'discussion',
+  'training',
+  'inspection',
+  'business_trip',
+  'other',
+] as const;
+
 export const parseReservationOutputSchema = z.object({
-  departure_date: isoDateSchema
+  /*
+    借りる日時・返す日時は**日時**（#68）。ICカードの貸出・返却は時点であって
+    日付ではないので、`isoDateSchema` ではなく `isoDateTimeSchema` を引く。
+  */
+  borrow_at: isoDateTimeSchema
     .nullable()
-    .describe('出発日。YYYY-MM-DD 形式。読み取れない場合は null'),
-  return_date: isoDateSchema
+    .describe(
+      'ICカードを借りる日時。YYYY-MM-DDTHH:mm 形式。読み取れない場合は null',
+    ),
+  return_at: isoDateTimeSchema
     .nullable()
-    .describe('帰着日。YYYY-MM-DD 形式。読み取れない場合は null'),
+    .describe(
+      'ICカードを返す日時。YYYY-MM-DDTHH:mm 形式。読み取れない場合は null',
+    ),
   origin: z.string().nullable().describe('出発地。読み取れない場合は null'),
   destination: z
     .string()
@@ -41,6 +73,12 @@ export const parseReservationOutputSchema = z.object({
     .enum(['train', 'flight', 'other'])
     .nullable()
     .describe('交通手段。読み取れない場合は null'),
+  purpose: z
+    .enum(PURPOSE_VALUES)
+    .nullable()
+    .describe(
+      '利用目的。discussion=打ち合わせ / training=研修 / inspection=視察 / business_trip=出張 / other=その他。読み取れない場合は null',
+    ),
   ...commonOutputFields,
 });
 

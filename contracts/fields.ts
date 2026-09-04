@@ -16,6 +16,17 @@ import {
  */
 
 /**
+ * 日付と時刻の本体。`YYYY-MM-DD` / `HH:mm` / `YYYY-MM-DDTHH:mm` の3つが同じ形を
+ * 使うので、パターンをここから組む。
+ *
+ * WHY 3つに書き写さないか: 日付の形は「JSON Schema に写ってモデルへの指示になる」
+ * ことが存在理由なので（`isCalendarDate` の但し書き）、3箇所に散らすと日時だけが
+ * 古い形のままモデルに伝わる状態を作れてしまう。
+ */
+const DATE_BODY = '\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])';
+const TIME_BODY = '([01]\\d|2[0-3]):[0-5]\\d';
+
+/**
  * ISO8601 の暦日付（`YYYY-MM-DD`）。時刻とタイムゾーンは持たない。
  *
  * 縛る理由: 素の `z.string()` だと「来月15日」のような未解決の文字列が契約を
@@ -26,10 +37,10 @@ import {
  * 時刻を持たない理由: 参照ドキュメント 1.3節の例は `2026-10-15T00:00:00Z` だが、
  * この値の消費側はフォームの日付欄しかなく、時刻もタイムゾーンも捨てている。
  * 精度を上げてもモデルが正しく出すべきものが増えるだけで、`+09:00` を許すと
- * `new Date(iso)` を挟んだ瞬間に日が1日ずれる余地が残る。出張の出発日という
- * 対象自体が日付であって時点ではない。
+ * `new Date(iso)` を挟んだ瞬間に日が1日ずれる余地が残る。候補日程の日付という
+ * 対象自体が日付であって時点ではない（時刻は `start_time` が別に持つ）。
  */
-const ISO8601_DATE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+const ISO8601_DATE = new RegExp(`^${DATE_BODY}$`);
 
 /**
  * 暦に実在する日付か。`2026-02-31` のように月日の範囲は満たすが存在しない日を弾く。
@@ -65,9 +76,39 @@ export const isoDateSchema = z
  * `<input type="time">` が受け付ける形と一致させる。「午後」「13時ごろ」のような
  * 表現がそのまま通ると、日付欄と同様に画面が黙って空欄を表示することになる。
  */
-const HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const HH_MM = new RegExp(`^${TIME_BODY}$`);
 
 export const timeOfDaySchema = z.string().regex(HH_MM);
+
+/**
+ * ISO8601 の日時（`YYYY-MM-DDTHH:mm`）。**タイムゾーンも秒も持たない。**
+ *
+ * WHY 日付ではなく日時か: ICカードの貸出・返却は時点であって日付ではない（#68）。
+ * `isoDateSchema` が時刻を落とした理由（対象自体が日付だから）は、対象が交通ICの
+ * 借りる日時・返す日時へ変わった時点で反転する。
+ *
+ * WHY タイムゾーンを持たないか: 消費側は `<input type="datetime-local">` しかなく、
+ * この欄はタイムゾーン付きの値を受け取れない。`+09:00` や `Z` を許すと、画面が
+ * 黙って空欄を表示する（`isoDateSchema` を縛った理由と同じ症状）。秒を持たないのも
+ * 同じで、`datetime-local` の既定の精度は分である。
+ */
+const ISO8601_DATE_TIME = new RegExp(`^${DATE_BODY}T${TIME_BODY}$`);
+
+/**
+ * 暦に実在する日付を持つ日時か。日付の部分だけを `isCalendarDate` に渡す。
+ *
+ * 時刻の側は正規表現で足りる（`24:00` も `10:60` も形の段で落ちる）が、月末と閏年は
+ * 日付と同じく形では見られない。
+ */
+function isCalendarDateTime(value: string): boolean {
+  return isCalendarDate(value.split('T')[0]);
+}
+
+/** 日時欄の共通スキーマ。交通ICの借りる日時・返す日時が使う。 */
+export const isoDateTimeSchema = z
+  .string()
+  .regex(ISO8601_DATE_TIME)
+  .refine(isCalendarDateTime, { error: '暦に存在しない日付です' });
 
 /**
  * 候補日程の識別子。形と発番は `meeting.ts` が持つ（画面が zod を持ち込めないため）。

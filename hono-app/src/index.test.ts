@@ -102,12 +102,13 @@ const REQUESTS = {
  */
 const VALID_RESULTS = {
   'ic-card.parse-reservation': {
-    departure_date: '2026-10-15',
-    return_date: '2026-10-18',
+    borrow_at: '2026-10-15T09:00',
+    return_at: '2026-10-18T18:00',
     origin: '東京',
     destination: '大阪',
     transport: 'train',
-    message: '出発日・帰着日・目的地を読み取りました。',
+    purpose: 'business_trip',
+    message: '借りる日時・返す日時・目的地・利用目的を読み取りました。',
     sources: [],
   },
   'meeting.parse-candidates': {
@@ -570,11 +571,32 @@ describe('出力契約の再検査', () => {
     expect((await expectError(response)).code).toBe('PARSE_FAILED')
   })
 
-  it('日付が YYYY-MM-DD でない出力を通さない', async () => {
+  it('日時が YYYY-MM-DDTHH:mm でない出力を通さない', async () => {
     fakeRuntimeScript.write(
       runtimeReturns({
         ...VALID_RESULTS['ic-card.parse-reservation'],
-        departure_date: '2026/10/15',
+        borrow_at: '2026-10-15',
+      }),
+    )
+
+    const response = await postTask({
+      ...REQUESTS['ic-card.parse-reservation'],
+      sessionId: SESSION_ID,
+    })
+
+    expect(response.status).toBe(502)
+    expect((await expectError(response)).code).toBe('PARSE_FAILED')
+  })
+
+  /*
+    利用目的は選択肢（#68）。Runtime 側の再試行を抜けてきた表記揺れを、BFF も
+    同じ出力契約で止める（`outputSchemaFor` を両方が引く）。
+  */
+  it('利用目的が選択肢の外の出力を通さない', async () => {
+    fakeRuntimeScript.write(
+      runtimeReturns({
+        ...VALID_RESULTS['ic-card.parse-reservation'],
+        purpose: '打ち合わせ',
       }),
     )
 

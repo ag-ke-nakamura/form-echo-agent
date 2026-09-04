@@ -12,7 +12,9 @@ SSG なので BFF の宛先 `NEXT_PUBLIC_API_BASE_URL` はビルド時に埋め�
 タブ4だけはこの構造を採らない — 自然文入力欄も区切り線も持たない。
 
 - `app/reservation-panel.tsx` — 交通IC予約。スカラーの平坦なマップ（状態モデルと写す
-  規則は `app/lib/reservation-form.ts`）
+  規則は `app/lib/reservation-form.ts`）。**同行者とICカード利用枚数だけは `FormState` の
+  外**にタブが持つ — 出力契約に載せず AI にも埋めさせない欄なので（#68）、中に入れると
+  `applyToForm` の写す規則が掛かる欄に見える。同行者は行として足し引きする
 - `app/candidates-panel.tsx` — 会議候補日設定。候補日程の配列。**状態は `useCandidateRows()`
   として切り出してあり、実体は `FormEchoTabs` が持つ**（参加可否タブが同じ候補日程を読むため）
 - `app/availability-panel.tsx` — 参加可否回答。候補日程（識別子・日付・開始時刻）を
