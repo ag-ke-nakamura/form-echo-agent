@@ -85,32 +85,62 @@ export function resolveWebSearchGatewayUrl(): string | null {
   return url;
 }
 
-/**
- * Guardrail の実装方式（#43）。設定を変えるだけで切り替えられるようにする —
- * ADR-032「入力検証方式の選択」の実測の土台がこのチケットで、決めるのは別チケット。
- *
- * - `invoke-checks` = 案A（`InvokeGuardrailChecks`）。リソース不要、離散スコアを
- *   自前のしきい値と比べる。
- * - `apply-guardrail` = 案B（`ApplyGuardrail`）。Guardrail リソースを参照し、
- *   AWS 側が判定する。
- */
-const GUARDRAIL_STRATEGIES = ['invoke-checks', 'apply-guardrail'] as const;
-export type GuardrailStrategyName = (typeof GUARDRAIL_STRATEGIES)[number];
-
 /** Bedrock に接続しないブロック判定（テスト用）。`FAKE_MODEL_NAME` と同じ考え方。 */
 export const FAKE_GUARDRAIL_STRATEGY_NAME = 'fake';
 
-export function resolveGuardrailStrategy():
-  | GuardrailStrategyName
-  | typeof FAKE_GUARDRAIL_STRATEGY_NAME {
-  const name = process.env.FORMECHO_GUARDRAIL_STRATEGY ?? 'invoke-checks';
-  if (name === FAKE_GUARDRAIL_STRATEGY_NAME) return name;
-  if ((GUARDRAIL_STRATEGIES as readonly string[]).includes(name)) {
-    return name as GuardrailStrategyName;
-  }
-  throw new Error(
-    `FORMECHO_GUARDRAIL_STRATEGY は ${[...GUARDRAIL_STRATEGIES, FAKE_GUARDRAIL_STRATEGY_NAME].join(' / ')} のいずれかにしてください（受け取った値: ${name}）`,
+/**
+ * テストは実際の AWS 呼び出し（案A・案B）を fake に差し替える。
+ *
+ * 日本固有 PII の正規表現（案C、`pii.ts`）は AWS を呼ばない純関数なので
+ * fake 化の対象にしない — 差し替えなくても決定的で、テストでも実物のロジックを
+ * そのまま検証できる。
+ */
+export function isGuardrailFake(): boolean {
+  return (
+    process.env.FORMECHO_GUARDRAIL_STRATEGY === FAKE_GUARDRAIL_STRATEGY_NAME
   );
+}
+
+function resolveGuardrailFlag(envName: string, fallback: boolean): boolean {
+  const raw = process.env[envName];
+  if (raw === undefined) return fallback;
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  throw new Error(
+    `${envName} は true / false にしてください（受け取った値: ${raw}）`,
+  );
+}
+
+export interface GuardrailLayers {
+  /** 案A（`InvokeGuardrailChecks`）。リソース不要なので既定 ON。 */
+  invokeChecks: boolean;
+  /** 案B（`ApplyGuardrail`）。Guardrail リソースが要るので既定 OFF。 */
+  applyGuardrail: boolean;
+  /** 案C（日本固有 PII のカスタム正規表現、マイナンバー）。既定 ON。 */
+  customRegex: boolean;
+}
+
+/**
+ * 案A・案B・案Cをそれぞれ独立に ON/OFF できるようにする（#43）。
+ *
+ * ADR-032「入力検証方式の選択」の実測の土台がこのチケットで、決めるのは
+ * 別チケット。3つを1つの排他的な選択にすると、「案Aだけ／案Bだけでマイナンバーを
+ * 検知できるか」を試せない — 案Cが常時 ON だと、案Aと案Bのどちらを選んでも
+ * 結果が案Cに覆い隠される。組み合わせて有効化できることで、この切り分けが
+ * 設定だけでできる。
+ */
+export function resolveGuardrailLayers(): GuardrailLayers {
+  return {
+    invokeChecks: resolveGuardrailFlag(
+      'FORMECHO_GUARDRAIL_INVOKE_CHECKS',
+      true,
+    ),
+    applyGuardrail: resolveGuardrailFlag(
+      'FORMECHO_GUARDRAIL_APPLY_GUARDRAIL',
+      false,
+    ),
+    customRegex: resolveGuardrailFlag('FORMECHO_GUARDRAIL_CUSTOM_REGEX', true),
+  };
 }
 
 /**
@@ -177,14 +207,14 @@ export interface GuardrailResource {
 
 /**
  * `agentcore.json` に Guardrail を宣言する枠が無い（F-11）ため、リソースの識別子は
- * スクリプトで作った後にここへ設定する。`apply-guardrail` 方式を選んだときだけ読む。
+ * スクリプトで作った後にここへ設定する。案B（`applyGuardrail`）を ON にしたときだけ読む。
  */
 export function resolveGuardrailResource(): GuardrailResource {
   const identifier = process.env.FORMECHO_GUARDRAIL_ID;
   const version = process.env.FORMECHO_GUARDRAIL_VERSION;
   if (identifier === undefined || version === undefined) {
     throw new Error(
-      'apply-guardrail 方式には FORMECHO_GUARDRAIL_ID と FORMECHO_GUARDRAIL_VERSION の両方が必要です（agent-app/scripts/create-guardrail.ts で作成する）。',
+      '案B（FORMECHO_GUARDRAIL_APPLY_GUARDRAIL=true）には FORMECHO_GUARDRAIL_ID と FORMECHO_GUARDRAIL_VERSION の両方が必要です（agent-app/scripts/create-guardrail.ts で作成する）。',
     );
   }
   return { identifier, version };

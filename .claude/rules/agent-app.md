@@ -49,13 +49,27 @@ paths:
 パース結果）の両方でこれを呼ぶ。ADR-0001（Runtime に置く）・ADR-0009（ブロック時の文言の
 詳細度）を参照。
 
-- **設定の切り替えは `FORMECHO_GUARDRAIL_STRATEGY`**（`invoke-checks` / `apply-guardrail` /
-  テスト専用の `fake`）。しきい値は `FORMECHO_GUARDRAIL_THRESHOLD_{PROMPT_ATTACK,
-  SENSITIVE_INFO,CONTENT_FILTER}`（離散値 `{0,0.2,0.4,0.6,0.8,1}` または `off`。F-02）
-- **日本固有 PII の正規表現（マイナンバー、`guardrail/pii.ts`）は方式によらず常に走る。**
-  `InvokeGuardrailChecks` の `sensitiveInformation` に日本固有の型が無く（F-03）、
-  `ApplyGuardrail` の `regexesConfig` も `toolUse.input`（Structured Output の出力）を
-  評価しない（F-16）ため
+- **案A・案B・案C（日本固有 PII の正規表現）はそれぞれ独立に ON/OFF できる**
+  （`FORMECHO_GUARDRAIL_INVOKE_CHECKS` / `FORMECHO_GUARDRAIL_APPLY_GUARDRAIL` /
+  `FORMECHO_GUARDRAIL_CUSTOM_REGEX`、いずれも `true`/`false`。既定は案A・案Cが ON、
+  案Bは Guardrail リソースが要るため OFF）。1つの排他的な選択にしていないのは、
+  「案Aだけ／案Bだけでマイナンバーを検知できるか」を実測で切り分けるため —
+  案Cが常時 ON だと、案A・案Bのどちらを選んでも結果が案Cに覆い隠されて
+  区別が付かない。`FORMECHO_GUARDRAIL_STRATEGY=fake` はテスト専用で、案A・案Bの
+  呼び先を fake に差し替える（案Cは純関数なので対象外）。しきい値（案Aのみ）は
+  `FORMECHO_GUARDRAIL_THRESHOLD_{PROMPT_ATTACK,SENSITIVE_INFO,CONTENT_FILTER}`
+  （離散値 `{0,0.2,0.4,0.6,0.8,1}` または `off`。F-02）
+- **日本固有 PII の正規表現（マイナンバー、`guardrail/pii.ts`）は案A・案Bと重複して
+  検知しうる。** `InvokeGuardrailChecks` の `sensitiveInformation` に日本固有の型が
+  無く（F-03）、`ApplyGuardrail` の `regexesConfig` も `toolUse.input`（Structured
+  Output の出力）を評価しない（F-16）ため、既定では案Cも ON にして常時カバーする。
+  `GuardrailFinding.source`（`'code-regex' | 'strategy'`）でどちらが検知したかを
+  区別できる
+- **`sensitiveInformation` の検知対象に `ADDRESS` / `NAME` 等の汎用カテゴリを含めない
+  こと。** 日本語でも confidence 1.0 で検知されるため（F-06）、`ic-card.parse-reservation`
+  が行き先という**住所そのもの**を抽出する正常な出力と衝突し誤検知する（実機で確認済み。
+  `invoke-checks.ts` の `SENSITIVE_INFORMATION_ENTITIES` を参照）。資格情報・金融/政府
+  発行の識別子だけに絞ってある
 - **ブロックすると `discardSession`（`domain-agent.ts`）でそのセッションの Agent を全て
   破棄する。** ブロック対象が会話履歴に残ると以降のメッセージまで連鎖ブロックする
   （F-14）。同じ `sessionId` を送り直しても、次回は空の履歴から再開する
