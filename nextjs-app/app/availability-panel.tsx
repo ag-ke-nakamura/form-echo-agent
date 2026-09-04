@@ -7,6 +7,8 @@ import { AiAssistant } from "./ai-assistant";
 import { AiBadge, type ApplyReport, type FieldSource } from "./field-source";
 import { FormSection } from "./form-section";
 import { AVAILABILITY_TASK_ID } from "./lib/api";
+import type { MeetingInfo } from "./lib/meeting-info";
+import { MeetingInfoHeader } from "./meeting-info";
 import { ManualInputDivider, TabHeading } from "./screen-layout";
 
 /**
@@ -27,6 +29,15 @@ type AvailabilityPanelProps = {
    * 候補日程を作る場所はこの画面に既にあるので、そこから引く。
    */
   dates: readonly string[];
+  /**
+   * ヘッダーに出す会議情報。タブ2で職員が入れたものを受け取る。
+   *
+   * WHY: 参加者は「何の会議に答えているのか」を知らずにこの画面へ来る（本来は
+   * メールのリンクから開く画面）。会議情報を持つのはタブ2なので、候補日程と同じ
+   * 経路で受け取る。**書き換えはしない** — 参加者が会議の性質を変える画面ではない
+   * ので、`MeetingInfoApi` ではなく値だけを受ける。
+   */
+  meetingInfo: MeetingInfo;
 };
 
 /*
@@ -35,7 +46,10 @@ type AvailabilityPanelProps = {
   そのまま出すことが #73 の受け入れ条件で、ここは設計書の字面が優先する。参加可否が
   4状態になる #70 で設計書側の語も動くので、揃えるのはそのとき。
 */
-export function AvailabilityPanel({ dates }: AvailabilityPanelProps) {
+export function AvailabilityPanel({
+  dates,
+  meetingInfo,
+}: AvailabilityPanelProps) {
   /**
    * 日付をキーにした参加可否。行の識別子を持たない。
    *
@@ -116,6 +130,8 @@ export function AvailabilityPanel({ dates }: AvailabilityPanelProps) {
   return (
     <div className="mx-auto max-w-3xl">
       <TabHeading>会議ロジ参加可否回答</TabHeading>
+
+      <MeetingInfoHeader info={meetingInfo} />
 
       <AiAssistant
         taskId={AVAILABILITY_TASK_ID}
