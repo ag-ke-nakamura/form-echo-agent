@@ -1,84 +1,94 @@
 "use client";
 
-import type { RecommendScheduleOutput } from "@contracts/index.js";
-// 値として引くのはこのモジュールだけ（理由は `ai-assistant.tsx` の同じ import）。
+import type {
+  CandidateAssessment,
+  RecommendScheduleOutput,
+  ScheduleSelection,
+  TableCandidate,
+} from "@contracts/index.js";
+// 値として引くのはこの2つのモジュールだけ（理由は `ai-assistant.tsx` の同じ import）。
 import { isAttending } from "@contracts/meeting";
+import {
+  type AiEvaluationLabel,
+  assessCandidates,
+  shouldRequestRecommendation,
+} from "@contracts/recommendation";
 import { Info } from "lucide-react";
 import { useId, useMemo, useRef, useState } from "react";
 import { AiErrorNotice, AiPendingNotice, ApplyReportView } from "./ai-notice";
-import { AiBadge, type ApplyReport, type FieldSource } from "./field-source";
+import { AiBadge, type ApplyReport } from "./field-source";
 import { FormSection } from "./form-section";
 import { RECOMMEND_TASK_ID, requestAiTask } from "./lib/api";
 import {
   type AvailabilityTable,
-  countAttending,
   generateAvailabilityTable,
   INITIAL_TABLE_SEED,
-  type TableCandidate,
+  participantNameOf,
+  type TableMode,
+  tableInput,
 } from "./lib/availability-table";
+import {
+  applyRecommendation,
+  attendanceText,
+  byScoreDesc,
+  candidateLabel,
+  candidateLabelOf,
+  currentValue,
+  type Decision,
+  type ForTable,
+} from "./lib/recommend-form";
 import { type ErrorGuidance, errorGuidanceFor } from "./lib/error-guidance";
 import {
+  AI_EVALUATION_LABELS,
   AVAILABILITY_LABELS,
-  candidateRangeText,
   type MeetingInfo,
 } from "./lib/meeting-info";
 import { TabHeading } from "./screen-layout";
 
 /**
- * 会議をどの日程で開くかの決定。**この画面で職員が触れるのはここだけ**で、
- * 参加可否表は読み取り専用の与件である。
+ * AI評価ラベルの chip の配色（設計書 4.3節）。
  *
- * 候補日程は識別子で指す（ADR-0005）。3項目を連結した鍵を組み立てていたのは契約に
- * 識別子が無かったからで、その理由は消えた。
- *
- * 順位そのものは持たない。順位は AI の説明のための道具で、職員が手で作りたいものでは
- * ない（数値を手入力させると重複と抜けの検査 UI が要る）。非AI経路は「候補日程を
- * 1つ選ぶ」に留め、AI が付ける1位と職員が選んだものが**同じ場所の同じ印**になるよう
- * にする。どちらの判断で決まったかは `source` が持つ。
+ * 「条件合わず」と「参加入力未済」が同じ灰色なのは設計書のままである。前者は
+ * 評価の結果で後者は評価の不在だが、どちらも「今は検討しない」という同じ扱いを
+ * 受けるので、色で分ける理由が無い（語そのものが違いを言っている）。
  */
-type Decision = { candidateId: string; source: FieldSource };
-
-/**
- * 表と、それに対して作られたもの（提案・決定）を組で持つ。
- *
- * WHY: 「別のサンプルに差し替え」は提案を消すことが強制である（表が変われば理由が
- * 事実と食い違う）。応答を待っている間に差し替えられる経路があるので、消すだけでは
- * 足りない — 古い表に対する応答が後から届いて新しい表の隣に並ぶ。シードを添えて
- * 描画時に照合すれば、遅れて届いた結果はどこにも出ない。
- */
-type ForTable<T> = { seed: number; value: T };
-
-function currentValue<T>(held: ForTable<T> | null, seed: number): T | null {
-  return held !== null && held.seed === seed ? held.value : null;
-}
-
-/**
- * 候補日程の表示名。終わる時刻は会議の所要時間から導く（ADR-0005）。
- *
- * 識別子（`candidate-1`）はそのまま見せない。職員が読みたいのは日時であって、
- * 識別子は突き合わせのための内部の値である。
- */
-function candidateLabel(
-  candidate: TableCandidate,
-  meetingInfo: MeetingInfo,
-): string {
-  return `${candidate.date} ${candidateRangeText(candidate.start_time, meetingInfo.durationMinutes)}`;
-}
+const LABEL_CHIP_CLASS: Record<AiEvaluationLabel, string> = {
+  recommended: "bg-solid-blue-100 text-solid-blue-900",
+  backup: "bg-solid-green-100 text-solid-green-900",
+  consider: "bg-solid-yellow-100 text-solid-yellow-900",
+  rejected: "bg-solid-gray-100 text-solid-gray-700",
+  unanswered: "bg-solid-gray-100 text-solid-gray-700",
+};
 
 /** 非AI経路の一文。失敗の案内に添える（他タブは `AiAssistant` の prop で渡す）。 */
 const NON_AI_PATH_HINT = "AI を使わなくても、表から候補日程を1つ選べます。";
 
+/** 回答が揃っていないときの通知（設計書 10.3節、ストーリー71）。 */
+const NOT_ENOUGH_ANSWERS =
+  "回答が揃っていないため、AI提案は表示されません。回答が集まってから提案を求めてください。";
+
 export function RecommendPanel({ meetingInfo }: { meetingInfo: MeetingInfo }) {
   const [tableSeed, setTableSeed] = useState(INITIAL_TABLE_SEED);
+  const [tableMode, setTableMode] = useState<TableMode>("complete");
   const table = useMemo(
-    () => generateAvailabilityTable(tableSeed),
-    [tableSeed],
+    () => generateAvailabilityTable(tableSeed, tableMode),
+    [tableSeed, tableMode],
+  );
+  const input = useMemo(
+    () =>
+      tableInput(table, {
+        meeting_format: meetingInfo.format,
+        duration_minutes: meetingInfo.durationMinutes,
+      }),
+    [table, meetingInfo.format, meetingInfo.durationMinutes],
   );
 
-  const [recommendations, setRecommendations] = useState<ForTable<
-    RecommendScheduleOutput["recommendations"]
+  const [evaluations, setEvaluations] = useState<ForTable<
+    RecommendScheduleOutput["evaluations"]
   > | null>(null);
   const [message, setMessage] = useState<ForTable<string> | null>(null);
+  const [selection, setSelection] =
+    useState<ForTable<ScheduleSelection> | null>(null);
   const [report, setReport] = useState<ForTable<ApplyReport> | null>(null);
   const [decision, setDecision] = useState<ForTable<Decision> | null>(null);
   const [pending, setPending] = useState(false);
@@ -86,69 +96,49 @@ export function RecommendPanel({ meetingInfo }: { meetingInfo: MeetingInfo }) {
     null,
   );
 
-  const shownRecommendations = currentValue(recommendations, tableSeed);
+  const shownEvaluations = currentValue(evaluations, tableSeed);
   const shownMessage = currentValue(message, tableSeed);
+  const shownSelection = currentValue(selection, tableSeed);
   const shownReport = currentValue(report, tableSeed);
   const shownDecision = currentValue(decision, tableSeed);
   const shownGuidance = currentValue(guidance, tableSeed);
 
   /**
-   * 送信ごとの連番。飛んでいるリクエストは止まらないので、表を差し替えた後に
+   * 参加可否表から数えたものと、AI の評点から導いたラベルを候補日程ごとに束ねる。
+   *
+   * **数えるのは契約側の関数で、AI ではない**（ADR-0007）。提案の前でも呼べるので、
+   * 表が描く内容は「提案が来たかどうか」で分岐しない — ラベルが増えるだけになる。
+   */
+  const assessments = useMemo(
+    () => assessCandidates(input, shownEvaluations),
+    [input, shownEvaluations],
+  );
+  const canRequest = shouldRequestRecommendation(input);
+
+  /**
+   * 送信ごとの連番。飛んでいるリクエストは止まらないので、表を切り替えた後に
    * 届いた結果で `pending` を下ろしたり案内を出したりしないために持つ。
    * 提案そのものは `ForTable` のシードで弾かれる。
    */
   const submitSerial = useRef(0);
 
-  /**
-   * AI の提案をフォームへ写す。
-   *
-   * 写像は素直に留める — 識別子で引いて順位と理由を出すだけで、条件分岐を育てない
-   * （#23 の線引き）。提案が入力の候補日程と一致していることは BFF が検査済みなので、
-   * ここで落ちた分を数える必要は無い（参加可否タブとの違い）。
-   *
-   * **手で選んだ候補日程は上書きしない**（#38 の判断）。1位が動いても職員の決定は
-   * 残る。順位は表の側に全件出るので、AI が何を1位にしたかは決定を上書きしなくても読める。
-   *
-   * 守ったことは `ApplyReport` に載せる。**`message` では代われない** — あれは
-   * モデルが書いた文であって、画面が実際にラジオを動かしたかどうかは保証しない。
-   * 職員から見ると「AI提案を押したのに選択が変わらない」ので、言わないと AI が
-   * 1位を出せなかったのか自分の選択が守られたのかが区別できない。
-   */
+  /** AI の提案をフォームへ写す。判断は `applyRecommendation`（`app/lib`）が持つ。 */
   function applyResult(result: RecommendScheduleOutput) {
-    setRecommendations({ seed: tableSeed, value: result.recommendations });
-    setMessage({ seed: tableSeed, value: result.message });
-
-    const ranked = `順位 ${result.recommendations.length}件`;
-    const held = currentValue(decision, tableSeed);
-    if (held?.source === "manual") {
-      setReport({
-        seed: tableSeed,
-        value: { updated: [ranked], preserved: ["自分で選んだ候補日程"] },
-      });
-      return;
-    }
-    const top = result.recommendations.find((entry) => entry.rank === 1);
-    const topCandidate = table.candidates.find(
-      (candidate) => candidate.id === top?.candidate_id,
+    const applied = applyRecommendation(
+      input,
+      result.evaluations,
+      currentValue(decision, tableSeed),
+      meetingInfo,
     );
-    if (top) {
-      setDecision({
-        seed: tableSeed,
-        value: { candidateId: top.candidate_id, source: "ai" },
-      });
-    }
-    setReport({
-      seed: tableSeed,
-      value: {
-        updated: [
-          ranked,
-          ...(topCandidate
-            ? [`1位 ${candidateLabel(topCandidate, meetingInfo)}`]
-            : []),
-        ],
-        preserved: [],
-      },
-    });
+    setEvaluations({ seed: tableSeed, value: result.evaluations });
+    setMessage({ seed: tableSeed, value: result.message });
+    setSelection({ seed: tableSeed, value: applied.selection });
+    setDecision(
+      applied.decision === null
+        ? null
+        : { seed: tableSeed, value: applied.decision },
+    );
+    setReport({ seed: tableSeed, value: applied.report });
   }
 
   /**
@@ -157,10 +147,10 @@ export function RecommendPanel({ meetingInfo }: { meetingInfo: MeetingInfo }) {
    * **自然文の入力欄を持たない**（設計書のタブ4）。ここでの AI の提案は叩き台で
    * あって対話相手ではない、という位置づけを画面の形で示すため。送るのは会議情報と
    * 参加可否表（構造化入力。ADR-0005）だけで、`sessionId` も引き継がない
-   * — 続きの会話が無い。
+   * — 続きの会話が無い。**参加者は識別子だけを送る**（ADR-0008）。
    */
   async function requestRecommendation() {
-    if (pending) return;
+    if (pending || !canRequest) return;
     const serial = ++submitSerial.current;
     const seed = tableSeed;
     setPending(true);
@@ -170,11 +160,7 @@ export function RecommendPanel({ meetingInfo }: { meetingInfo: MeetingInfo }) {
       taskId: RECOMMEND_TASK_ID,
       prompt: null,
       sessionId: null,
-      input: {
-        meeting_format: meetingInfo.format,
-        duration_minutes: meetingInfo.durationMinutes,
-        ...table,
-      },
+      input,
     });
     if (serial !== submitSerial.current) return;
 
@@ -189,19 +175,24 @@ export function RecommendPanel({ meetingInfo }: { meetingInfo: MeetingInfo }) {
   function reset() {
     submitSerial.current++;
     setPending(false);
-    setRecommendations(null);
+    setEvaluations(null);
     setMessage(null);
+    setSelection(null);
     setReport(null);
     setDecision(null);
     setGuidance(null);
   }
 
   /**
-   * 別のサンプルの参加可否表に差し替える。
+   * サンプルの参加可否表を「回答が揃った表 / 回答が途中の表」で切り替える
+   * （ストーリー72）。
    *
-   * 提案と決定を落とす。残すと、AI が書いた理由が今の表と食い違ったまま並ぶ。
+   * 提案と決定を落とす。残すと、AI が書いた根拠が今の表と食い違ったまま並ぶ。
+   * シードも振り直す — 同じモードへ戻ったときに前と同じ表が出ると、切り替えが
+   * 何をしたのかが画面から読めない。
    */
-  function replaceTable() {
+  function switchTable() {
+    setTableMode(tableMode === "complete" ? "partial" : "complete");
     setTableSeed(Math.floor(Math.random() * 2 ** 31));
     reset();
   }
@@ -216,7 +207,7 @@ export function RecommendPanel({ meetingInfo }: { meetingInfo: MeetingInfo }) {
 
       {/*
         AI提案バナー（設計書 3節）。AI が書いた文であることが分かるよう青で囲う。
-        推奨・予備日の要約と AI評価ラベルは #71 / #72 で評点から導く。
+        推奨・予備日の要約は評点から導いたもので、AI が名指ししたものではない。
       */}
       {shownMessage !== null && (
         <div
@@ -231,6 +222,13 @@ export function RecommendPanel({ meetingInfo }: { meetingInfo: MeetingInfo }) {
             />
             {shownMessage}
           </p>
+          {shownSelection !== null && (
+            <SelectionSummary
+              selection={shownSelection}
+              table={table}
+              meetingInfo={meetingInfo}
+            />
+          )}
           {shownReport !== null && <ApplyReportView report={shownReport} />}
         </div>
       )}
@@ -243,8 +241,8 @@ export function RecommendPanel({ meetingInfo }: { meetingInfo: MeetingInfo }) {
 
         <AvailabilityTableView
           table={table}
+          assessments={assessments}
           meetingInfo={meetingInfo}
-          recommendations={shownRecommendations}
           decision={shownDecision}
           onChoose={chooseManually}
         />
@@ -253,22 +251,33 @@ export function RecommendPanel({ meetingInfo }: { meetingInfo: MeetingInfo }) {
           <button
             type="button"
             onClick={requestRecommendation}
-            disabled={pending}
+            disabled={pending || !canRequest}
             className="rounded-md bg-solid-blue-700 px-4 py-2 text-dns-16M-130 text-white disabled:opacity-40"
           >
             {pending ? "提案中..." : "AI提案"}
           </button>
           <button
             type="button"
-            onClick={replaceTable}
+            onClick={switchTable}
             className="rounded-md border border-solid-gray-600 bg-white px-4 py-2 text-dns-16M-130 text-solid-gray-900"
           >
-            別のサンプルに差し替え
+            {tableMode === "complete"
+              ? "回答が途中の表に切り替え"
+              : "回答が揃った表に切り替え"}
           </button>
         </div>
         <p className="mt-1 text-dns-12N-130 text-solid-gray-600">
-          「別のサンプルに差し替え」は参加可否表を作り直します。前の提案と選択は消えます。
+          切り替えると参加可否表を作り直します。前の提案と選択は消えます。
         </p>
+
+        {!canRequest && (
+          <p
+            role="status"
+            className="mt-4 rounded-md border border-solid-yellow-300 bg-solid-yellow-50 p-3 text-dns-14N-130 text-solid-gray-900"
+          >
+            {NOT_ENOUGH_ANSWERS}
+          </p>
+        )}
 
         {pending && (
           <AiPendingNotice message="AIが候補日程を評価しています..." />
@@ -284,37 +293,86 @@ export function RecommendPanel({ meetingInfo }: { meetingInfo: MeetingInfo }) {
           </div>
         )}
 
-        {shownRecommendations && (
-          <ReasonList
-            recommendations={shownRecommendations}
-            table={table}
-            meetingInfo={meetingInfo}
-          />
-        )}
+        <GroundsList
+          assessments={assessments}
+          table={table}
+          meetingInfo={meetingInfo}
+        />
       </FormSection>
     </div>
   );
 }
 
-type AvailabilityTableViewProps = {
+/** バナーに出す推奨・予備日の要約（設計書 3.2節、ストーリー59）。 */
+function SelectionSummary({
+  selection,
+  table,
+  meetingInfo,
+}: {
+  selection: ScheduleSelection;
   table: AvailabilityTable;
   meetingInfo: MeetingInfo;
-  recommendations: RecommendScheduleOutput["recommendations"] | null;
+}) {
+  const labelOf = (candidateId: string) =>
+    candidateLabelOf(table.candidates, candidateId, meetingInfo);
+  const backups = selection.backupCandidateIds.map(labelOf);
+
+  return (
+    <dl className="ml-4 mt-2 grid gap-1 text-dns-14N-130 text-solid-gray-700">
+      <div className="flex gap-2">
+        <dt>推奨:</dt>
+        <dd>
+          {selection.hostCandidateId === null
+            ? "なし"
+            : labelOf(selection.hostCandidateId)}
+        </dd>
+      </div>
+      <div className="flex gap-2">
+        <dt>予備:</dt>
+        <dd>{backups.length === 0 ? "なし" : backups.join("、")}</dd>
+      </div>
+    </dl>
+  );
+}
+
+/** AI評価ラベルの chip。ラベルが導けていない候補日程には何も出さない。 */
+function LabelChip({ label }: { label: AiEvaluationLabel | null }) {
+  if (label === null) {
+    return <span className="text-solid-gray-600">—</span>;
+  }
+  return (
+    <span
+      className={`rounded px-2 py-1 text-dns-12M-130 ${LABEL_CHIP_CLASS[label]}`}
+    >
+      {AI_EVALUATION_LABELS[label]}
+    </span>
+  );
+}
+
+type AvailabilityTableViewProps = {
+  table: AvailabilityTable;
+  assessments: CandidateAssessment[];
+  meetingInfo: MeetingInfo;
   decision: Decision | null;
   onChoose: (candidateId: string) => void;
 };
 
 function AvailabilityTableView({
   table,
+  assessments,
   meetingInfo,
-  recommendations,
   decision,
   onChoose,
 }: AvailabilityTableViewProps) {
   // ラジオは表全体でひとつのグループ。会議は1つの日程で開くので、印も1つでよい。
   const groupName = useId();
-  const rankById = new Map(
-    recommendations?.map((entry) => [entry.candidate_id, entry.rank]) ?? [],
+  // 識別子で引く。並びが揃っていることに頼ると、集計の並べ替えが入った瞬間に
+  // 行と数が静かにずれる（型検査では捕まらない）。
+  const assessmentOf = new Map(
+    assessments.map((assessment) => [
+      assessment.metrics.candidateId,
+      assessment,
+    ]),
   );
 
   return (
@@ -328,26 +386,27 @@ function AvailabilityTableView({
             <th scope="col" className="py-2 pr-3 text-dns-14M-130">
               候補日程
             </th>
+            {/* 列見出しは実名。名簿はブラウザの中にあり、Runtime へは送らない（ADR-0008）。 */}
             {table.participants.map((participant) => (
               <th
-                key={participant}
+                key={participant.id}
                 scope="col"
                 className="py-2 pr-3 text-center text-dns-14M-130"
               >
-                {participant}
+                {participant.name}
               </th>
             ))}
             <th scope="col" className="py-2 pr-3 text-center text-dns-14M-130">
               参加可能
             </th>
             <th scope="col" className="py-2 text-center text-dns-14M-130">
-              順位
+              AI評価
             </th>
           </tr>
         </thead>
         <tbody>
           {table.candidates.map((candidate) => {
-            const rank = rankById.get(candidate.id);
+            const assessment = assessmentOf.get(candidate.id);
             const chosen = decision?.candidateId === candidate.id;
             return (
               <tr key={candidate.id} className="border-b border-solid-gray-100">
@@ -369,30 +428,20 @@ function AvailabilityTableView({
                   {candidateLabel(candidate, meetingInfo)}
                 </th>
                 {table.participants.map((participant) => (
-                  <td key={participant} className="py-2 pr-3 text-center">
+                  <td key={participant.id} className="py-2 pr-3 text-center">
                     <AnswerCell
                       candidate={candidate}
-                      participant={participant}
+                      participantId={participant.id}
                     />
                   </td>
                 ))}
                 <td className="py-2 pr-3 text-center tabular-nums">
-                  {countAttending(candidate)}
+                  {assessment === undefined
+                    ? "—"
+                    : attendanceSummary(assessment, meetingInfo)}
                 </td>
-                <td className="py-2 text-center tabular-nums">
-                  {rank === undefined ? (
-                    <span className="text-solid-gray-600">—</span>
-                  ) : (
-                    <span
-                      className={
-                        rank === 1
-                          ? "text-dns-14M-130 text-solid-blue-900"
-                          : undefined
-                      }
-                    >
-                      {rank}位
-                    </span>
-                  )}
+                <td className="py-2 text-center">
+                  <LabelChip label={assessment?.label ?? null} />
                 </td>
               </tr>
             );
@@ -404,6 +453,23 @@ function AvailabilityTableView({
 }
 
 /**
+ * 参加可能人数の表示。**内訳を出すのはハイブリッドの会議だけ**（設計書 4.5.1節）。
+ *
+ * 現地のみ／オンラインのみの会議では出席のしかたが1通りしかないので、内訳は
+ * 「4名（現地4名/リモート0名）」のように人数を2度言うだけになる。参加形式に
+ * 合わない回答は画面側で正規化される前提（`availability-form.ts`）なので、
+ * 0 の側が意味を持つこともない。
+ */
+function attendanceSummary(
+  assessment: CandidateAssessment,
+  meetingInfo: MeetingInfo,
+): string {
+  return meetingInfo.format === "hybrid"
+    ? attendanceText(assessment.metrics)
+    : `${assessment.metrics.attendCount}名`;
+}
+
+/**
  * セルひとつ。**未回答を回答と書き分ける**（ストーリー11）。
  *
  * 表は疎で、未回答はセルが存在しないことで表される（ADR-0004）。「まだ答えていない
@@ -412,13 +478,13 @@ function AvailabilityTableView({
  */
 function AnswerCell({
   candidate,
-  participant,
+  participantId,
 }: {
   candidate: TableCandidate;
-  participant: string;
+  participantId: string;
 }) {
   const answer = candidate.answers.find(
-    (entry) => entry.participant === participant,
+    (entry) => entry.participant === participantId,
   );
   if (answer === undefined) {
     return <span className="text-dns-12N-130 text-solid-gray-600">未回答</span>;
@@ -437,52 +503,80 @@ function AnswerCell({
 }
 
 /**
- * 順位ごとの理由（ストーリー4・5・6）。
+ * 候補日程ごとの内訳と、AI が書いた根拠（ストーリー4・5・6・62・63・64）。
  *
- * 表とは別に順位の順で並べる。表は候補日程の並びで固定しておくほうが与件として
- * 読みやすく、順位の順に並べ替えると差し替え前後の見比べができなくなる。落ちた
- * 候補日程の理由こそが職員の知りたいものなので、上位だけを出すことはしない。
+ * **提案の前でも出す。** 内訳は参加可否表から数えたもので、AI を待つ理由が無い —
+ * 回答が揃っていない表（AI 提案が発火しない）でも欠席者と未回答者数は読める。
+ * AI の根拠だけが提案の後に増える。
  *
- * AI が返すのは識別子なので、日時は表から引き直す。BFF が「入力に無い識別子」を
- * 弾いているので引けない提案はここまで来ないが、型の上では起こりうるので識別子を
- * そのまま出す経路を残す。
+ * 評点の高い順に並べる。表は候補日程の並びで固定しておくほうが与件として読みやすく、
+ * 並べ替えると切り替え前後の見比べができなくなるので、順序を変えるのはこちらだけに
+ * する。落ちた候補日程の根拠こそが職員の知りたいものなので、上位だけを出すことは
+ * しない（折りたたみは #72 が入れる）。
+ *
+ * **欠席者は実名で出す**（ADR-0008）。AI が返すのは識別子だけなので、名簿で解決するのは
+ * 画面の仕事である。
  */
-function ReasonList({
-  recommendations,
+function GroundsList({
+  assessments,
   table,
   meetingInfo,
 }: {
-  recommendations: RecommendScheduleOutput["recommendations"];
+  assessments: CandidateAssessment[];
   table: AvailabilityTable;
   meetingInfo: MeetingInfo;
 }) {
-  const ordered = [...recommendations].sort((a, b) => a.rank - b.rank);
+  const ordered = byScoreDesc(assessments);
   return (
     <section className="mt-8">
-      <h3 className="text-dns-16M-130 text-solid-gray-900">提案の理由</h3>
+      <h3 className="text-dns-16M-130 text-solid-gray-900">
+        候補日程ごとの内訳
+      </h3>
       <ol className="mt-3 grid gap-3">
-        {ordered.map((entry) => {
-          const candidate = table.candidates.find(
-            (item) => item.id === entry.candidate_id,
-          );
+        {ordered.map((assessment) => {
+          const { metrics } = assessment;
           return (
             <li
-              key={entry.candidate_id}
+              key={metrics.candidateId}
               className="rounded-md border border-solid-gray-300 p-3"
             >
-              <div className="flex flex-wrap items-baseline gap-x-2">
-                <span className="text-dns-14M-130 tabular-nums text-solid-gray-900">
-                  {entry.rank}位
-                </span>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <LabelChip label={assessment.label} />
                 <span className="text-dns-14N-130 text-solid-gray-900">
-                  {candidate
-                    ? candidateLabel(candidate, meetingInfo)
-                    : entry.candidate_id}
+                  {candidateLabelOf(
+                    table.candidates,
+                    metrics.candidateId,
+                    meetingInfo,
+                  )}
                 </span>
               </div>
-              <p className="mt-1 text-dns-14N-130 text-solid-gray-700">
-                {entry.reason}
-              </p>
+              <dl className="mt-2 grid gap-1 text-dns-12N-130 text-solid-gray-700">
+                <div className="flex gap-2">
+                  <dt>参加可能:</dt>
+                  <dd className="tabular-nums">
+                    {attendanceSummary(assessment, meetingInfo)}
+                  </dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt>欠席:</dt>
+                  <dd>
+                    {metrics.absentParticipants.length === 0
+                      ? "なし"
+                      : metrics.absentParticipants
+                          .map((id) => participantNameOf(table, id))
+                          .join("、")}
+                  </dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt>未回答:</dt>
+                  <dd className="tabular-nums">{metrics.unansweredCount}名</dd>
+                </div>
+              </dl>
+              {assessment.comment !== null && (
+                <p className="mt-2 text-dns-14N-130 text-solid-gray-700">
+                  {assessment.comment}
+                </p>
+              )}
             </li>
           );
         })}

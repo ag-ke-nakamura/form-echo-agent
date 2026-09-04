@@ -48,9 +48,11 @@ function unexpectedReason(unexpected: readonly string[]): string {
 /**
  * 提案が入力の候補日程と一致しているかを見る。
  *
- * WHY: 入力に無い候補日程が1つ混ざると順位の抜けになる — 順位は 1..N の順列なので、
- * 入力にある候補日程が1つ順位を失う。画面は落ちた行を無印のまま描き、職員には
- * 「AI が触らなかった候補日程」と見分けが付かない。
+ * WHY: 過不足なく対応することを要求する。落ちた候補日程には評点が無く、画面は
+ * AI評価ラベルを導けないまま無印の行を描く。職員には「AI が触らなかった候補日程」と
+ * 「AI が評点を付けられなかった候補日程」の区別が付かない。評点が順位に代わっても
+ * （ADR-0007）この検査が要る理由は変わらない — むしろ順位の抜けという症状が
+ * 消えたぶん、ここでしか捕まらなくなった。
  *
  * 突き合わせは**識別子**で行う（ADR-0005）。以前は3項目を連結した鍵を組み立てていたが、
  * それは契約に識別子が無かったからで、その理由は消えた。
@@ -63,7 +65,7 @@ export function findRecommendationMismatch(
   input: RecommendScheduleInput,
   output: RecommendScheduleOutput,
 ): string | null {
-  const returned = output.recommendations.map((entry) => entry.candidate_id);
+  const returned = output.evaluations.map((entry) => entry.candidate_id);
   const unexpected = unexpectedCandidateIds(input.candidates, returned);
   const missing = input.candidates
     .map((candidate) => candidate.id)
@@ -85,8 +87,8 @@ export function findRecommendationMismatch(
  * **候補日提案（`findRecommendationMismatch`）と非対称に、抜けは許す。** 判定できな
  * かった候補日程は要素を持たないと決めた（`outputs.ts`）ので、抜けは失敗ではなく
  * 「AI が答えられなかった」という事実である。画面はそれを「（判定できませんでした）」
- * として聞き返しの対象にする。一方あちらは全候補日程に順位を付けるのが仕事なので、
- * 抜けは順位の抜けそのものになる。
+ * として聞き返しの対象にする。一方あちらは全候補日程に評点を付けるのが仕事なので、
+ * 抜けた候補日程は AI評価ラベルを持てないまま画面に並ぶ。
  *
  * 重複は弾く。同じ候補日程に2つの参加可否が返ると、画面はどちらを採るかを決めねば
  * ならず、**その判断はどう決めても参加者の答えではない**（先勝ちなら後で言い直した
@@ -119,7 +121,7 @@ export function findAvailabilityMismatch(
  *
  * WHY: Runtime はこのスキーマを Structured Output の再試行に使う。素の
  * `OUTPUT_SCHEMAS[taskId]` を渡すと、候補日程を取りこぼした提案が Runtime を
- * 素通りして BFF で初めて落ちる — 順位の重複や抜けは作り直しに回るのに、件数の
+ * 素通りして BFF で初めて落ちる — 評点が値域の外にあれば作り直しに回るのに、件数の
  * 不一致だけ回らないという非対称ができる。どちらもモデルの出力が契約に届いて
  * いないという同じ失敗である。
  *
@@ -147,7 +149,7 @@ export function outputSchemaFor(taskId: TaskId, input: unknown): z.ZodType {
       if (!parsed.success) return OUTPUT_SCHEMAS[taskId];
       return recommendScheduleOutputSchema.refine(
         (output) => findRecommendationMismatch(parsed.data, output) === null,
-        { error: '提案は入力の候補日程と過不足なく対応している必要があります' },
+        { error: '評点は入力の候補日程と過不足なく対応している必要があります' },
       );
     }
     default:
