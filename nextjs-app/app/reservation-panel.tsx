@@ -89,7 +89,8 @@ export function ReservationPanel() {
         nonAiPathHint="AI を使わなくても、すべての項目を手で埋められます。"
         description={
           "自然な言葉で予約内容を入力すると、AIが自動的にフォームに入力します。\n" +
-          "例: 「来月15日から3泊4日で大阪出張、新幹線で往復」"
+          "例: 「来月15日から3泊4日で大阪出張、新幹線で往復」\n" +
+          "同行者とICカード利用枚数は対象外です。手で入力してください。"
         }
         placeholder="予約内容を自然な言葉で入力してください..."
         followUpPlaceholder="借りるのは10月16日の朝でした"
@@ -176,6 +177,25 @@ function ClearButton({ onClick }: { onClick: () => void }) {
     >
       消す
     </button>
+  );
+}
+
+/**
+ * AI が埋めない欄の但し書き（#68）。
+ *
+ * WHY 画面に出すか: 同行者と利用枚数は出力契約に無いので、自然文に「田中さんと2人で」
+ * と書いても行は増えない。画面が黙っていると、職員には**AI が読み落としたのか初めから
+ * 対象外なのか区別が付かない** — 同じ文を足して往復を繰り返すことになる。SKILL.md は
+ * モデルに `message` でこの2欄へ触れることを禁じているので、聞き返しからも分からない。
+ *
+ * 設計書 12章も「同行者情報のAI抽出」を**未対応**として将来の項目に挙げており、
+ * 「対応しない」ではなく「いまは対象外」であることまで画面が言う必要はない。
+ */
+function ManualOnlyNote({ id }: { id: string }) {
+  return (
+    <p id={id} className="mt-1 text-dns-12N-130 text-solid-gray-600">
+      この項目は AI が入力しません。手で入力してください。
+    </p>
   );
 }
 
@@ -285,6 +305,7 @@ function CardCountField({
   onChange: (value: string) => void;
 }) {
   const id = useId();
+  const noteId = `${id}-note`;
   return (
     <div>
       <FieldHeader
@@ -292,11 +313,13 @@ function CardCountField({
         label="ICカード利用枚数"
         onClear={value === "" ? undefined : () => onChange("")}
       />
+      <ManualOnlyNote id={noteId} />
       <input
         id={id}
         type="number"
         min={1}
         value={value}
+        aria-describedby={noteId}
         onChange={(event) => onChange(event.target.value)}
         className={`mt-1.5 ${INPUT_CLASS}`}
       />
@@ -322,9 +345,11 @@ function CompanionRows({
   onRemove: (id: string) => void;
   onChangeName: (id: string, name: string) => void;
 }) {
+  const noteId = useId();
   return (
-    <fieldset className="mt-5">
+    <fieldset className="mt-5" aria-describedby={noteId}>
       <legend className="text-dns-14M-130 text-solid-gray-900">同行者</legend>
+      <ManualOnlyNote id={noteId} />
       {rows.length === 0 && (
         <p className="mt-1.5 text-dns-14N-130 text-solid-gray-600">
           同行者はいません。
