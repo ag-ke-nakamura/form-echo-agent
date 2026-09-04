@@ -245,6 +245,29 @@ Runtime 側も取り違えを起動時に落とす（`config.ts` の `resolveWeb
 
 呼ぶ側（Runtime）に要るのは Gateway を叩く権限だけで、**Web 検索そのものの権限は持たない。**
 
+### 🔴 F-27. Web Search Tool の「許容される利用方法」が出典の表示を義務づけている
+
+**該当**: 共通設計方針書 7.1節（Websearch の利用）。**参照ドキュメントはこの制約に触れていない。**
+
+**事実**: [Web Search Tool のドキュメント](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-connector-web-search-tool.html#gateway-target-connector-web-search-tool-acceptable-use)の Acceptable use が次を課している。
+
+> You must retain and display the source citations and links provided with each Search Result **in any output you surface to your end users that uses the Search Result**. You may not use Web Search Tool to (a) extract, store, or reproduce content from Search Results in bulk, or (b) build or populate a competing index or database.
+
+つまり `sources` の表示は**透明性のための設計判断ではなく、利用条件そのもの**である。#46 の受け入れ条件は `sources`（AI が申告した URL）を画面に出すことを求めていたが、**それだけでは条件を満たさない。** 理由は2つ。
+
+1. **出典（citation）を落としていた。** 求められているのは citation と link の**両方**で、Search Result には `title` が付いてくる。ホスト名だけのリンクでは出典を表示したことにならない
+2. **表示がモデルの申告頼みだった。** `sources` はモデルが「根拠にした」と書いた URL で、**使ったのに載せない**ことも、検索結果に無い URL を混ぜることもある。実測でも、モデルが申告したのは2件だが Runtime が取得して渡したのは5件だった。申告漏れの分は、出典なしで検索結果由来の回答を職員に見せることになる
+
+**対応**: Runtime が実際に取得した Search Result の出典を、AI の出力とは別に応答へ載せた（`AiTaskSuccessResponse.citations`）。画面はこちらを表示の正典にする。**遵守をモデルの協力に依存させない。**
+
+- Runtime — `citations` に `{title, url, publishedDate?}` を載せる。**本文（`text`）は載せない**（bulk での抽出・保存・複製の禁止に触れないため、かつ表示に要らないため）。URL で重複を落とす
+- BFF — 契約で検査して通す。**壊れた出典は黙って落とさず `PARSE_FAILED` にする**（落とすと、規約に反したまま画面が成功として描く）
+- 画面 — 出典・リンク・ホスト名・公開日を並べる。`sources` は AI の出力契約に残るが、**リンクの表示はもう `sources` から導かない**
+
+**修正案**: 7.1節に利用条件として明記する。「`sources` を画面に出す」を透明性の推奨ではなく**必須**として書き、表示の根拠を AI の出力ではなく実際の検索結果に置くこと。**本番設計でも同じ制約が掛かる。**
+
+**あわせて公開日の形が2つある。** ドキュメントの Response format の例は `2024-10-07` だが、実物は `05:00PM, Thursday, August 27 2026, PDT` の形でも返る（`new Date()` が解釈できない）。分からないときは `unknown` という文字列が入る。
+
 ### 🟡 F-25. CLI 0.28.1 と `@aws/agentcore-cdk` alpha.51 は `deploy` で衝突する（#46 で発覚）
 
 **該当**: `.claude/rules/agentcore-cdk.md`（alpha.51 への固定）

@@ -1,4 +1,4 @@
-import type { TaskId } from "@contracts/index.js";
+import type { TaskId, WebSearchCitation } from "@contracts/index.js";
 import {
   AlertCircle,
   Check,
@@ -209,7 +209,7 @@ export function AiErrorNotice({
 export function AiPreview({
   items,
   message,
-  sources,
+  citations,
   emptyItemText,
   applyLabel,
   onApply,
@@ -219,13 +219,16 @@ export function AiPreview({
   /** AI が書いた文（出力契約の `message`）。聞き返しもここに入る。 */
   message: string;
   /**
-   * AI が回答の根拠にした参照元 URL（出力契約の `sources`、#46）。
+   * Runtime が取得した Web 検索の出典（#46）。**AI の出力ではない。**
+   *
+   * 表示は AWS の Web Search Tool の「許容される利用方法」が課す義務であり、
+   * 出典（タイトル）とリンクの両方を出す。
    *
    * **空配列のときは何も出さない。** Web 検索を持つのは交通ICだけで、そこでも
    * 経路を尋ねられなかった往復では空のまま返る。見出しだけが残ると、職員には
    * 「検索したが根拠が無い」ように見える。
    */
-  sources: readonly string[];
+  citations: readonly WebSearchCitation[];
   /** 抽出・判定できなかった行に添える文字列。タブごとに違う。 */
   emptyItemText: string;
   /** 反映のボタンの文言。「この内容でフォームに入力」など、タブごとに違う。 */
@@ -240,7 +243,7 @@ export function AiPreview({
     何が起きたのか分からない。「修正」は残す — そこからが次の一手になる。
   */
   const applicable = hasApplicableItems(items);
-  const links = linkableSources(sources);
+  const links = linkableSources(citations);
 
   return (
     <section
@@ -277,15 +280,23 @@ export function AiPreview({
         </div>
       )}
 
+      {/*
+        Web 検索の出典。**出すのは義務であって装飾ではない**（#46）。AWS の Web
+        Search Tool の「許容される利用方法」が、Search Result を使った出力には
+        出典（タイトル）とリンクを添えて表示することを求めている。
+
+        並べるのは **Runtime が実際に取得した結果**であって、AI が `sources` に
+        書いた URL ではない。モデルの申告漏れで出典が消えないようにするため。
+      */}
       {links.length > 0 && (
         <section
-          aria-label="AIが参照した情報源"
+          aria-label="AIが参照した検索結果"
           className="mt-3 border-l-4 border-solid-gray-300 bg-solid-gray-50 p-3"
         >
           <p className="text-dns-12N-130 text-solid-gray-600">
-            AI がこの回答の根拠にしたページ
+            AI が参照した検索結果
           </p>
-          <ul className="mt-1 grid gap-1">
+          <ul className="mt-2 grid gap-2">
             {links.map((source) => (
               <li key={source.url}>
                 <a
@@ -297,15 +308,25 @@ export function AiPreview({
                   */
                   target="_blank"
                   rel="noreferrer"
-                  className="flex items-center gap-1 text-dns-14N-130 text-solid-blue-700 underline underline-offset-2"
+                  className="inline-flex items-start gap-1 text-dns-14N-130 text-solid-blue-700 underline underline-offset-2"
                 >
-                  {source.label}
+                  <span>{source.label}</span>
                   <ExternalLink
                     aria-hidden="true"
-                    className="size-4 shrink-0"
+                    className="mt-0.5 size-4 shrink-0"
                   />
                   <span className="sr-only">（新しいタブで開きます）</span>
                 </a>
+                {/*
+                  ホスト名と公開日はリンクの外に出す。どこの情報でいつのものかは
+                  経路の裏取りの判断材料になるが、リンクの文字列に混ぜると
+                  読み上げが1つの長い文になる。
+                */}
+                <p className="text-dns-12N-130 text-solid-gray-600">
+                  {source.host}
+                  {source.publishedDate !== undefined &&
+                    ` ・ ${source.publishedDate}`}
+                </p>
               </li>
             ))}
           </ul>

@@ -1,6 +1,6 @@
 "use client";
 
-import type { TaskId } from "@contracts/index.js";
+import type { TaskId, WebSearchCitation } from "@contracts/index.js";
 /*
   値として引くのはこの1モジュールだけ。`index.js` から引くと zod がバンドルに乗る
   （他の import はすべて `import type` なので実行時には消える）。拡張子を付けないのは、
@@ -35,6 +35,13 @@ import { type ErrorGuidance, errorGuidanceFor } from "./lib/error-guidance";
 type Preview<TTaskId extends TaskId> = {
   prompt: string;
   result: TaskOutputs[TTaskId];
+  /**
+   * この往復で Runtime が取得した Web 検索の出典（#46）。
+   *
+   * **結果と一緒に持つ。** 表示は AWS の「許容される利用方法」が課す義務なので、
+   * プレビューが残る限り出典も残っていなければならない。
+   */
+  citations: WebSearchCitation[];
 };
 
 type AiAssistantProps<TTaskId extends TaskId> = {
@@ -255,7 +262,11 @@ export function AiAssistant<TTaskId extends TaskId>({
       setExchanges((current) => current + 1);
       failureStreak.current = 0;
       setExhausted(false);
-      setPreview({ prompt: sent, result: outcome.result });
+      setPreview({
+        prompt: sent,
+        result: outcome.result,
+        citations: outcome.citations,
+      });
       /*
         前の反映の報告は消す。あれは「その時フォームへ何をしたか」なので、新しい結果が
         届いた時点で今の画面と対応しなくなる（残すと、まだ反映していない結果の隣に
@@ -477,7 +488,7 @@ export function AiAssistant<TTaskId extends TaskId>({
             <AiPreview
               items={items}
               message={preview.result.message}
-              sources={preview.result.sources}
+              citations={preview.citations}
               emptyItemText={emptyItemText}
               applyLabel={applyLabel}
               onApply={handleApply}

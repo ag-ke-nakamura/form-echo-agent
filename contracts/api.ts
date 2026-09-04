@@ -79,10 +79,42 @@ export const usageSchema = z.object({
 
 export type Usage = z.infer<typeof usageSchema>;
 
+/**
+ * Web 検索の Search Result 1件の出典（#46）。
+ *
+ * **AWS の Web Search Tool の「許容される利用方法」が表示を義務づけている。**
+ * 「You must retain and display the source citations and links provided with each
+ * Search Result in any output you surface to your end users that uses the Search
+ * Result.」— 出典（`title`）とリンク（`url`）の両方を、職員に見せる出力に添える。
+ *
+ * **本文（`text`）は載せない。** 同じ規約が Search Result の内容を bulk で
+ * 抽出・保存・複製することを禁じており、表示に要るのは出典とリンクだけである。
+ */
+export const webSearchCitationSchema = z.object({
+  /** 出典（ページのタイトル）。Search Result が持たなければ URL で代える。 */
+  title: z.string(),
+  url: z.url(),
+  /** 公開日。Search Result が持つときだけ。 */
+  publishedDate: z.string().optional(),
+});
+
+export type WebSearchCitation = z.infer<typeof webSearchCitationSchema>;
+
 export interface AiTaskSuccessResponse<TResult = unknown> {
   sessionId: string;
   result: TResult;
   usage: Usage;
+  /**
+   * この応答を作るのに Runtime が実際に取得した Search Result の出典（#46）。
+   *
+   * **AI の出力（`result.sources`）とは別物で、こちらが表示の正典になる。**
+   * `sources` はモデルが「根拠にした」と申告した URL で、申告漏れも、検索結果に
+   * 無い URL の混入も起こりうる。許容される利用方法の遵守をモデルの協力に
+   * 依存させないため、Runtime が取得した実物をここに載せる。
+   *
+   * Web 検索を使わなかった応答では空配列。持たないドメイン（会議ロジ）でも空配列。
+   */
+  citations: WebSearchCitation[];
 }
 
 export interface AiErrorResponse {

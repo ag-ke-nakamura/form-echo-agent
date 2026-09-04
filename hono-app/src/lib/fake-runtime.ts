@@ -1,4 +1,4 @@
-import type { Usage } from '@contracts/index.js'
+import type { Usage, WebSearchCitation } from '@contracts/index.js'
 import type {
   RuntimeInvocation,
   RuntimeTransport,
@@ -27,7 +27,13 @@ export type FakeRuntimeTurn =
    * ヘッダーで渡された値を応答に載せるので、fake もそこを真似る必要がある
    * （BFF が発行した ID が呼び出し側へ返るかは、これが無いと言えない）。
    */
-  | { kind: 'succeed'; result: unknown; usage?: Usage }
+  | {
+      kind: 'succeed'
+      result: unknown
+      usage?: Usage
+      /** Web 検索の出典（#46）。省略すると検索を使わなかった応答になる。 */
+      citations?: WebSearchCitation[]
+    }
   /** 本文と状態コードを直に指定する。成功の形をしていない応答はこちらで書く。 */
   | { kind: 'respond'; status?: number; body: unknown }
   /** 時間内に応答しない（Runtime は生きているが遅い）。 */
@@ -104,6 +110,7 @@ export const fakeRuntimeTransport: RuntimeTransport = async (invocation) => {
         sessionId: invocation.sessionId,
         result: turn.result,
         usage: turn.usage ?? NO_USAGE,
+        citations: turn.citations ?? [],
       })
     case 'respond':
       return jsonResponse(turn.status ?? 200, turn.body)

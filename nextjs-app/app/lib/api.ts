@@ -5,6 +5,7 @@ import type {
   INPUT_SCHEMAS,
   OUTPUT_SCHEMAS,
   TaskId,
+  WebSearchCitation,
 } from "@contracts/index.js";
 import type { z } from "zod";
 
@@ -71,7 +72,18 @@ export type TaskInputs = {
 };
 
 export type AiTaskOutcome<TTaskId extends TaskId> =
-  | { ok: true; sessionId: string; result: TaskOutputs[TTaskId] }
+  | {
+      ok: true;
+      sessionId: string;
+      result: TaskOutputs[TTaskId];
+      /**
+       * Runtime が実際に取得した Web 検索の出典（#46）。**AI の出力ではない。**
+       *
+       * AWS の Web Search Tool の「許容される利用方法」が表示を義務づけている。
+       * `result.sources` はモデルの申告なので、遵守をそちらに依存させない。
+       */
+      citations: WebSearchCitation[];
+    }
   | { ok: false; code: AiErrorCode };
 
 export type AiTaskRequestArgs<TTaskId extends TaskId> = {
@@ -173,7 +185,14 @@ export async function requestAiTask<TTaskId extends TaskId>({
     if (!success?.result || typeof success.sessionId !== "string") {
       return { ok: false, code: "PARSE_FAILED" };
     }
-    return { ok: true, sessionId: success.sessionId, result: success.result };
+    return {
+      ok: true,
+      sessionId: success.sessionId,
+      result: success.result,
+      // 欄が無い応答（この欄を持たない版の BFF）は空配列として扱う。出典が
+      // 無いことと、検索を使わなかったことは画面では同じ「何も出さない」になる。
+      citations: success.citations ?? [],
+    };
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener("abort", abort);

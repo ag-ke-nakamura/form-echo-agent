@@ -3,7 +3,9 @@ import {
   isAiErrorCode,
   outputSchemaFor,
   usageSchema,
+  webSearchCitationSchema,
 } from '@contracts/index.js'
+import { z } from 'zod'
 import type { RuntimeInvocation } from './runtime-transport.js'
 import { loadRuntimeTransport } from './runtime-transport.js'
 
@@ -105,6 +107,7 @@ export async function invokeRuntime(
       sessionId: parsed.sessionId,
       result: result.data,
       usage: parsed.usage,
+      citations: parsed.citations,
     },
   }
 }
@@ -137,5 +140,20 @@ function runtimeSuccessShape(body: unknown): AiTaskSuccessResponse | null {
   // （欄が欠けた usage は画面のトークン表示をそのまま壊す）。
   const usage = usageSchema.safeParse(candidate.usage)
   if (!usage.success) return null
-  return { ...candidate, usage: usage.data } as AiTaskSuccessResponse
+  /*
+    出典も契約で見る（#46）。AWS の Web Search Tool の「許容される利用方法」が
+    表示を義務づけているので、**壊れた出典を黙って落とさない** — 落とすと、
+    検索結果を使った回答を出典なしで職員に見せることになる。欄ごと無い応答は
+    空配列として通す（Web 検索を持たないドメインと、この欄を持たない版の
+    Runtime がここに来る）。
+  */
+  const citations = z
+    .array(webSearchCitationSchema)
+    .safeParse(candidate.citations ?? [])
+  if (!citations.success) return null
+  return {
+    ...candidate,
+    usage: usage.data,
+    citations: citations.data,
+  } as AiTaskSuccessResponse
 }

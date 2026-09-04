@@ -53,6 +53,22 @@ BFF の再検査の両方が引く。
 自然文の必須性は `PROMPT_REQUIREMENT`（`prompt-requirement.ts`）が taskId ごとに持つ
 （`OUTPUT_SCHEMAS` / `INPUT_SCHEMAS` と対称）。「毎回送り直す」理由は ADR-0004 にある。
 
+## Web 検索の出典は AI の出力と別に運ぶ
+
+`AiTaskSuccessResponse.citations` は **Runtime が実際に取得した Search Result の出典**で、
+AI が書いた `result.sources` とは別物である。**表示の正典はこちら。**
+
+AWS の Web Search Tool の「許容される利用方法」が、Search Result を使った出力に出典
+（`title`）とリンク（`url`）を添えて表示することを義務づけている（`docs/reference-doc-fixes.md`
+F-27）。`sources` はモデルの申告なので、**使ったのに載せない**ことも、検索結果に無い URL を
+混ぜることもある。**遵守をモデルの協力に依存させない。**
+
+本文（`text`）は運ばない — 同じ規約が Search Result の内容を bulk で抽出・保存・複製する
+ことを禁じており、表示に要るのは出典とリンクだけである。
+
+BFF は壊れた出典を**黙って落とさず** `PARSE_FAILED` にする。落とすと、規約に反したまま
+画面が成功として描く。
+
 ## フロントエンドが値として引くファイル
 
 `meeting.ts`・`recommendation.ts`・`prompt-requirement.ts`。この3つには2つの制約が掛かる。

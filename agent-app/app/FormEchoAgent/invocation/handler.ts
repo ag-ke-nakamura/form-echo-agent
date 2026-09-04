@@ -2,9 +2,37 @@ import {
   type AiErrorResponse,
   type AiTaskSuccessResponse,
   aiTaskRequestSchema,
+  type WebSearchCitation,
 } from '../contracts/index.js';
+import type { WebSearchHit } from '../tools/web-search.js';
 import { invokeTask, StructuredOutputError } from './invoke-task.js';
 import type { InvocationLogger } from './logger.js';
+
+/**
+ * 取得した Search Result を、職員に見せる出典に落とす（#46）。
+ *
+ * **本文は落とし、出典（`title`）とリンク（`url`）だけを残す。** AWS の Web Search
+ * Tool の「許容される利用方法」が、出典とリンクの表示を義務づける一方で、Search
+ * Result の内容を bulk で抽出・保存・複製することを禁じているため。
+ *
+ * URL で重複を落とす。1リクエストで最大3回検索するので、同じページが複数回返る。
+ * タイトルが空の結果は URL で代える — 出典の欄が空のリンクは、職員には
+ * どこの情報か分からない。
+ */
+function toCitations(hits: readonly WebSearchHit[]): WebSearchCitation[] {
+  const byUrl = new Map<string, WebSearchCitation>();
+  for (const hit of hits) {
+    if (byUrl.has(hit.url)) continue;
+    byUrl.set(hit.url, {
+      title: hit.title.trim() === '' ? hit.url : hit.title,
+      url: hit.url,
+      ...(hit.publishedDate === undefined
+        ? {}
+        : { publishedDate: hit.publishedDate }),
+    });
+  }
+  return [...byUrl.values()];
+}
 
 /**
  * ハンドラが `RequestContext` から実際に使うものだけ。
@@ -55,11 +83,16 @@ export async function handleInvocation(
   const { taskId, prompt, input } = parsedRequest.data;
 
   try {
-    const { result, usage } = await invokeTask(
+    const { result, usage, webSearchHits } = await invokeTask(
       { taskId, prompt, input, sessionId: context.sessionId },
       context.log,
     );
-    return { sessionId: context.sessionId, result, usage };
+    return {
+      sessionId: context.sessionId,
+      result,
+      usage,
+      citations: toCitations(webSearchHits),
+    };
   } catch (error) {
     context.log.error({ err: error }, 'invocation に失敗しました');
     if (error instanceof StructuredOutputError) {

@@ -187,6 +187,8 @@ describe('fake の Runtime クライアントの差し替え', () => {
         sessionId: SESSION_ID,
         result: VALID_RESULTS[taskId],
         usage: NO_USAGE,
+        // Web 検索を使っていない応答では空配列（#46）。
+        citations: [],
       })
     },
   )
@@ -544,6 +546,77 @@ describe('Runtime の失敗の写像', () => {
     expect((await expectError(timedOut)).code).toBe('TIMEOUT')
     expect(unreachable.status).toBe(503)
     expect((await expectError(unreachable)).code).toBe('RUNTIME_UNAVAILABLE')
+  })
+})
+
+describe('Web 検索の出典（#46）', () => {
+  const CITATION = {
+    title: '東京から新大阪 時刻表（ＪＲ東海道新幹線）',
+    url: 'https://www.example.jp/diagram',
+    publishedDate: '2026-08-27',
+  }
+
+  it('Runtime が返した出典をそのまま画面へ通す', async () => {
+    fakeRuntimeScript.write({
+      kind: 'succeed',
+      result: VALID_RESULTS['ic-card.parse-reservation'],
+      citations: [CITATION],
+    })
+
+    const body = await expectSuccess(
+      await postTask({
+        ...REQUESTS['ic-card.parse-reservation'],
+        sessionId: SESSION_ID,
+      }),
+    )
+
+    // AWS の Web Search Tool の「許容される利用方法」が出典とリンクの表示を
+    // 義務づけている。BFF が落とすと画面には出しようがない。
+    expect(body.citations).toEqual([CITATION])
+  })
+
+  it('出典が壊れていれば通さない', async () => {
+    fakeRuntimeScript.write({
+      kind: 'respond',
+      body: {
+        sessionId: SESSION_ID,
+        result: VALID_RESULTS['ic-card.parse-reservation'],
+        usage: NO_USAGE,
+        citations: [{ title: '時刻表', url: 'ではないもの' }],
+      },
+    })
+
+    const error = await expectError(
+      await postTask({
+        ...REQUESTS['ic-card.parse-reservation'],
+        sessionId: SESSION_ID,
+      }),
+    )
+
+    // **黙って落とさない。** 落とすと、検索結果を使った回答を出典なしで
+    // 職員に見せることになり、規約に反したまま画面が成功として描く。
+    expect(error.code).toBe('PARSE_FAILED')
+  })
+
+  it('出典の欄が無い応答は空配列として通す', async () => {
+    fakeRuntimeScript.write({
+      kind: 'respond',
+      body: {
+        sessionId: SESSION_ID,
+        result: VALID_RESULTS['ic-card.parse-reservation'],
+        usage: NO_USAGE,
+      },
+    })
+
+    const body = await expectSuccess(
+      await postTask({
+        ...REQUESTS['ic-card.parse-reservation'],
+        sessionId: SESSION_ID,
+      }),
+    )
+
+    // Web 検索を持たないドメインと、この欄を持たない版の Runtime がここに来る。
+    expect(body.citations).toEqual([])
   })
 })
 
