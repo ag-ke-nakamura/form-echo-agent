@@ -56,8 +56,16 @@ const CANDIDATES = [
   { id: 'candidate-2', date: '2026-10-16', start_time: '13:00' },
 ] as const;
 
+/**
+ * 候補日程を作るタスクの与件。**カレンダーの表示範囲を含む**（#69）。
+ *
+ * 画面が渡す範囲は「今日から2週間」だが、固定値で書く — テストが日付を動かすと、
+ * 入力契約の検査そのものが今日に依存する。
+ */
 const CANDIDATES_INPUT: ParseCandidatesInput = {
   duration_minutes: MEETING_CONTEXT.duration_minutes,
+  calendar_start: '2026-10-15',
+  calendar_end: '2026-10-28',
 };
 
 const AVAILABILITY_INPUT: ParseAvailabilityInput = {
@@ -298,7 +306,29 @@ describe('構造化入力', () => {
       payload: {
         taskId: 'meeting.parse-candidates',
         prompt: PROMPTS['meeting.parse-candidates'],
-        input: { duration_minutes: 45 },
+        input: { ...CANDIDATES_INPUT, duration_minutes: 45 },
+      },
+    },
+    {
+      // #69: 画面が選べる日付の範囲。無いまま渡すと、モデルは表示できない
+      // 日付を返してよいことになる。
+      name: '候補日程の作成にカレンダーの表示範囲が無い',
+      payload: {
+        taskId: 'meeting.parse-candidates',
+        prompt: PROMPTS['meeting.parse-candidates'],
+        input: { duration_minutes: MEETING_CONTEXT.duration_minutes },
+      },
+    },
+    {
+      name: 'カレンダーの表示範囲が逆向き',
+      payload: {
+        taskId: 'meeting.parse-candidates',
+        prompt: PROMPTS['meeting.parse-candidates'],
+        input: {
+          ...CANDIDATES_INPUT,
+          calendar_start: CANDIDATES_INPUT.calendar_end,
+          calendar_end: CANDIDATES_INPUT.calendar_start,
+        },
       },
     },
     {
@@ -749,7 +779,7 @@ describe('セッションと会話履歴', () => {
         {
           taskId: 'meeting.parse-candidates',
           prompt: '水曜は避けたい',
-          input: { duration_minutes: 120 },
+          input: { ...CANDIDATES_INPUT, duration_minutes: 120 },
         },
         sessionId,
       ),
@@ -758,6 +788,11 @@ describe('セッションと会話履歴', () => {
     const messages = userMessagesOf(fakeModelScript.calls[1]);
     expect(messages).toHaveLength(2);
     expect(messages[1]).toContain('"duration_minutes": 120');
+    // 表示範囲も毎回届く（#69）。届かない往復があると、モデルはその回だけ
+    // 範囲の外を提案してよいことになる。
+    expect(messages[1]).toContain(
+      `"calendar_start": "${CANDIDATES_INPUT.calendar_start}"`,
+    );
   });
 });
 

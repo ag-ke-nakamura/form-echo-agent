@@ -14,6 +14,7 @@ import { CANDIDATES_TASK_ID } from "./lib/api";
 import {
   addCandidateAt,
   type CalendarCandidate,
+  type CalendarContext,
   calendarDays,
   candidateConflicts,
   candidateSlots,
@@ -47,11 +48,18 @@ import { ManualInputDivider, TabHeading } from "./screen-layout";
  * 頃はこのファイルに置いていたが、カレンダーになった今は純関数がすべてその形を受けて
  * 返すので、タブ側に置くと `app/lib` から掘りに行くことになる。
  *
- * 所要時間を受け取るのは、クリックの受け付け（重なり・業務時間への収まり）が所要時間
- * 抜きには決まらないため。**候補日程は終了時刻を持たない**（ADR-0005）。
+ * 文脈（所要時間とカレンダーの表示範囲）を受け取るのは、クリックの受け付けと AI の
+ * 反映がその2つ抜きには決まらないため。**候補日程は終了時刻を持たない**（ADR-0005）し、
+ * 職員が選べる日付は表示範囲の中にしか無い（#69）。
  */
 export type CandidateCalendarApi = {
   candidates: CalendarCandidate[];
+  /**
+   * カレンダーが見せている14日。**ブラウザで描くときだけ決まる**（`null` は未確定）。
+   *
+   * 職員が選べる日付でもあり、AI へ与件として渡す表示範囲でもある（ADR-0005 の表）。
+   */
+  days: string[] | null;
   /** 升目のクリック。空いていれば候補日程にし、埋まっていればその候補日程を解除する。 */
   toggleSlot: (slot: Slot) => void;
   /** 識別子で解除する。カレンダーに描けない候補日程の一覧が引く。 */
@@ -98,6 +106,28 @@ export function useCandidateCalendar(
   durationMinutes: MeetingInfo["durationMinutes"],
 ): CandidateCalendarApi {
   /**
+   * カレンダーの起点。**ブラウザで描くときだけ決まる。**
+   *
+   * WHY こう取るか: 起点は職員が見ている「今日」だが、SSG なのでビルド時に描いた
+   * HTML とブラウザの初回描画が食い違ってはならない（ビルド機の「今日」は職員の
+   * 「今日」ではない）。`useSyncExternalStore` はサーバー側の値（`null`）と
+   * ブラウザ側の値を別に取れるので、React が食い違いを起こさずに描き直す。
+   *
+   * 返すのは日付の**文字列**である。ここで配列を作ると呼ばれるたびに別物になり、
+   * React が「snapshot が安定していない」と見て描き直し続ける。
+   */
+  const today = useSyncExternalStore(
+    subscribeToNothing,
+    () => isoDateOf(new Date()),
+    () => null,
+  );
+  const days = today === null ? null : calendarDays(today);
+  /*
+    起点が決まる前は空の範囲を渡す。受け付けの梯子（`slotRejection`）がそれを
+    「表示範囲が決まっていません」として断るので、決まる前のクリックが素通りしない。
+  */
+  const context: CalendarContext = { durationMinutes, days: days ?? [] };
+  /**
    * 選択済みの候補日程。**初期は空**。
    *
    * 行のフォームだった頃は空の1行から始めていた（手で埋めきる起点として）。カレンダーは
@@ -116,7 +146,7 @@ export function useCandidateCalendar(
    * 押したときに消えるのもそれである。
    */
   function toggleSlot(slot: Slot) {
-    const occupied = candidateSlots(candidates, durationMinutes).get(
+    const occupied = candidateSlots(candidates, context.durationMinutes).get(
       slotKey(slot),
     );
     if (occupied !== undefined) {
@@ -134,7 +164,7 @@ export function useCandidateCalendar(
     const added = addCandidateAt(
       candidates,
       slot,
-      durationMinutes,
+      context,
       candidateIdOf(nextSequence.current),
     );
     setRejected(added.rejected);
@@ -161,7 +191,7 @@ export function useCandidateCalendar(
     const applied = applyAiCandidates(
       candidates,
       result,
-      durationMinutes,
+      context,
       nextSequence.current,
     );
     // 反映した分だけ番号が進む（`applyAiCandidates` が返す）。見送った候補日程で
@@ -183,6 +213,7 @@ export function useCandidateCalendar(
 
   return {
     candidates,
+    days,
     toggleSlot,
     removeCandidate,
     clearAll,
@@ -213,34 +244,14 @@ export function CandidatesPanel({
    */
   const [saved, setSaved] = useState(false);
 
-  /**
-   * カレンダーの起点。**ブラウザで描くときだけ決まる。**
-   *
-   * WHY こう取るか: 起点は職員が見ている「今日」だが、SSG なのでビルド時に描いた
-   * HTML とブラウザの初回描画が食い違ってはならない（ビルド機の「今日」は職員の
-   * 「今日」ではない）。`useSyncExternalStore` はサーバー側の値（`null`）と
-   * ブラウザ側の値を別に取れるので、React が食い違いを起こさずに描き直す。
-   *
-   * 返すのは日付の**文字列**である。ここで配列を作ると呼ばれるたびに別物になり、
-   * React が「snapshot が安定していない」と見て描き直し続ける。
-   */
-  const today = useSyncExternalStore(
-    subscribeToNothing,
-    () => isoDateOf(new Date()),
-    () => null,
-  );
-  const days = today === null ? null : calendarDays(today);
-
+  const days = candidates.days;
   /*
-    どちらも起点が決まるまで挙げない。決まる前は全件が「表示範囲外」に見えるので、
-    読み込みの一瞬だけ一覧が出てしまう。
+    描けない候補日程は通常出ない（受け付けの梯子が断る）。日付が変わった後などに
+    混ざったら、黙らずに一覧で出して解除させる（`offGridCandidates`）。
   */
   const offGrid =
     days === null ? [] : offGridCandidates(candidates.candidates, days);
-  const conflicted =
-    days === null
-      ? []
-      : candidateConflicts(candidates.candidates, durationMinutes, days);
+  const conflicted = candidateConflicts(candidates.candidates, durationMinutes);
   /*
     上限は入力契約が持つ（`contracts/meeting.ts`）。選べてしまうと、超えた瞬間に
     タブ3・タブ4の AI だけが INVALID_INPUT で使えなくなり、画面のどこにも
@@ -273,12 +284,28 @@ export function CandidatesPanel({
           送らない — 「来月の午後」→「火曜と木曜だけにして」という書き直しの往復は
           `sessionId` の会話履歴で成立する。
         */
-        input={{ duration_minutes: durationMinutes }}
+        input={{
+          duration_minutes: durationMinutes,
+          /*
+            表示範囲を渡さないと、AI は「来月の午後」に素直に来月を返す。週送りナビが
+            無い（#64 Out of Scope）ので、返ってきた候補日程は1件もカレンダーに置けず、
+            職員から見ると生成に成功したのに画面が変わらない。範囲外かどうかを判定
+            できるのは暦を解決する AI の側だけなので、与件として渡して聞き返させる。
+          */
+          calendar_start: days?.[0] ?? "",
+          calendar_end: days?.[days.length - 1] ?? "",
+        }}
         /*
-          上限に達していたら送らせない。返ってきた候補日程が全部見送りになるだけで、
-          職員から見ると AI が何も生成しなかったように読める。
+          送れない画面状態では押させない。上限に達していると返ってきた候補日程が全部
+          見送りになり、表示範囲が決まる前は入力契約を満たさない（空の日付）ので
+          BFF の門が INVALID_INPUT で弾く。どちらも職員から見ると自分の書いた自然文が
+          悪かったように読める。
         */
-        submitBlockedReason={limitReason}
+        submitBlockedReason={
+          days === null
+            ? "カレンダーの日付を読み込んでいます。少し待つと AI に渡せます。"
+            : limitReason
+        }
         nonAiPathHint="AI を使わなくても、カレンダーの升目をクリックすれば候補日程を選べます。"
         description={
           "自然な言葉で候補日程を入力すると、AIが自動的にカレンダーに反映します。\n" +
@@ -298,11 +325,10 @@ export function CandidatesPanel({
           いるからである（`candidates-form.ts`）。
         */
         previewItems={(result) =>
-          newCandidatePreviewItems(
-            candidates.candidates,
-            result.candidates,
+          newCandidatePreviewItems(candidates.candidates, result.candidates, {
             durationMinutes,
-          )
+            days: days ?? [],
+          })
         }
         onApply={(result) => {
           setSaved(false);
@@ -597,10 +623,10 @@ function ConflictNotice({
 /**
  * カレンダーに描けない候補日程（#69 の設計判断）。
  *
- * WHY 出すか: AI は「来月の午後」と言われれば2週間の外の日付を返し、時刻も升目の
- * 刻みから外れうる。週送りナビゲーションは無い（#64 Out of Scope）ので、ここに
- * 出さないと**画面のどこにも現れないまま選択済み件数だけが増える。** 候補日程
- * としては有効なので捨てない — タブ3・タブ4はそのまま使える。
+ * WHY 出すか: 受け付けの梯子（`slotRejection`）が描けない日時を断るので、通常は
+ * 1件も出ない。残っている経路は日付が動いたときで、起点は開いたときの「今日」に
+ * 固定される一方、選んだ候補日程はそのまま残る。**画面のどこにも現れないまま選択済み
+ * 件数だけが増える**状態を黙らないための最後の網である。
  */
 function OffGridNotice({
   candidates,
@@ -624,9 +650,9 @@ function OffGridNotice({
         カレンダーに描けない候補日程が {candidates.length}件あります。
       </p>
       <p className="mt-1 text-dns-12N-130 text-solid-gray-700">
-        2週間の外、または 9:00–18:00
-        の30分刻みに載らない日時です。候補日程としては
-        有効で、参加可否タブと日程確定タブでは使えます。
+        表示範囲の外、または 9:00–18:00
+        の30分刻みに載らない日時です。カレンダーの升目では解除できないので、ここから
+        解除してください。
       </p>
       <ul className="mt-2 grid gap-1 text-dns-14N-130 text-solid-gray-900">
         {candidates.map((candidate) => (

@@ -29,7 +29,7 @@ BFF の再検査の両方が引く。
 | taskId | `input` |
 | --- | --- |
 | `ic-card.parse-reservation` | `null`（送るべき画面状態が無い。基準時刻は system prompt が持つ） |
-| `meeting.parse-candidates` | 所要時間のみ。既に選択済みの候補日程は送らない |
+| `meeting.parse-candidates` | 所要時間・カレンダーの表示範囲（`calendar_start` / `calendar_end`）。既に選択済みの候補日程は送らない |
 | `meeting.parse-availability` | 参加形式・所要時間・候補日程の一覧 |
 | `meeting.recommend-schedule` | 参加形式・所要時間・参加者の名簿・参加可否表 |
 

@@ -72,12 +72,14 @@ describe("SLOT_START_TIMES", () => {
  * しない限り確かめられない。
  */
 describe("addCandidateAt", () => {
+  const context = { durationMinutes: 60, days: calendarDays("2026-09-04") };
+
   it("1クリックが候補日程1件になる", () => {
     expect(
       addCandidateAt(
         [],
         { date: "2026-09-08", start_time: "14:00" },
-        60,
+        context,
         "candidate-0",
       ),
     ).toEqual({
@@ -106,12 +108,12 @@ describe("addCandidateAt", () => {
     const overlapping = addCandidateAt(
       existing,
       { date: "2026-09-08", start_time: "14:30" },
-      60,
+      context,
       "candidate-1",
     );
     expect(overlapping.candidates).toEqual(existing);
     expect(overlapping.rejected).toBe(
-      "既に選んだ候補日程（9月8日(火) 14:00–15:00）と重なります。所要時間ぶんの範囲は1件で埋まります。",
+      "既に選んだ候補日程 9月8日(火) 14:00–15:00 と重なります",
     );
 
     // 所要時間ぶんが終わった直後は空いている。
@@ -119,7 +121,7 @@ describe("addCandidateAt", () => {
       addCandidateAt(
         existing,
         { date: "2026-09-08", start_time: "15:00" },
-        60,
+        context,
         "candidate-1",
       ).rejected,
     ).toBeNull();
@@ -129,7 +131,7 @@ describe("addCandidateAt", () => {
       addCandidateAt(
         existing,
         { date: "2026-09-09", start_time: "14:30" },
-        60,
+        context,
         "candidate-1",
       ).rejected,
     ).toBeNull();
@@ -137,18 +139,60 @@ describe("addCandidateAt", () => {
 
   it("所要時間ぶんが業務時間内に収まらないクリックを受け付けない", () => {
     const slot = { date: "2026-09-08", start_time: "17:30" };
-    expect(addCandidateAt([], slot, 60, "candidate-0").rejected).toBe(
-      "所要時間60分が18:00までに収まりません。",
+    expect(addCandidateAt([], slot, context, "candidate-0").rejected).toBe(
+      "所要時間60分が18:00までに収まりません",
     );
-    expect(addCandidateAt([], slot, 30, "candidate-0").rejected).toBeNull();
+    expect(
+      addCandidateAt(
+        [],
+        slot,
+        { ...context, durationMinutes: 30 },
+        "candidate-0",
+      ).rejected,
+    ).toBeNull();
     expect(
       addCandidateAt(
         [],
         { date: "2026-09-08", start_time: "17:00" },
-        60,
+        context,
         "candidate-0",
       ).rejected,
     ).toBeNull();
+  });
+
+  /*
+    クリックからは起こらない（升目はグリッドから来る）が、AI の反映が同じ判定を引く
+    （`candidates-form.ts`）。表示できない候補日程を受け入れると、選択済み件数が
+    カレンダーに見えているものと合わなくなる。
+  */
+  it("表示範囲の外の日付を受け付けない", () => {
+    expect(
+      addCandidateAt(
+        [],
+        { date: "2026-10-15", start_time: "14:00" },
+        context,
+        "candidate-0",
+      ).rejected,
+    ).toBe("カレンダーの表示範囲 9月4日(金)〜9月17日(木) の外です");
+  });
+
+  it("30分の升目に載らない開始時刻を受け付けない", () => {
+    expect(
+      addCandidateAt(
+        [],
+        { date: "2026-09-08", start_time: "14:15" },
+        context,
+        "candidate-0",
+      ).rejected,
+    ).toBe("9:00から18:00の30分刻みに載らない開始時刻です");
+    expect(
+      addCandidateAt(
+        [],
+        { date: "2026-09-08", start_time: "08:00" },
+        context,
+        "candidate-0",
+      ).rejected,
+    ).toBe("9:00から18:00の30分刻みに載らない開始時刻です");
   });
 
   /* 上限は入力契約が持つ（`contracts/meeting.ts`）。文言は `candidate-limit.ts` に1箇所。 */
@@ -157,7 +201,7 @@ describe("addCandidateAt", () => {
       { length: MAX_INPUT_CANDIDATES },
       (_, index) => ({
         id: `candidate-${index}`,
-        date: `2026-09-${String(8 + Math.floor(index / 2)).padStart(2, "0")}`,
+        date: `2026-09-${String(4 + Math.floor(index / 2)).padStart(2, "0")}`,
         start_time: index % 2 === 0 ? "09:00" : "11:00",
         source: "manual",
       }),
@@ -166,7 +210,7 @@ describe("addCandidateAt", () => {
     const result = addCandidateAt(
       full,
       { date: "2026-09-08", start_time: "13:00" },
-      30,
+      { durationMinutes: 30, days: calendarDays("2026-09-04") },
       "candidate-99",
     );
     expect(result.candidates).toEqual(full);
@@ -265,11 +309,9 @@ describe("candidateConflicts", () => {
     },
   ];
 
-  const days = calendarDays("2026-09-04");
-
   it("30分では重ならない2件が60分では重なる", () => {
-    expect(candidateConflicts(pair, 30, days)).toEqual([]);
-    expect(candidateConflicts(pair, 60, days)).toEqual([
+    expect(candidateConflicts(pair, 30)).toEqual([]);
+    expect(candidateConflicts(pair, 60)).toEqual([
       { candidate: pair[0], conflict: "overlap" },
       { candidate: pair[1], conflict: "overlap" },
     ]);
@@ -284,46 +326,9 @@ describe("candidateConflicts", () => {
         source: "manual",
       },
     ];
-    expect(candidateConflicts(late, 30, days)).toEqual([]);
-    expect(candidateConflicts(late, 60, days)).toEqual([
+    expect(candidateConflicts(late, 30)).toEqual([]);
+    expect(candidateConflicts(late, 60)).toEqual([
       { candidate: late[0], conflict: "after_hours" },
-    ]);
-  });
-
-  /*
-    升目に載らない候補日程はここに出さない。出すと `offGridCandidates` の一覧と
-    二重に並び、しかも「升目を押して解除」という直し方がその候補日程には無い。
-  */
-  it("カレンダーに描けない候補日程は挙げない", () => {
-    const offGrid: CalendarCandidate[] = [
-      {
-        id: "candidate-0",
-        date: "2026-09-08",
-        start_time: "19:00",
-        source: "ai",
-      },
-    ];
-    expect(candidateConflicts(offGrid, 60, days)).toEqual([]);
-  });
-
-  /* 相手が描けない候補日程でも、描ける側の重なりは挙げる（状態は実際に重なっている）。 */
-  it("描けない候補日程と重なる升目は挙げる", () => {
-    const mixed: CalendarCandidate[] = [
-      {
-        id: "candidate-0",
-        date: "2026-09-08",
-        start_time: "14:15",
-        source: "ai",
-      },
-      {
-        id: "candidate-1",
-        date: "2026-09-08",
-        start_time: "14:30",
-        source: "manual",
-      },
-    ];
-    expect(candidateConflicts(mixed, 30, days)).toEqual([
-      { candidate: mixed[1], conflict: "overlap" },
     ]);
   });
 });

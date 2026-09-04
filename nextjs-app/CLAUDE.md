@@ -19,7 +19,9 @@ SSG なので BFF の宛先 `NEXT_PUBLIC_API_BASE_URL` はビルド時に埋め�
   カレンダー**（#69）。**状態は `useCandidateCalendar(所要時間)` として切り出してあり、実体は
   `FormEchoTabs` が持つ**（参加可否タブが同じ候補日程を読むため）。所要時間を要るのは、
   クリックの受け付けが所要時間抜きには決まらないから。カレンダーの起点（今日）は
-  `useSyncExternalStore` でブラウザ側だけ決める — SSG なのでビルド機の「今日」で描けない
+  フックの中で `useSyncExternalStore` を使いブラウザ側だけで決める — SSG なのでビルド機の
+  「今日」で描けない（決まるまで `days` は `null`。その間は升目を描かず、AI へも送らせない）。
+  **表示範囲は AI への与件に載る**（`calendar_start` / `calendar_end`。ADR-0005 の表）
 - `app/availability-panel.tsx` — 参加可否回答。候補日程（識別子・日付・開始時刻）を
   受け取って与件として送り、**候補日程ごとに4状態の参加可否と備考**を持つ（#70）。
   候補日程は日付で束ねて並べる
@@ -57,15 +59,17 @@ SSG なので BFF の宛先 `NEXT_PUBLIC_API_BASE_URL` はビルド時に埋め�
 - `app/lib/candidate-calendar.ts` — カレンダーのスロット⇔候補日程の変換（#69）。
   **状態モデル（`CalendarCandidate`）もここ**（純関数がすべてこの形を受けて返す）。
   日付列（`calendarDays`）・升目の時刻（`SLOT_START_TIMES`）・被覆（`candidateSlots`。
-  所要時間から導くので集合として抱えない）・**1クリック＝1候補日程の受け付け
-  （`addCandidateAt`。重なり・業務時間・件数の上限で断り、**塞いでいる候補日程を名指しする**
-  — 描けない候補日程が塞ぐことがあるので）**・所要時間を伸ばした後の不整合
-  （`candidateConflicts`。組で返すので理由を捏造しない。描けない候補日程は挙げない）・
-  グリッドに描けない候補日程（`offGridCandidates`）
+  所要時間から導くので集合として抱えない）・**受け付けの梯子（`slotRejection`。件数の上限 →
+  表示範囲 → 升目に載るか → 業務時間 → 重なり。塞いでいる候補日程を名指しする）**・
+  所要時間を伸ばした後の不整合（`candidateConflicts`。組で返すので理由を捏造しない）・
+  グリッドに描けない候補日程（`offGridCandidates`。梯子が断るので通常は空で、最後の網）。
+  **クリック（`addCandidateAt`）と AI の反映は同じ梯子を引く** — 別に書くと、クリックでは
+  作れない状態が AI 経由で入る
 - `app/lib/candidates-form.ts` — 候補日程タブの、AI の結果をカレンダーへ写す組み立て。
-  **反映は加算**（`applyAiCandidates`）で、重なる分と上限を超える分だけを見送る。
-  プレビューの一覧は同じ判断（`planMerge`）を引くので、押したら入るものと入らないものが
-  一致する
+  **反映は加算**（`applyAiCandidates`）で、カレンダーに置けない分（重なり・表示範囲の外・
+  升目に載らない時刻・上限超え）を見送って `ApplyReport.skipped` で言う。プレビューの一覧は
+  同じ判断（`planMerge` → `slotRejection`）を引くので、押したら入るものと入らないものが
+  一致する。採番は反映した分だけ進む（`nextSequence`）
 - `app/lib/availability-form.ts` — 参加可否回答フォームの組み立て（#70）。参加形式ごとの
   選択肢と AI 出力の寄せ、日付でのグループ化、**AI の結果を回答へ写す
   `applyAvailabilityResult`**、プレビューの一覧、聞き返しの対象の引き算。参加可否タブの

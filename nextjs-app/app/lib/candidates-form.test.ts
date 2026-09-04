@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { CalendarCandidate } from "./candidate-calendar";
+import { type CalendarCandidate, calendarDays } from "./candidate-calendar";
 import { applyAiCandidates, newCandidatePreviewItems } from "./candidates-form";
+
+/** 職員が見ている2週間。テストが日付に依存しないよう固定値で持つ。 */
+const CONTEXT = { durationMinutes: 60, days: calendarDays("2026-09-04") };
 
 const MANUAL: CalendarCandidate = {
   id: "candidate-0",
@@ -28,7 +31,7 @@ describe("applyAiCandidates", () => {
         message: "候補日程を2件生成しました。",
         sources: [],
       },
-      60,
+      CONTEXT,
       1,
     );
 
@@ -66,7 +69,7 @@ describe("applyAiCandidates", () => {
         message: "候補日程を2件生成しました。",
         sources: [],
       },
-      60,
+      CONTEXT,
       1,
     );
 
@@ -77,7 +80,7 @@ describe("applyAiCandidates", () => {
     ]);
     expect(applied.report.updated).toEqual(["9月8日(火) 16:00–17:00"]);
     expect(applied.report.skipped).toEqual([
-      "9月8日(火) 14:30–15:30（既に選んだ候補日程と重なります）",
+      "9月8日(火) 14:30–15:30（既に選んだ候補日程 9月8日(火) 14:00–15:00 と重なります）",
     ]);
   });
 
@@ -93,7 +96,7 @@ describe("applyAiCandidates", () => {
         message: "候補日程を2件生成しました。",
         sources: [],
       },
-      60,
+      CONTEXT,
       0,
     );
 
@@ -105,21 +108,34 @@ describe("applyAiCandidates", () => {
     expect(applied.nextSequence).toBe(1);
   });
 
-  /* 業務時間の外も2週間の外も受け入れる（描けないだけで候補日程としては正しい）。 */
-  it("カレンダーに描けない日時も加算する", () => {
+  /*
+    表示範囲の外は加算しない（#69 の設計判断を改めたもの）。カレンダーに置けない
+    候補日程を受け入れると、選択済み件数が画面に見えているものと合わなくなる。
+    そもそも返させないために表示範囲を与件として渡している（ADR-0005 の表）が、
+    モデルが約束を破った場合の最後の網がここになる。
+  */
+  it("表示範囲の外と升目に載らない時刻は加算せず、理由を報告する", () => {
     const applied = applyAiCandidates(
       [],
       {
-        candidates: [{ date: "2026-10-15", start_time: "08:00" }],
-        message: "候補日程を1件生成しました。",
+        candidates: [
+          { date: "2026-10-15", start_time: "14:00" },
+          { date: "2026-09-08", start_time: "14:15" },
+        ],
+        message: "候補日程を2件生成しました。",
         sources: [],
       },
-      60,
+      CONTEXT,
       0,
     );
 
-    expect(applied.candidates.length).toBe(1);
-    expect(applied.report.skipped).toEqual([]);
+    expect(applied.candidates).toEqual([]);
+    expect(applied.report.updated).toEqual([]);
+    expect(applied.report.skipped).toEqual([
+      "10月15日(木) 14:00–15:00（カレンダーの表示範囲 9月4日(金)〜9月17日(木) の外です）",
+      "9月8日(火) 14:15–15:15（9:00から18:00の30分刻みに載らない開始時刻です）",
+    ]);
+    expect(applied.nextSequence).toBe(0);
   });
 });
 
@@ -137,14 +153,14 @@ describe("newCandidatePreviewItems", () => {
       newCandidatePreviewItems(
         [],
         [
-          { date: "2026-10-15", start_time: "14:00" },
-          { date: "2026-10-17", start_time: "10:30" },
+          { date: "2026-09-08", start_time: "14:00" },
+          { date: "2026-09-10", start_time: "10:30" },
         ],
-        60,
+        CONTEXT,
       ),
     ).toEqual([
-      { key: "0-2026-10-15-14:00", label: "10月15日(木) 14:00–15:00" },
-      { key: "1-2026-10-17-10:30", label: "10月17日(土) 10:30–11:30" },
+      { key: "0-2026-09-08-14:00", label: "9月8日(火) 14:00–15:00" },
+      { key: "1-2026-09-10-10:30", label: "9月10日(木) 10:30–11:30" },
     ]);
   });
 
@@ -153,16 +169,16 @@ describe("newCandidatePreviewItems", () => {
     const items = newCandidatePreviewItems(
       [],
       [
-        { date: "2026-10-15", start_time: "14:00" },
-        { date: "2026-10-15", start_time: "14:00" },
+        { date: "2026-09-08", start_time: "14:00" },
+        { date: "2026-09-08", start_time: "14:00" },
       ],
-      30,
+      { ...CONTEXT, durationMinutes: 30 },
     );
     expect(new Set(items.map((item) => item.key)).size).toBe(2);
   });
 
   it("0件なら行を持たない（聞き返しの合図になる）", () => {
-    expect(newCandidatePreviewItems([], [], 30)).toEqual([]);
+    expect(newCandidatePreviewItems([], [], CONTEXT)).toEqual([]);
   });
 
   it("重なって入らない候補日程は錠を付けて理由を添える", () => {
@@ -170,14 +186,15 @@ describe("newCandidatePreviewItems", () => {
       newCandidatePreviewItems(
         [MANUAL],
         [{ date: "2026-09-08", start_time: "14:30" }],
-        60,
+        CONTEXT,
       ),
     ).toEqual([
       {
         key: "0-2026-09-08-14:30",
         label: "9月8日(火) 14:30–15:30",
         preserved: true,
-        preservedReason: "既に選んだ候補日程と重なります",
+        preservedReason:
+          "既に選んだ候補日程 9月8日(火) 14:00–15:00 と重なります",
       },
     ]);
   });

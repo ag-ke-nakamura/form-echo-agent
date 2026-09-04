@@ -1,6 +1,6 @@
 import type { FieldSource } from "../field-source";
 import { candidateLimitReason } from "./candidate-limit";
-import { candidateLabel, weekdayOf } from "./meeting-info";
+import { candidateLabel, dateHeadingText, weekdayOf } from "./meeting-info";
 
 /**
  * カレンダーのスロット ⇔ 候補日程の変換（#69）。
@@ -64,13 +64,6 @@ export const SLOT_START_TIMES: readonly string[] = Array.from(
 );
 
 /**
- * 重なって受け付けられないことの言い方。**AI の反映（`candidates-form.ts`）も同じ語を
- * 使う。** クリックのときは操作の案内を足すが、理由の言い方が2通りに割れると、
- * プレビューで見送られた候補日程とクリックが断られた升目が別の話に見える。
- */
-export const OVERLAP_REASON = "既に選んだ候補日程と重なります";
-
-/**
  * カレンダーが選んでいる候補日程ひとつ。
  *
  * **終了時刻を持たない**（ADR-0005）。終わる時刻は会議の所要時間から導くので、
@@ -95,46 +88,87 @@ export type Slot = {
 };
 
 /**
- * クリックされた升目から候補日程を作る。**受け付けられない理由があればそれを返す。**
+ * カレンダーが持っている与件。**受け付けの判定はこの2つ抜きには決まらない。**
  *
- * WHY 理由を返すか: クリックが無効になる場面が3つある（既存と重なる・所要時間が業務
- * 時間内に収まらない・件数が入力契約の上限を超える）。黙って無視すると、職員には
- * クリックが効かない升目があるように見えるだけで、なぜかは画面のどこにも出ない。
+ * WHY 組で持つか: 所要時間と表示範囲はいつも一緒に運ばれる（クリックの受け付け・
+ * AI の反映・プレビューの3経路が同じ2つを要る）。引数を並べ続けると、呼び出し側が
+ * 順番を取り違えても型検査を通る組み合わせができる。
  */
-export function addCandidateAt(
-  candidates: readonly CalendarCandidate[],
+export type CalendarContext = {
+  durationMinutes: number;
+  /** 表示している日付の列（`calendarDays`）。**職員が選べる日付はこれだけ。** */
+  days: readonly string[];
+};
+
+/**
+ * その升目を候補日程として受け付けられるか。**受け付けられない理由を返す。**
+ *
+ * WHY 1つの梯子か: 職員のクリックと AI の反映が同じ判定を引く必要がある
+ * （`candidates-form.ts`）。別に書くと、クリックでは作れない状態が AI 経由で入る。
+ * クリックは升目から来るので日付と時刻の2段は素通りするが、AI は暦から日時を作るので
+ * そこで断られる。
+ *
+ * 順番には意味がある。件数の上限が先（そこで詰まっているなら他の理由を言っても
+ * 直せない）、次に画面に置けるかどうか、最後に既にあるものとの重なり。
+ */
+export function slotRejection(
+  candidates: readonly Slot[],
   slot: Slot,
-  durationMinutes: number,
-  id: string,
-): { candidates: CalendarCandidate[]; rejected: string | null } {
+  { durationMinutes, days }: CalendarContext,
+): string | null {
   /*
     上限の判断と文言は `candidate-limit.ts` に1箇所だけ置く（足す側と AI へ送る側の
     両方が引く）。訊いているのは「この1件を足した件数を送れるか」である。
   */
   const limitReason = candidateLimitReason(candidates.length + 1);
-  if (limitReason !== null) {
-    return { candidates: [...candidates], rejected: limitReason };
+  if (limitReason !== null) return limitReason;
+
+  if (!days.includes(slot.date)) {
+    if (days.length === 0) return "カレンダーの表示範囲が決まっていません";
+    return `カレンダーの表示範囲 ${dateHeadingText(days[0])}〜${dateHeadingText(
+      days[days.length - 1],
+    )} の外です`;
+  }
+
+  if (!SLOT_START_TIMES.includes(slot.start_time)) {
+    return `${timeOf(BUSINESS_START_MINUTES).replace(/^0/, "")}から${timeOf(
+      BUSINESS_END_MINUTES,
+    )}の30分刻みに載らない開始時刻です`;
   }
 
   if (!fitsInBusinessHours(slot.start_time, durationMinutes)) {
-    return {
-      candidates: [...candidates],
-      rejected: `所要時間${durationMinutes}分が${timeOf(BUSINESS_END_MINUTES)}までに収まりません。`,
-    };
+    return `所要時間${durationMinutes}分が${timeOf(BUSINESS_END_MINUTES)}までに収まりません`;
   }
 
   const blocker = overlappingCandidate(candidates, slot, durationMinutes);
   if (blocker !== undefined) {
-    return {
-      candidates: [...candidates],
-      /*
-        塞いでいる候補日程を名指しする。**カレンダーに描けない候補日程が塞ぐことが
-        ある**（AI が 14:15 開始を返した後の 14:30 など）ので、短い言い方のままだと
-        白く見える升目が「重なります」で断られる理由が画面のどこにも無い。
-      */
-      rejected: `既に選んだ候補日程（${candidateLabel(blocker, durationMinutes)}）と重なります。所要時間ぶんの範囲は1件で埋まります。`,
-    };
+    /*
+      塞いでいる候補日程を名指しする。手で選んだ候補日程は升目として見えているが、
+      所要時間ぶんの範囲は升目より広いので、白く見える升目が断られることがある。
+
+      名前を括弧で囲まないのは、この理由がプレビューの錠の行では丸括弧の中に置かれる
+      ため（`ai-notice.tsx`）。入れ子の括弧は読み手が対応を数えることになる。
+    */
+    return `既に選んだ候補日程 ${candidateLabel(blocker, durationMinutes)} と重なります`;
   }
+
+  return null;
+}
+
+/**
+ * クリックされた升目から候補日程を作る。**受け付けられなければ理由を返す。**
+ *
+ * WHY 理由を返すか: 黙って無視すると、職員にはクリックが効かない升目があるように
+ * 見えるだけで、なぜかは画面のどこにも出ない。
+ */
+export function addCandidateAt(
+  candidates: readonly CalendarCandidate[],
+  slot: Slot,
+  context: CalendarContext,
+  id: string,
+): { candidates: CalendarCandidate[]; rejected: string | null } {
+  const rejected = slotRejection(candidates, slot, context);
+  if (rejected !== null) return { candidates: [...candidates], rejected };
 
   return {
     candidates: [...candidates, { ...slot, id, source: "manual" }],
@@ -297,22 +331,9 @@ export type ConflictedCandidate = {
 export function candidateConflicts(
   candidates: readonly CalendarCandidate[],
   durationMinutes: number,
-  days: readonly string[],
 ): ConflictedCandidate[] {
-  /*
-    挙げるのは升目に載る候補日程だけ。載らないものは `offGridCandidates` が別に一覧に
-    するので、両方に出すと同じ候補日程が2箇所に並ぶ。直し方も当たらない — 升目を
-    持たない候補日程は「升目を押して解除」できない。
-  */
-  const offGrid = new Set(
-    offGridCandidates(candidates, days).map((candidate) => candidate.id),
-  );
-
   const conflicted: ConflictedCandidate[] = [];
   for (const candidate of candidates) {
-    if (offGrid.has(candidate.id)) continue;
-
-    // 相手は全件から探す（描けない候補日程が相手でも、重なっているのは事実である）。
     const others = candidates.filter((other) => other.id !== candidate.id);
     if (
       overlappingCandidate(others, candidate, durationMinutes) !== undefined
@@ -329,11 +350,12 @@ export function candidateConflicts(
 }
 
 /**
- * カレンダーのグリッドに描けない候補日程。
+ * カレンダーのグリッドに描けない候補日程。**通常は空である。**
  *
- * 2週間の外の日付と、升目に載らない開始時刻（業務時間の外・30分の刻みから外れた分）が
- * ここに来る。**捨てない** — 候補日程としては正しく、タブ3・タブ4はそのまま使える
- * （「来月の午後」は設計書 3.3節の例文そのものである）。描けないだけなので一覧で出す。
+ * WHY それでも要るか: 受け付けの梯子（`slotRejection`）が描けない日時を断るので、
+ * クリックからも AI の反映からも入らない。残っているのは**日付が動いたとき**の経路で、
+ * 起点は開いたときの「今日」に固定される一方、選んだ候補日程はそのまま残る。
+ * 描けないものが混ざったことを画面が黙らないための最後の網である。
  *
  * 判定を `candidateSlots` と揃えるため、時刻の側は同じ `SLOT_START_TIMES` を見る。
  */

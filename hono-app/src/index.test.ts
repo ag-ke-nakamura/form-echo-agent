@@ -44,8 +44,11 @@ const CANDIDATES = [
   { id: 'candidate-2', date: '2026-10-16', start_time: '13:00' },
 ] as const
 
+/** 候補日程を作るタスクの与件。**カレンダーの表示範囲を含む**（#69）。 */
 const CANDIDATES_INPUT: ParseCandidatesInput = {
   duration_minutes: MEETING_CONTEXT.duration_minutes,
+  calendar_start: '2026-10-15',
+  calendar_end: '2026-10-28',
 }
 
 const AVAILABILITY_INPUT: ParseAvailabilityInput = {
@@ -378,7 +381,14 @@ describe('構造化入力', () => {
     {
       name: '所要時間が選択肢の外',
       taskId: 'meeting.parse-candidates',
-      input: { duration_minutes: 45 },
+      input: { ...CANDIDATES_INPUT, duration_minutes: 45 },
+    },
+    {
+      // #69: 画面が選べる日付の範囲。無いまま通すと、Runtime は表示できない
+      // 日付を返してよいことになる。
+      name: 'カレンダーの表示範囲が無い',
+      taskId: 'meeting.parse-candidates',
+      input: { duration_minutes: MEETING_CONTEXT.duration_minutes },
     },
     {
       name: '候補日程の一覧が空',

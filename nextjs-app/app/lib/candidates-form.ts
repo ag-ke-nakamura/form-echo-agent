@@ -4,11 +4,10 @@ import type { ApplyReport } from "../field-source";
 import type { PreviewItem } from "./ai-preview";
 import {
   type CalendarCandidate,
-  OVERLAP_REASON,
-  overlappingCandidate,
+  type CalendarContext,
   type Slot,
+  slotRejection,
 } from "./candidate-calendar";
-import { candidateLimitReason } from "./candidate-limit";
 import { candidateLabel } from "./meeting-info";
 
 /**
@@ -19,8 +18,8 @@ import { candidateLabel } from "./meeting-info";
  * 見送った分が黙って消えないことは、応答を作り分けながら往復させない限り
  * 画面では確かめられない。
  *
- * 升目との変換とカレンダーの状態モデルは `candidate-calendar.ts`。ここが引くのは
- * 重なりの判定（`overlaps`）だけで、**クリックを受け付けない条件と同じものを見る**。
+ * 升目との変換とカレンダーの状態モデルは `candidate-calendar.ts`。受け付けの判定は
+ * そこの `slotRejection` をそのまま引く — **クリックが断られる条件と1つの梯子**である。
  */
 
 /** AI が新しく作った候補日程ひとつ（識別子を持たない。ADR-0005）。 */
@@ -44,21 +43,15 @@ type MergeOutcome = { added: true } | { added: false; reason: string };
 function planMerge(
   current: readonly CalendarCandidate[],
   candidates: readonly NewCandidate[],
-  durationMinutes: number,
+  context: CalendarContext,
 ): MergeOutcome[] {
   const accepted: Slot[] = [...current];
 
   return candidates.map((candidate) => {
-    const limitReason = candidateLimitReason(accepted.length + 1);
-    if (limitReason !== null) return { added: false, reason: limitReason };
+    const reason = slotRejection(accepted, candidate, context);
+    if (reason !== null) return { added: false, reason };
 
-    if (
-      overlappingCandidate(accepted, candidate, durationMinutes) !== undefined
-    ) {
-      return { added: false, reason: OVERLAP_REASON };
-    }
-
-    // 識別子はまだ配られていない（発番するのは反映のとき）。重なりの判定が見るのは
+    // 識別子はまだ配られていない（発番するのは反映のとき）。受け付けの判定が見るのは
     // 日付と開始時刻だけなので、升目のまま積む。
     accepted.push(candidate);
     return { added: true };
@@ -72,14 +65,15 @@ function planMerge(
  * ものだけを見送る。作り直し（置き換え）をやめたのは、カレンダーでは職員が選んだ
  * ものが目に見えており、置き換えると自分のクリックが消える（#69 の受け入れ条件）。
  *
- * 業務時間の外や2週間の外の候補日程も受け入れる。グリッドに描けないだけで候補日程
- * としては正しく、タブ3・タブ4はそのまま使える（描けない分は `offGridCandidates` が
- * 一覧に出す）。
+ * **カレンダーに描けない日時は受け入れない**（表示範囲の外・升目に載らない開始時刻）。
+ * 置けない候補日程を抱えると、選択済み件数が画面に見えているものと合わなくなる。
+ * そもそも返させないために表示範囲を与件として渡してあり（ADR-0005 の表）、ここは
+ * モデルが約束を破った場合の網である。見送ったことは `skipped` で言う。
  */
 export function applyAiCandidates(
   current: readonly CalendarCandidate[],
   result: ParseCandidatesOutput,
-  durationMinutes: number,
+  context: CalendarContext,
   firstSequence: number,
 ): {
   candidates: CalendarCandidate[];
@@ -87,7 +81,7 @@ export function applyAiCandidates(
   /** 次に配る連番。**反映した分だけ進む**（見送った分で番号を飛ばさない）。 */
   nextSequence: number;
 } {
-  const plan = planMerge(current, result.candidates, durationMinutes);
+  const plan = planMerge(current, result.candidates, context);
   const candidates = [...current];
   const updated: string[] = [];
   const skipped: string[] = [];
@@ -95,7 +89,7 @@ export function applyAiCandidates(
 
   result.candidates.forEach((candidate, index) => {
     const outcome = plan[index];
-    const label = candidateLabel(candidate, durationMinutes);
+    const label = candidateLabel(candidate, context.durationMinutes);
     if (!outcome.added) {
       skipped.push(`${label}（${outcome.reason}）`);
       return;
@@ -148,14 +142,14 @@ export function applyAiCandidates(
 export function newCandidatePreviewItems(
   current: readonly CalendarCandidate[],
   candidates: readonly NewCandidate[],
-  durationMinutes: number,
+  context: CalendarContext,
 ): PreviewItem[] {
-  const plan = planMerge(current, candidates, durationMinutes);
+  const plan = planMerge(current, candidates, context);
 
   return candidates.map((candidate, index) => {
     const item = {
       key: `${index}-${candidate.date}-${candidate.start_time}`,
-      label: candidateLabel(candidate, durationMinutes),
+      label: candidateLabel(candidate, context.durationMinutes),
     };
     const outcome = plan[index];
     return outcome.added
