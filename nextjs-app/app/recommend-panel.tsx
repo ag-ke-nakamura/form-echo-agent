@@ -5,10 +5,11 @@ import type {
   RecommendScheduleInput,
   RecommendScheduleOutput,
 } from "@contracts/index.js";
-// 値として引くのはこのモジュールだけ（理由は `ai-chat-panel.tsx` の同じ import）。
+// 値として引くのはこのモジュールだけ（理由は `ai-assistant.tsx` の同じ import）。
 import { candidateKey } from "@contracts/candidate-key";
-import { useId, useMemo, useState } from "react";
-import { AiChatPanel } from "./ai-chat-panel";
+import { Info } from "lucide-react";
+import { useId, useMemo, useRef, useState } from "react";
+import { AiErrorNotice, AiPendingNotice, ApplyReportView } from "./ai-notice";
 import { AiBadge, type ApplyReport, type FieldSource } from "./field-source";
 import { FormSection } from "./form-section";
 import {
@@ -16,7 +17,9 @@ import {
   generateAvailabilityTable,
   INITIAL_TABLE_SEED,
 } from "./lib/availability-table";
-import { RECOMMEND_TASK_ID } from "./lib/api";
+import { RECOMMEND_TASK_ID, requestAiTask } from "./lib/api";
+import { type ErrorGuidance, errorGuidanceFor } from "./lib/error-guidance";
+import { TabHeading } from "./screen-layout";
 
 /**
  * 会議をどの日程で開くかの決定。**この画面で職員が触れるのはここだけ**で、
@@ -48,6 +51,9 @@ function candidateLabel(fields: CandidateFields): string {
   return `${fields.date} ${fields.start_time}–${fields.end_time}`;
 }
 
+/** 非AI経路の一文。失敗の案内に添える（他タブは `AiAssistant` の prop で渡す）。 */
+const NON_AI_PATH_HINT = "AI を使わなくても、表から候補日程を1つ選べます。";
+
 export function RecommendPanel() {
   const [tableSeed, setTableSeed] = useState(INITIAL_TABLE_SEED);
   const table = useMemo(
@@ -58,10 +64,26 @@ export function RecommendPanel() {
   const [recommendations, setRecommendations] = useState<ForTable<
     RecommendScheduleOutput["recommendations"]
   > | null>(null);
+  const [message, setMessage] = useState<ForTable<string> | null>(null);
+  const [report, setReport] = useState<ForTable<ApplyReport> | null>(null);
   const [decision, setDecision] = useState<ForTable<Decision> | null>(null);
+  const [pending, setPending] = useState(false);
+  const [guidance, setGuidance] = useState<ForTable<ErrorGuidance> | null>(
+    null,
+  );
 
   const shownRecommendations = currentValue(recommendations, tableSeed);
+  const shownMessage = currentValue(message, tableSeed);
+  const shownReport = currentValue(report, tableSeed);
   const shownDecision = currentValue(decision, tableSeed);
+  const shownGuidance = currentValue(guidance, tableSeed);
+
+  /**
+   * 送信ごとの連番。飛んでいるリクエストは止まらないので、表を差し替えた後に
+   * 届いた結果で `pending` を下ろしたり案内を出したりしないために持つ。
+   * 提案そのものは `ForTable` のシードで弾かれる。
+   */
+  const submitSerial = useRef(0);
 
   /**
    * AI の提案をフォームへ写す（ADR-0004 の突き合わせ）。
@@ -71,46 +93,86 @@ export function RecommendPanel() {
    * ここで落ちた分を数える必要は無い（参加可否タブとの違い）。
    *
    * **手で選んだ候補日程は上書きしない**（#38 の判断）。1位が動いても職員の決定は
-   * 残り、報告に「守った」と出る。順位は表の側に全件出るので、AI が何を1位にしたかは
-   * 決定を上書きしなくても読める。
+   * 残る。順位は表の側に全件出るので、AI が何を1位にしたかは決定を上書きしなくても読める。
+   *
+   * 守ったことは `ApplyReport` に載せる。**`message` では代われない** — あれは
+   * モデルが書いた文であって、画面が実際にラジオを動かしたかどうかは保証しない。
+   * 職員から見ると「AI提案を押したのに選択が変わらない」ので、言わないと AI が
+   * 1位を出せなかったのか自分の選択が守られたのかが区別できない。
    */
-  function applyResult(result: RecommendScheduleOutput): ApplyReport {
+  function applyResult(result: RecommendScheduleOutput) {
     setRecommendations({ seed: tableSeed, value: result.recommendations });
+    setMessage({ seed: tableSeed, value: result.message });
 
-    const top = result.recommendations.find((entry) => entry.rank === 1);
+    const ranked = `順位 ${result.recommendations.length}件`;
     const held = currentValue(decision, tableSeed);
     if (held?.source === "manual") {
-      return {
-        updated: [`順位 ${result.recommendations.length}件`],
-        preserved: ["自分で選んだ候補日程"],
-      };
+      setReport({
+        seed: tableSeed,
+        value: { updated: [ranked], preserved: ["自分で選んだ候補日程"] },
+      });
+      return;
     }
+    const top = result.recommendations.find((entry) => entry.rank === 1);
     if (top) {
       setDecision({
         seed: tableSeed,
         value: { key: candidateKey(top), source: "ai" },
       });
     }
-    return {
-      updated: [
-        `順位 ${result.recommendations.length}件`,
-        ...(top ? [`1位 ${candidateLabel(top)}`] : []),
-      ],
-      preserved: [],
-    };
+    setReport({
+      seed: tableSeed,
+      value: {
+        updated: [ranked, ...(top ? [`1位 ${candidateLabel(top)}`] : [])],
+        preserved: [],
+      },
+    });
+  }
+
+  /**
+   * AI に提案させる。
+   *
+   * **自然文の入力欄を持たない**（設計書のタブ4）。ここでの AI の提案は叩き台で
+   * あって対話相手ではない、という位置づけを画面の形で示すため。送るのは参加可否表
+   * （構造化入力。ADR-0004）だけで、`sessionId` も引き継がない — 続きの会話が無い。
+   */
+  async function requestRecommendation() {
+    if (pending) return;
+    const serial = ++submitSerial.current;
+    const seed = tableSeed;
+    setPending(true);
+    setGuidance(null);
+
+    const outcome = await requestAiTask({
+      taskId: RECOMMEND_TASK_ID,
+      prompt: null,
+      sessionId: null,
+      input: table,
+    });
+    if (serial !== submitSerial.current) return;
+
+    if (outcome.ok) {
+      applyResult(outcome.result);
+    } else {
+      setGuidance({ seed, value: errorGuidanceFor(outcome.code) });
+    }
+    setPending(false);
   }
 
   function reset() {
+    submitSerial.current++;
+    setPending(false);
     setRecommendations(null);
+    setMessage(null);
+    setReport(null);
     setDecision(null);
+    setGuidance(null);
   }
 
   /**
    * 別のサンプルの参加可否表に差し替える。
    *
-   * 提案と決定を落とし、AI チャット欄も `key` で作り直してセッションを切る。
-   * セッションを残すと、AI が「前は同じ候補日程を1位にした」という文脈を引きずった
-   * まま新しい表を見る。
+   * 提案と決定を落とす。残すと、AI が書いた理由が今の表と食い違ったまま並ぶ。
    */
   function replaceTable() {
     setTableSeed(Math.floor(Math.random() * 2 ** 31));
@@ -122,10 +184,32 @@ export function RecommendPanel() {
   }
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[1fr_20rem]">
+    <div className="mx-auto max-w-4xl">
+      <TabHeading>日程確定</TabHeading>
+
+      {/*
+        AI提案バナー（設計書 3節）。AI が書いた文であることが分かるよう青で囲う。
+        推奨・予備日の要約と AI評価ラベルは #71 / #72 で評点から導く。
+      */}
+      {shownMessage !== null && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="mb-6 rounded-lg border border-solid-blue-300 bg-solid-blue-50 p-4"
+        >
+          <p className="flex items-start gap-2 text-dns-16M-130 text-solid-gray-900">
+            <Info
+              aria-hidden="true"
+              className="size-5 shrink-0 text-solid-blue-700"
+            />
+            {shownMessage}
+          </p>
+          {shownReport !== null && <ApplyReportView report={shownReport} />}
+        </div>
+      )}
+
       <FormSection taskId={RECOMMEND_TASK_ID}>
-        <h2 className="text-lg font-semibold">候補日提案</h2>
-        <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+        <p className="text-dns-14N-130 text-solid-gray-700">
           参加者から集まった参加可否表です。書き換えられません。AI
           を使わずに、開催する候補日程を1つ選ぶこともできます。
         </p>
@@ -137,39 +221,45 @@ export function RecommendPanel() {
           onChoose={chooseManually}
         />
 
-        <button
-          type="button"
-          onClick={replaceTable}
-          className="mt-6 rounded-md border border-black/15 px-4 py-2 text-sm font-medium dark:border-white/20"
-        >
-          別のサンプルに差し替え
-        </button>
-        <p className="mt-1 text-xs text-black/45 dark:text-white/45">
-          参加可否表を作り直します。前の提案と選択は消えます。
+        <div className="mt-6 flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={requestRecommendation}
+            disabled={pending}
+            className="rounded-md bg-solid-blue-700 px-4 py-2 text-dns-16M-130 text-white disabled:opacity-40"
+          >
+            {pending ? "提案中..." : "AI提案"}
+          </button>
+          <button
+            type="button"
+            onClick={replaceTable}
+            className="rounded-md border border-solid-gray-600 bg-white px-4 py-2 text-dns-16M-130 text-solid-gray-900"
+          >
+            別のサンプルに差し替え
+          </button>
+        </div>
+        <p className="mt-1 text-dns-12N-130 text-solid-gray-600">
+          「別のサンプルに差し替え」は参加可否表を作り直します。前の提案と選択は消えます。
         </p>
+
+        {pending && (
+          <AiPendingNotice message="AIが候補日程を評価しています..." />
+        )}
+
+        {shownGuidance !== null && (
+          <div className="mt-4">
+            <AiErrorNotice
+              guidance={shownGuidance}
+              taskId={RECOMMEND_TASK_ID}
+              nonAiPathHint={NON_AI_PATH_HINT}
+            />
+          </div>
+        )}
 
         {shownRecommendations && (
           <ReasonList recommendations={shownRecommendations} />
         )}
       </FormSection>
-
-      {/*
-        表を差し替えたら会話も切る。`key` で作り直すのは、AI チャット欄が
-        sessionId と会話ログを内側に持っているため（差し替え専用の口を開けるより、
-        持ち主ごと入れ替えるほうが取りこぼしが無い）。
-      */}
-      <AiChatPanel
-        key={tableSeed}
-        taskId={RECOMMEND_TASK_ID}
-        nonAiPathHint="AI を使わなくても、表から候補日程を1つ選べます。"
-        description="参加可否表をもとに、AI が全候補日程に順位と理由を付けます。指示を書かずに「AI提案」を押すだけでも動きます。"
-        placeholder="このまま「AI提案」を押せます。観点を足したいときだけ書いてください"
-        followUpPlaceholder="参加人数より早い日程を優先して"
-        input={table}
-        submitLabel="AI提案"
-        onResult={applyResult}
-        onReset={reset}
-      />
     </div>
   );
 }
@@ -195,28 +285,28 @@ function AvailabilityTable({
 
   return (
     <div className="mt-6 overflow-x-auto">
-      <table className="w-full border-collapse text-sm">
+      <table className="w-full border-collapse text-dns-14N-130 text-solid-gray-900">
         <thead>
-          <tr className="border-b border-black/10 text-left dark:border-white/15">
-            <th scope="col" className="py-2 pr-3 font-medium">
+          <tr className="border-b border-solid-gray-300 text-left">
+            <th scope="col" className="py-2 pr-3 text-dns-14M-130">
               開催
             </th>
-            <th scope="col" className="py-2 pr-3 font-medium">
+            <th scope="col" className="py-2 pr-3 text-dns-14M-130">
               候補日程
             </th>
             {table.participants.map((participant) => (
               <th
                 key={participant}
                 scope="col"
-                className="py-2 pr-3 text-center font-medium"
+                className="py-2 pr-3 text-center text-dns-14M-130"
               >
                 {participant}
               </th>
             ))}
-            <th scope="col" className="py-2 pr-3 text-center font-medium">
+            <th scope="col" className="py-2 pr-3 text-center text-dns-14M-130">
               ○の数
             </th>
-            <th scope="col" className="py-2 text-center font-medium">
+            <th scope="col" className="py-2 text-center text-dns-14M-130">
               順位
             </th>
           </tr>
@@ -227,10 +317,7 @@ function AvailabilityTable({
             const rank = rankByKey.get(key);
             const chosen = decision?.key === key;
             return (
-              <tr
-                key={key}
-                className="border-b border-black/[.06] dark:border-white/[.08]"
-              >
+              <tr key={key} className="border-b border-solid-gray-100">
                 <td className="py-2 pr-3">
                   <label className="flex items-center gap-2">
                     <input
@@ -261,9 +348,15 @@ function AvailabilityTable({
                 </td>
                 <td className="py-2 text-center tabular-nums">
                   {rank === undefined ? (
-                    <span className="text-black/35 dark:text-white/35">—</span>
+                    <span className="text-solid-gray-600">—</span>
                   ) : (
-                    <span className={rank === 1 ? "font-semibold" : undefined}>
+                    <span
+                      className={
+                        rank === 1
+                          ? "text-dns-14M-130 text-solid-blue-900"
+                          : undefined
+                      }
+                    >
                       {rank}位
                     </span>
                   )}
@@ -295,9 +388,7 @@ function AnswerCell({
     (entry) => entry.participant === participant,
   );
   if (answer === undefined) {
-    return (
-      <span className="text-xs text-black/40 dark:text-white/40">未回答</span>
-    );
+    return <span className="text-dns-12N-130 text-solid-gray-600">未回答</span>;
   }
   return (
     <span aria-label={answer.available ? "参加できる" : "参加できない"}>
@@ -321,18 +412,22 @@ function ReasonList({
   const ordered = [...recommendations].sort((a, b) => a.rank - b.rank);
   return (
     <section className="mt-8">
-      <h3 className="text-sm font-medium">提案の理由</h3>
+      <h3 className="text-dns-16M-130 text-solid-gray-900">提案の理由</h3>
       <ol className="mt-3 grid gap-3">
         {ordered.map((entry) => (
           <li
             key={candidateKey(entry)}
-            className="rounded-md border border-black/10 p-3 text-sm dark:border-white/15"
+            className="rounded-md border border-solid-gray-300 p-3"
           >
             <div className="flex flex-wrap items-baseline gap-x-2">
-              <span className="font-medium tabular-nums">{entry.rank}位</span>
-              <span>{candidateLabel(entry)}</span>
+              <span className="text-dns-14M-130 tabular-nums text-solid-gray-900">
+                {entry.rank}位
+              </span>
+              <span className="text-dns-14N-130 text-solid-gray-900">
+                {candidateLabel(entry)}
+              </span>
             </div>
-            <p className="mt-1 text-black/70 dark:text-white/70">
+            <p className="mt-1 text-dns-14N-130 text-solid-gray-700">
               {entry.reason}
             </p>
           </li>

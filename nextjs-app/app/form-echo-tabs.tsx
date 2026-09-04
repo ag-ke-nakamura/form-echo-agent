@@ -56,7 +56,7 @@ export function FormEchoTabs() {
     <>
       <nav
         aria-label="AI 機能"
-        className="mb-6 flex gap-1 border-b border-black/10 dark:border-white/15"
+        className="mb-8 flex flex-wrap gap-1 border-b border-solid-gray-300"
       >
         {TABS.map((tab) => {
           const selected = tab.id === activeTabId;
@@ -68,8 +68,8 @@ export function FormEchoTabs() {
               onClick={() => setActiveTabId(tab.id)}
               className={
                 selected
-                  ? "border-b-2 border-foreground px-3 pb-2 text-sm font-medium"
-                  : "border-b-2 border-transparent px-3 pb-2 text-sm text-black/55 dark:text-white/55"
+                  ? "border-b-2 border-solid-blue-700 px-3 pb-2 text-dns-14M-130 text-solid-blue-900"
+                  : "border-b-2 border-transparent px-3 pb-2 text-dns-14N-130 text-solid-gray-600"
               }
             >
               {tab.label}

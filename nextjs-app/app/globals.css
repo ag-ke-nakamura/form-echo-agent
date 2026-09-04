@@ -1,26 +1,108 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/*
+  デザイントークン。
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  **デジタル庁デザインシステム（DADS）の名前を借りているだけで、値は DADS のもの
+  ではない。** 設計書（`temp/design/` の4本）が DADS を採用しているので、設計書に
+  出てくるクラス名がそのままコードに現れるよう名前だけ合わせた。設計書とコードを
+  1対1で突き合わせてレビューできるようにするためで、この検証環境の目的は動作・
+  使い方・全体設計の確認であって見た目の忠実度ではない。色の実値はこちらで決めて
+  いる（WCAG 2.1 AA の 4.5:1 を満たす範囲で選んだ）。`@digital-go-jp/*` パッケージは
+  入れない — Tailwind v4 との相性という別の調査を呼び込むため。
+
+  定義するのは設計書に実際に出てくる分だけ。増やすときは設計書に出てくることを
+  確かめてから足す（使われないトークンは「設計書にある」の証拠にならない）。まだ
+  画面に出ていないものもある — 緑は AI が選んだスロット（#69）、`success-1` は
+  プレビューの抽出済みチェック（#65）で使う。
+
+  `error-1` / `success-1` の `1` は明度の段階ではなく DADS の連番。この2色は
+  それぞれ1段しか使われないので、`-50` `-700` のような段階を付けた名前にならない。
+*/
+@theme {
+  /* `layout.tsx` が読み込む Geist。日本語は OS のフォントへ落ちる。 */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* 面・境界・本文 */
+  --color-solid-gray-50: #f2f2f2;
+  --color-solid-gray-100: #e6e6e6;
+  --color-solid-gray-300: #b3b3b3;
+  --color-solid-gray-600: #767676;
+  --color-solid-gray-700: #595959;
+  --color-solid-gray-900: #1a1a1a;
+
+  /* AI が生成したことを示す */
+  --color-solid-blue-50: #e8f1fe;
+  --color-solid-blue-100: #d3e3fd;
+  --color-solid-blue-300: #99c1f8;
+  --color-solid-blue-500: #4d90ee;
+  --color-solid-blue-700: #1a53c0;
+  --color-solid-blue-800: #143f92;
+  --color-solid-blue-900: #0d2a61;
+
+  /* AI が選んだ候補日程 */
+  --color-solid-green-100: #d8f0dc;
+  --color-solid-green-500: #2e9e4a;
+  --color-solid-green-900: #10331b;
+
+  /* 聞き返し */
+  --color-solid-yellow-50: #fdf5e0;
+  --color-solid-yellow-100: #fbeaba;
+  --color-solid-yellow-700: #8a6100;
+  --color-solid-yellow-800: #6b4b00;
+  --color-solid-yellow-900: #3d2b00;
+
+  /* エラー */
+  --color-error-1: #c53434;
+  --color-error-bg: #fdecec;
+
+  /* 抽出できた項目のチェック */
+  --color-success-1: #197a3d;
+
+  /*
+    タイポグラフィ。`{dns|std}-{px}{N|M|B}-{行高×100}` と読む。
+    N = 400 / M = 500 / B = 700、末尾は line-height（130 → 1.3）。
+  */
+  --text-dns-12N-130: 0.75rem;
+  --text-dns-12N-130--line-height: 1.3;
+  --text-dns-12N-130--font-weight: 400;
+
+  --text-dns-12M-130: 0.75rem;
+  --text-dns-12M-130--line-height: 1.3;
+  --text-dns-12M-130--font-weight: 500;
+
+  --text-dns-14N-130: 0.875rem;
+  --text-dns-14N-130--line-height: 1.3;
+  --text-dns-14N-130--font-weight: 400;
+
+  --text-dns-14M-130: 0.875rem;
+  --text-dns-14M-130--line-height: 1.3;
+  --text-dns-14M-130--font-weight: 500;
+
+  --text-dns-16N-130: 1rem;
+  --text-dns-16N-130--line-height: 1.3;
+  --text-dns-16N-130--font-weight: 400;
+
+  --text-dns-16M-130: 1rem;
+  --text-dns-16M-130--line-height: 1.3;
+  --text-dns-16M-130--font-weight: 500;
+
+  --text-std-20M-150: 1.25rem;
+  --text-std-20M-150--line-height: 1.5;
+  --text-std-20M-150--font-weight: 500;
+
+  --text-std-28B-150: 1.75rem;
+  --text-std-28B-150--line-height: 1.5;
+  --text-std-28B-150--font-weight: 700;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/*
+  設計書は行政の申請フォームを前提に明るい面だけで書かれており、暗い配色の指定を
+  持たない。`prefers-color-scheme: dark` の反転を残すと、トークンで塗った面
+  （`bg-solid-gray-50` 等）だけが明るいまま浮くので、画面全体を明色に固定する。
+*/
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: #ffffff;
+  color: var(--color-solid-gray-900);
 }

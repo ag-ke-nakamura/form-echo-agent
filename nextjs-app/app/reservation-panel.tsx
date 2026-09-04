@@ -2,10 +2,11 @@
 
 import type { ParseReservationOutput } from "@contracts/index.js";
 import { useId, useState } from "react";
-import { AiChatPanel } from "./ai-chat-panel";
+import { AiAssistant } from "./ai-assistant";
 import { AiBadge, type ApplyReport, type FieldSource } from "./field-source";
 import { FormSection } from "./form-section";
 import { RESERVATION_TASK_ID } from "./lib/api";
+import { ManualInputDivider, TabHeading } from "./screen-layout";
 
 type FieldName =
   | "departure_date"
@@ -115,14 +116,29 @@ export function ReservationPanel() {
   }
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[1fr_20rem]">
-      <FormSection taskId={RESERVATION_TASK_ID}>
-        <h2 className="text-lg font-semibold">交通IC予約</h2>
-        <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          AI を使わずに、最初からこのフォームだけで入力できます。
-        </p>
+    <div className="mx-auto max-w-3xl">
+      <TabHeading>交通ICカード予約申請</TabHeading>
 
-        <div className="mt-6 grid gap-5 sm:grid-cols-2">
+      <AiAssistant
+        taskId={RESERVATION_TASK_ID}
+        nonAiPathHint="AI を使わなくても、すべての項目を手で埋められます。"
+        description={
+          "自然な言葉で予約内容を入力すると、AIが自動的にフォームに入力します。\n" +
+          "例: 「来月15日から3泊4日で大阪出張、新幹線で往復」"
+        }
+        placeholder="予約内容を自然な言葉で入力してください..."
+        followUpPlaceholder="往路は10月16日でした"
+        submitLabel="AIで入力内容を生成"
+        pendingLabel="生成中..."
+        generatingMessage="AIが内容を生成しています..."
+        onResult={applyResult}
+        onReset={resetForm}
+      />
+
+      <ManualInputDivider />
+
+      <FormSection taskId={RESERVATION_TASK_ID}>
+        <div className="grid gap-5 sm:grid-cols-2">
           <Field
             name="departure_date"
             type="date"
@@ -150,16 +166,6 @@ export function ReservationPanel() {
           <TransportField state={form.transport} onChange={setField} />
         </div>
       </FormSection>
-
-      <AiChatPanel
-        taskId={RESERVATION_TASK_ID}
-        nonAiPathHint="AI を使わなくても、すべての項目を手で埋められます。"
-        description="出張の予定を文章で書くと、左のフォームを埋めます。書き足りなかったことは、続けて指示できます。"
-        placeholder="来月15日から3泊4日で大阪出張、新幹線で往復"
-        followUpPlaceholder="往路は10月16日でした"
-        onResult={applyResult}
-        onReset={resetForm}
-      />
     </div>
   );
 }
@@ -169,7 +175,7 @@ function ClearButton({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="text-xs text-black/50 underline underline-offset-2 dark:text-white/50"
+      className="text-dns-12N-130 text-solid-gray-600 underline underline-offset-2"
     >
       消す
     </button>
@@ -188,7 +194,7 @@ function Field({ name, type, state, onChange }: FieldProps) {
   return (
     <div>
       <div className="flex items-center gap-2">
-        <label htmlFor={id} className="text-sm font-medium">
+        <label htmlFor={id} className="text-dns-14M-130 text-solid-gray-900">
           {FIELD_LABELS[name]}
         </label>
         {state.source === "ai" && <AiBadge />}
@@ -201,7 +207,7 @@ function Field({ name, type, state, onChange }: FieldProps) {
         type={type}
         value={state.value}
         onChange={(event) => onChange(name, event.target.value)}
-        className="mt-1.5 w-full rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20"
+        className="mt-1.5 w-full rounded-md border border-solid-gray-600 bg-white px-3 py-2 text-dns-16N-130 text-solid-gray-900"
       />
     </div>
   );
@@ -218,7 +224,7 @@ function TransportField({
   return (
     <div>
       <div className="flex items-center gap-2">
-        <label htmlFor={id} className="text-sm font-medium">
+        <label htmlFor={id} className="text-dns-14M-130 text-solid-gray-900">
           {FIELD_LABELS.transport}
         </label>
         {state.source === "ai" && <AiBadge />}
@@ -230,7 +236,7 @@ function TransportField({
         id={id}
         value={state.value}
         onChange={(event) => onChange("transport", event.target.value)}
-        className="mt-1.5 w-full rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20"
+        className="mt-1.5 w-full rounded-md border border-solid-gray-600 bg-white px-3 py-2 text-dns-16N-130 text-solid-gray-900"
       >
         <option value="">未選択</option>
         {Object.entries(TRANSPORT_LABELS).map(([value, label]) => (

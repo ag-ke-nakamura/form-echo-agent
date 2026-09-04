@@ -20,7 +20,7 @@ export type ErrorGuidance = {
   /**
    * 非AI経路への導線を出すか（11.1節・11.3節）。
    *
-   * タブごとに違う一文（`AiChatPanel` の `nonAiPathHint`）はここには置かない。
+   * タブごとに違う一文（`AiAssistant` の `nonAiPathHint`）はここには置かない。
    * この表はコードから引くので、どのタブで起きた失敗かを知らない。
    */
   offersNonAiPath: boolean;
@@ -28,7 +28,7 @@ export type ErrorGuidance = {
 
 /**
  * WHY: 「もう一度送信してください」と言えるのは、失敗した指示が入力欄に残って
- * いるから（`AiChatPanel` は成功したときだけ入力欄を空にする）。打ち直しを
+ * いるから（`AiAssistant` は成功したときだけ入力欄を空にする）。打ち直しを
  * 求めない案内はこの挙動に依存しているので、片方だけ変えると案内が嘘になる。
  */
 const PROMPT_KEPT = "書いた指示は入力欄に残っています。";
