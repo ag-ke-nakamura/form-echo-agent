@@ -24,6 +24,24 @@ export function discardingLogger(): InvocationLogger {
   return { warn: () => {}, error: () => {} };
 }
 
+/**
+ * テスト用の Gateway の URL（#46）。**実物は叩かない** — 交通ICドメインエージェントが
+ * Web 検索を持つかどうかは、この環境変数が立っているかだけで決まる。
+ * ホスト名のリージョンは `resolveWebSearchGatewayUrl` が検査するので本物に似せる。
+ */
+const TEST_GATEWAY_URL =
+  'https://formecho-example.gateway.bedrock-agentcore.ap-northeast-1.amazonaws.com/mcp';
+
+/** Web 検索が有効な状態にする。後片付けは `clearWebSearchGateway`。 */
+export function useWebSearchGateway(): void {
+  process.env.FORMECHO_WEB_SEARCH_GATEWAY_URL = TEST_GATEWAY_URL;
+}
+
+/** Web 検索が無い状態に戻す。`afterEach` から呼ぶ。 */
+export function clearWebSearchGateway(): void {
+  delete process.env.FORMECHO_WEB_SEARCH_GATEWAY_URL;
+}
+
 let sessionCount = 0;
 
 /** テストごとに別のセッションにする。Agent のキャッシュを跨いで履歴が交ざらない。 */

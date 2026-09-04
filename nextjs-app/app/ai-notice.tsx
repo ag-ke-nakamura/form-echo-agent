@@ -1,5 +1,12 @@
 import type { TaskId } from "@contracts/index.js";
-import { AlertCircle, Check, Info, Loader2, Lock } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  ExternalLink,
+  Info,
+  Loader2,
+  Lock,
+} from "lucide-react";
 import type { ApplyReport } from "./field-source";
 import { formSectionId } from "./form-section";
 import {
@@ -8,6 +15,7 @@ import {
   type PreviewItem,
   previewTone,
 } from "./lib/ai-preview";
+import { linkableSources } from "./lib/sources";
 import type { ErrorGuidance } from "./lib/error-guidance";
 
 /**
@@ -201,6 +209,7 @@ export function AiErrorNotice({
 export function AiPreview({
   items,
   message,
+  sources,
   emptyItemText,
   applyLabel,
   onApply,
@@ -209,6 +218,14 @@ export function AiPreview({
   items: readonly PreviewItem[];
   /** AI が書いた文（出力契約の `message`）。聞き返しもここに入る。 */
   message: string;
+  /**
+   * AI が回答の根拠にした参照元 URL（出力契約の `sources`、#46）。
+   *
+   * **空配列のときは何も出さない。** Web 検索を持つのは交通ICだけで、そこでも
+   * 経路を尋ねられなかった往復では空のまま返る。見出しだけが残ると、職員には
+   * 「検索したが根拠が無い」ように見える。
+   */
+  sources: readonly string[];
   /** 抽出・判定できなかった行に添える文字列。タブごとに違う。 */
   emptyItemText: string;
   /** 反映のボタンの文言。「この内容でフォームに入力」など、タブごとに違う。 */
@@ -223,6 +240,7 @@ export function AiPreview({
     何が起きたのか分からない。「修正」は残す — そこからが次の一手になる。
   */
   const applicable = hasApplicableItems(items);
+  const links = linkableSources(sources);
 
   return (
     <section
@@ -257,6 +275,41 @@ export function AiPreview({
           />
           <p className="text-dns-14N-130 text-solid-gray-900">{message}</p>
         </div>
+      )}
+
+      {links.length > 0 && (
+        <section
+          aria-label="AIが参照した情報源"
+          className="mt-3 border-l-4 border-solid-gray-300 bg-solid-gray-50 p-3"
+        >
+          <p className="text-dns-12N-130 text-solid-gray-600">
+            AI がこの回答の根拠にしたページ
+          </p>
+          <ul className="mt-1 grid gap-1">
+            {links.map((source) => (
+              <li key={source.url}>
+                <a
+                  href={source.url}
+                  /*
+                    別タブで開く。反映前のプレビューを見ている最中なので、同じタブで
+                    移ると戻ってきたときにこの往復の結果が消えている。
+                    `noreferrer` は `noopener` を含むが、両方書くのが慣例。
+                  */
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1 text-dns-14N-130 text-solid-blue-700 underline underline-offset-2"
+                >
+                  {source.label}
+                  <ExternalLink
+                    aria-hidden="true"
+                    className="size-4 shrink-0"
+                  />
+                  <span className="sr-only">（新しいタブで開きます）</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {/*

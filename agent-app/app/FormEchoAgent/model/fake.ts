@@ -47,6 +47,14 @@ class FakeModelScriptExhaustedError extends Error {
 }
 
 const NO_USAGE: Usage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+
+/**
+ * Strands が Structured Output のために足すツールの名前。
+ *
+ * SDK の定数を import できないので写している。ずれたら台本が「ツール仕様が渡って
+ * いません」で落ちるので、黙って別のツールを呼ぶことにはならない。
+ */
+const STRUCTURED_OUTPUT_TOOL_NAME = 'strands_structured_output';
 /**
  * fake モデルが返すものと、受け取ったものの記録。
  *
@@ -142,12 +150,18 @@ export class FakeModel extends Model<BaseModelConfig> {
       yield { type: 'modelContentBlockStopEvent' };
       yield { type: 'modelMessageStopEvent', stopReason: 'endTurn' };
     } else {
-      // 呼ぶツールは渡された仕様から決める。ドメインエージェントは `tools: []` なので、
-      // ここに現れるのは Strands が Structured Output のために足した1つだけになる。
-      const [toolSpec] = toolSpecs;
+      /*
+        呼ぶツールは渡された仕様から**名前で**選ぶ。位置で取ってはいけない —
+        交通ICドメインエージェントは Web 検索も持つ（#46）ので、Structured Output の
+        ツールが先頭に来る保証が無い。位置で取ると台本の出力が web_search の入力として
+        渡り、原因の分からない失敗になる。
+      */
+      const toolSpec = toolSpecs.find(
+        (spec) => spec.name === STRUCTURED_OUTPUT_TOOL_NAME,
+      );
       if (toolSpec === undefined) {
         throw new Error(
-          'Structured Output を返す台本ですが、ツール仕様が渡っていません',
+          `Structured Output を返す台本ですが、${STRUCTURED_OUTPUT_TOOL_NAME} のツール仕様が渡っていません（渡ったもの: ${toolSpecs.map((spec) => spec.name).join(', ') || 'なし'}）`,
         );
       }
       yield {

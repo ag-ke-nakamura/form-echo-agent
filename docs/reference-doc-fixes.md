@@ -197,6 +197,90 @@ CLI の生成物 `agent-app/AGENTS.md` は「form-based guardrails (Bedrock cont
 
 **修正案**: 3.6節の実行制限（`maxIterations` / `maxTokens` / `timeoutSeconds`）が `agentcore.json` で宣言できるのかを実機で確認する。現行スキーマの `runtimes` 要素にこれらのフィールドは見当たらない。宣言できないならコード側の責務として書き直す。
 
+### 🟢 F-24. Gateway と Web Search コネクタは `agentcore.json` に宣言できる（#46 で確認）
+
+**該当**: #46 の「要確認」（CLI 直叩きではなく宣言的に張れる可能性）
+
+**事実**: 張れる。**スクリプトは要らなかった**（Guardrail リソースの F-11 と違う）。
+
+```bash
+agentcore add gateway --name FormEchoWebSearch --protocol-type MCP --authorizer-type AWS_IAM
+agentcore add gateway-target --name WebSearch --gateway FormEchoWebSearch \
+  --type connector --connector web-search
+```
+
+ただし**生成物の2つが食い違っている**。`agent-app/AGENTS.md` は `GatewayTargetType` に `'connector' (web-search, bedrock-knowledge-bases)` を挙げるが、同じ CLI が置く `agentcore/.llm-context/agentcore.ts` の `GatewayTargetType` に `'connector'` は無く、代わりに `'httpRuntime'` がある。**CLI 本体（`agentcore add gateway-target --help`）は `connector` を受け付ける**ので、遅れているのは `.llm-context` の型定義のほう。スキーマファイルだけを見て「宣言できない」と判断すると誤る。
+
+`agentcore.json` に書かれる形は次のとおり（`targets[].connectorId` と `configurations[]` は `.llm-context` の `AgentCoreGatewayTarget` に無いフィールド）。
+
+```json
+{
+  "name": "FormEchoWebSearch",
+  "protocolType": "MCP",
+  "authorizerType": "AWS_IAM",
+  "targets": [
+    { "name": "WebSearch", "targetType": "connector", "connectorId": "web-search",
+      "configurations": [{ "name": "WebSearch", "parameterValues": {}, "parameterOverrides": [] }] }
+  ]
+}
+```
+
+**Gateway に渡る権限は1アクション・1リソースに閉じる**（ツール統制、10節の観点）。CDK が生成する Gateway ロールのインラインポリシーは以下だけで、Runtime の実行ロールとは別物である。
+
+```json
+{ "Effect": "Allow",
+  "Action": "bedrock-agentcore:InvokeWebSearch",
+  "Resource": "arn:aws:bedrock-agentcore:ap-northeast-1:aws:tool/web-search.v1" }
+```
+
+**ADR-011（データ主権）の確認 — 構成からの推論であって、通信の観測ではない。** 確かめたのは次の3点で、いずれも**リージョンが識別子に焼き込まれている**ことである。
+
+- Gateway ロールが許すリソース: `arn:aws:bedrock-agentcore:ap-northeast-1:aws:tool/web-search.v1`
+- Gateway 本体: `arn:aws:bedrock-agentcore:ap-northeast-1:<account>:gateway/...`
+- MCP エンドポイント: `https://<id>.gateway.bedrock-agentcore.ap-northeast-1.amazonaws.com/mcp`
+
+Runtime 側も取り違えを起動時に落とす（`config.ts` の `resolveWebSearchGatewayUrl` がホスト名のリージョンを検査する）。
+
+**ただし「検索クエリと結果が ap-northeast-1 に閉じる」は証明できていない。** 上の3点が言うのは *我々が ap-northeast-1 のエンドポイントにしか話しかけない* ことまでで、**コネクタがその先で検索事業者へどう出ていくかは観測していない。** 7.1節の「Web Search は strictly regional」は構成と矛盾しないが、裏付けるには CloudTrail のデータイベントか AWS への確認が要る。**本番設計へ持っていくなら、ここは申し送りになる。**
+
+呼ぶ側（Runtime）に要るのは Gateway を叩く権限だけで、**Web 検索そのものの権限は持たない。**
+
+### 🟡 F-25. CLI 0.28.1 と `@aws/agentcore-cdk` alpha.51 は `deploy` で衝突する（#46 で発覚）
+
+**該当**: `.claude/rules/agentcore-cdk.md`（alpha.51 への固定）
+
+**事実**: `agentcore deploy` はバージョンゲートを持ち、`@aws/agentcore-cdk` が CLI の期待（0.28.1 は alpha.50）より新しいと `CliVersionTooOldError` で止まる。**`validate` と `cdk synth` は通るので、`deploy` を実行するまで気付けない。**
+
+```
+This project requires a newer version of the AgentCore CLI:
+@aws/agentcore-cdk (0.1.0-alpha.51, CLI expects 0.1.0-alpha.50)
+```
+
+エラーが案内する `npm install -g @aws/agentcore@latest` は**効かない — 0.28.1 が最新**である。
+
+alpha.51 に固定していたのは alpha.49 の `connectorName` → `connector` 変更で生成コードの build が壊れたためだが、**alpha.50 でも build は通る**ことを確認した（`npm run build` / `cdk synth` / `deploy` すべて成功）。壊れているのは alpha.49 以前だけだった。
+
+**対応**: 固定を alpha.50 へ下げた。もう一方の逃げ道は `agentcore config disableDependencyManagement true`（CLI のグローバル設定）で、こちらは CLI が未検証の組み合わせで deploy することになる。
+
+**あわせて CLI が `agentcore/cdk/package.json` の他の依存も書き換えた**（キャレット→チルダ、`@types/node` は 22 系から 24 系へ）。**#46 が意図した変更ではなく、`agentcore deploy` の副作用である。** 生成物のディレクトリなので差し戻しても次の deploy で戻る。詳細と受け入れた理由は `.claude/rules/agentcore-cdk.md`。
+
+### 🟡 F-26. Runtime の CodeZip バンドルが `contracts/` の symlink 越しに `zod` を解決できない
+
+**該当**: `.claude/rules/agent-app.md`「`agentcore package` は CLI 0.28.1 のバグで失敗する」
+
+**事実**: 症状が変わっている。**esbuild がバイナリを見つけられないのではなく、`zod` を解決できない。**
+
+```
+✘ [ERROR] Could not resolve "zod"   ../../../contracts/api.ts:1:18
+（fields.ts / inputs.ts / outputs.ts も同じ）
+```
+
+esbuild は symlink を実体のパスへ解決するため、`contracts/` からは `node_modules` を辿れない（`vitest.config.mts` と `nextjs-app` が別名で回避しているのと同じ事情。ADR-0002 と `.claude/rules/contracts.md`）。tsconfig の `paths` にある `"zod"` は CDK の esbuild 呼び出しには効かない。
+
+**Gateway のデプロイはこれに阻まれない。** 1つのスタックだが、`runtimes` を空にすれば CodeZip のバンドルが走らず synth が通る。#46 ではその形で Gateway だけを deploy した（Runtime は未デプロイのまま）。
+
+**Runtime を実際にデプロイするときに解く必要がある。** `contracts/node_modules` を Runtime の `node_modules` への symlink にすると synth は通ることを確認したが、`nextjs-app` / `hono-app` のバンドラが `contracts/` 経由で agent-app の `zod` を引く経路ができるため、副作用の評価が要る。
+
 ---
 
 ## Guardrail（Classic Tier / アカウントレベル適用の調査で追加）
@@ -353,6 +437,41 @@ Standard Tier は `crossRegionConfig.guardrailProfileIdentifier` が必須で、
 **修正案**: 7.1節の一覧を #977 のみに絞り、Websearch が要る理由（**回答精度**を内部知識で担保できない）を書く。#979 と #981 の行は落とす。14.2節の Websearch 列は #981 を `○（交通アクセス）` から `×` に、#979 を `△（将来）` から `×` に直す。
 
 **実装への影響**: Gateway を渡すのは交通ICドメインエージェントだけでよい。会議ロジドメインエージェントに MCP クライアントを渡す必要はなく、その分ツール統制（10節）の面も軽くなる。この判断は #25 に反映済み。
+
+#### 実測: Websearch 有効／無効の経路回答（#46、2026-09-04）
+
+**本検証環境で実施すると判断した。** Web Search コネクタは ap-northeast-1 で利用でき（2026-08-14 対応）、`agentcore.json` に宣言して `agentcore deploy` で張れたので、本番設計への申し送りにする理由が無くなった。#23 の Out of Scope の記述はこの判断で更新した。
+
+同じ入力5件を、**設定だけを変えて**（`FORMECHO_WEB_SEARCH_GATEWAY_URL` の有無）両モードに通した。モデルは `jp.anthropic.claude-sonnet-4-6`。再現手順は `agent-app/app/FormEchoAgent/tests/measure-web-search.ts`。**#23 の方針に従い合否判定は持たず、観測した数字だけを置く。**
+
+| 入力 | 無効: 所要時間 | 有効: 所要時間 | 有効: 便の名指し | 検索回数 / `sources` |
+| --- | --- | --- | --- | --- |
+| 東京→大阪 | 約2時間30分 | 2時間27分〜2時間30分 | のぞみ135号・38号・42号 | 1回 / 2件 |
+| 東京→博多 | 約4時間45分〜5時間 | 約4時間52分〜5時間3分 | なし（種別のみ） | 1回 / 1件 |
+| 名古屋→仙台 | 約1時間40分＋約1時間30〜40分＝**3時間30分〜4時間** | **約3時間15分** | なし（種別のみ） | 1回 / 1件 |
+| 大阪出張（経路を尋ねない） | なし | なし | なし | **0回 / 0件** |
+| 東京→札幌（直通なし） | 直通なしと回答 | 直通なしと回答＋検索でも確認できずと明示 | なし | 1回 / 2件 |
+
+##### 「検索結果に無い列車名を答えていない」の確認方法
+
+**答えと、その往復でモデルが実際に読んだ本文とを突き合わせた**（`webSearchHits` を invocation 境界から返して照合する）。後から同じクエリを投げ直す方法は採らない — 検索結果は毎回同じではないので、突き合わせにならない。
+
+**号数まで名指しした便だけを対象にする。** 「のぞみ号」は列車の**種別**であって特定の便ではなく、路線の常識なので裏取りの対象にしない。裏取りが要るのは「のぞみ135号（09:00発）」のように**職員が実際に乗ろうとする便**を名指ししたときである。
+
+結果: **有効側が名指しした3便（のぞみ135号・38号・42号）はすべて、その往復で読んだ本文に実在した。裏取れなかった便は0件。** 無効側は号数を1つも名指ししなかった（種別までしか言わない）。
+
+##### 観測できたこと
+
+- **無効側の誤差は号数ではなく所要時間に出る。** 名古屋→仙台の「合計3時間30分〜4時間」は有効側の3時間15分と **15〜45分**、東京→博多の「約4時間45分〜5時間」は「約4時間52分〜5時間3分」と **数分**ずれる。乗り換えを跨ぐ経路ほど開く。
+- **無効側は検索していないのに検索したと書く。** 東京→博多で「検索で確認できた情報をお伝えします」、東京→大阪で「ウェブ検索では確認できませんでした」。**Web 検索ツールを1つも持っていない状態での発言である。** あわせて `message` の本文に URL を書く（`https://www.jr-odekake.net/` 等）。**`sources` は空配列のままなので画面にリンクは出ないが、文面の中の URL は素通しで職員に届く。** 経路の数字とは別の失敗として数える。
+- **切り詰めの上限が裏取りの穴になっていた。** 検索結果の本文を800字で切っていたときは、時刻表ページ（1件 2,300 字前後）から号数と発着時刻の対が3分の1しか渡らず（35件 → 12件、39件 → 13件）、モデルは「表は見たが希望の時間帯の便が無い」状態から号数を補っていた。**上限を3,000字に上げたところ、名指しした便がすべて本文に実在する状態になった。** 節約のつもりの切り詰めが精度を落としていた。
+- **検索回数は最大2回で、上限の3回に達しなかった。** 経路を尋ねない入力では0回・`sources` も空配列のままで、「検索を使わなかったときは何も出さない」がそのまま観測できた。
+- **有効側はトークンが約3〜4.5倍**（3.6k〜3.8k → 10.4k〜16.5k）、応答は約1.3〜1.8倍の時間になる。上限を3,000字へ上げた分も含んだ数字である。
+- **run 間のばらつきは無効側に大きい。** 同じ入力・同じ設定で3回まわしたところ、無効側の名古屋→仙台は「答えない」回と「合わない数字を答える」回の両方が出た。有効側は所要時間の値が安定していた。
+
+**Gateway が落ちているとき**（到達しない URL を渡して確認）も、6項目の抽出はすべて返った。`sources` は空のまま、`message` は「検索結果が取得できなかったためお答えできません」と書いて所要時間を作文しなかった。検索は精度を上げるためのもので、フォームを埋める経路を止めない。
+
+**この節の結論は「Websearch を入れると経路の数字と便名が検索結果に紐づく」までで、精度の合否は判定していない。** 残る穴は無効側の「検索したと書く」振る舞いで、これは Websearch では消えない（**有効側でも、検索が失敗した往復で同じことが起きうる**）。
 
 ---
 

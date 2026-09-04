@@ -1,3 +1,24 @@
 {
-  "targets": {}
+  "targets": {
+    "default": {
+      "resources": {
+        "mcp": {
+          "gateways": {
+            "FormEchoWebSearch": {
+              "gatewayId": "formecho-formechowebsearch-0sndza4xhi",
+              "gatewayArn": "arn:aws:bedrock-agentcore:ap-northeast-1:122664578519:gateway/formecho-formechowebsearch-0sndza4xhi",
+              "gatewayUrl": "https://formecho-formechowebsearch-0sndza4xhi.gateway.bedrock-agentcore.ap-northeast-1.amazonaws.com/mcp",
+              "targets": {
+                "WebSearch": {
+                  "targetId": "PSIDVZ8BOT"
+                }
+              }
+            }
+          }
+        },
+        "stackName": "AgentCore-FormEcho-default",
+        "deployHash": "6820a9ab3820a154"
+      }
+    }
+  }
 }

@@ -12,8 +12,11 @@ import type { TaskId } from './task-ids.js';
 /**
  * 全 taskId 共通の必須フィールド（参照ドキュメント 6.2節）。
  *
- * message は情報不足時の聞き返しもここに入る。sources は Websearch を使った
- * ときの参照元だが、この検証環境は Websearch を持たないので常に空配列になる。
+ * message は情報不足時の聞き返しもここに入る。sources は Websearch を使ったときの
+ * 参照元。**Websearch を持つのは交通ICだけ**（#46、`docs/reference-doc-fixes.md` F-22）
+ * なので、会議ロジの3タスクでは常に空配列になる。交通ICでも、経路を尋ねられずに
+ * 6項目を読み取っただけの往復では空配列が正しい姿である — `sources` が埋まることは
+ * 成果ではなく、精度を担保した結果として付いてくる透明性の仕組みである。
  */
 const commonOutputFields = {
   message: z
@@ -23,7 +26,9 @@ const commonOutputFields = {
     ),
   sources: z
     .array(z.string())
-    .describe('参照元 URL のリスト。Web 検索を使っていない場合は空配列'),
+    .describe(
+      '回答の根拠にした参照元 URL のリスト。Web 検索を使っていない場合は空配列',
+    ),
 };
 
 /**

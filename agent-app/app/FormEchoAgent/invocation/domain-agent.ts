@@ -1,6 +1,7 @@
 import { Agent } from '@strands-agents/sdk';
 import { type Domain, domainOf, type TaskId } from '../contracts/index.js';
 import { loadModel } from '../model/load.js';
+import { loadDomainTools } from '../tools/load.js';
 import { buildSystemPrompt } from './system-prompt.js';
 
 /**
@@ -49,13 +50,12 @@ export function getOrCreateDomainAgent(
     const oldest = agentCache.keys().next().value;
     if (oldest !== undefined) agentCache.delete(oldest);
   }
+  const domain = domainOf(taskId);
   const agent = new Agent({
-    name: DOMAIN_AGENT_NAMES[domainOf(taskId)],
-    // 空配列でも省略せずに書く。「まだ足していない」のか「足さないと決めた」のかを
-    // 区別するため。会議ロジは Websearch を持たない（F-22）— 候補日程の生成は
-    // 入力文と基準日だけで閉じており、裏を取る対象が無い。交通ICだけは第3段で
-    // Websearch（AgentCore Gateway）が入るので、そのときドメインごとの表になる。
-    tools: [],
+    name: DOMAIN_AGENT_NAMES[domain],
+    // ドメインごとの表から引く（#46）。交通ICだけが Web 検索を持ち、会議ロジは
+    // 空のままである — 渡す・渡さないの判断は `tools/load.ts` に置く。
+    tools: loadDomainTools(domain),
     model: loadModel(),
     systemPrompt: buildSystemPrompt(taskId),
     // 既定の printer を切る。モデルのテキストとツールの印を素の stdout へ書くが、

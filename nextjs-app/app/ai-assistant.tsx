@@ -477,6 +477,7 @@ export function AiAssistant<TTaskId extends TaskId>({
             <AiPreview
               items={items}
               message={preview.result.message}
+              sources={preview.result.sources}
               emptyItemText={emptyItemText}
               applyLabel={applyLabel}
               onApply={handleApply}

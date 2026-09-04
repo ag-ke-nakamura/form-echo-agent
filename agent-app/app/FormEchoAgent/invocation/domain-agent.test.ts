@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { type Domain, domainOf, type TaskId } from '../contracts/index.js';
-import { newSessionId } from '../tests/harness.js';
+import {
+  clearWebSearchGateway,
+  newSessionId,
+  useWebSearchGateway,
+} from '../tests/harness.js';
 import { getOrCreateDomainAgent } from './domain-agent.js';
 
 /**
@@ -26,6 +30,8 @@ const TASK_DOMAINS: Record<TaskId, Domain> = {
   'meeting.recommend-schedule': 'meeting',
 };
 
+afterEach(clearWebSearchGateway);
+
 describe('getOrCreateDomainAgent', () => {
   it.each(Object.entries(TASK_DOMAINS) as [TaskId, Domain][])(
     '%s は %s のドメインエージェントに解決される',
@@ -43,6 +49,24 @@ describe('getOrCreateDomainAgent', () => {
     expect(getOrCreateDomainAgent(sessionId, 'meeting.parse-candidates')).toBe(
       getOrCreateDomainAgent(sessionId, 'meeting.parse-candidates'),
     );
+  });
+
+  it('Gateway が設定されていると交通ICだけが Web 検索を持つ', () => {
+    useWebSearchGateway();
+
+    // ツールの有無はドメインエージェントの違いのうち、名前と並んで唯一
+    // 外から見えるもの（#46）。境界越しには現れないのでここで見る。
+    const icCard = getOrCreateDomainAgent(
+      newSessionId(),
+      'ic-card.parse-reservation',
+    );
+    const meeting = getOrCreateDomainAgent(
+      newSessionId(),
+      'meeting.parse-candidates',
+    );
+
+    expect(icCard.tools.map((tool) => tool.name)).toEqual(['web_search']);
+    expect(meeting.tools).toEqual([]);
   });
 
   it('同じドメインでも taskId が違えば別の Agent になる', () => {

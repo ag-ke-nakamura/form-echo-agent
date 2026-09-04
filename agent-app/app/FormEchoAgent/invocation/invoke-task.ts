@@ -3,6 +3,12 @@ import {
   type TaskId,
   type Usage,
 } from '../contracts/index.js';
+import type { WebSearchHit } from '../tools/web-search.js';
+import {
+  webSearchesUsed,
+  webSearchHits,
+  withWebSearchBudget,
+} from '../tools/web-search.js';
 import { getOrCreateDomainAgent } from './domain-agent.js';
 import type { InvocationLogger } from './logger.js';
 import { invokeWithSchemaRetry } from './structured-output.js';
@@ -38,6 +44,21 @@ export interface TaskInvocation {
 export interface TaskInvocationResult {
   result: unknown;
   usage: Usage;
+  /**
+   * このリクエストが使った Web 検索の回数（#46）。Web 検索を持たないドメインでは 0。
+   *
+   * 応答本文には載せない。職員に見せる数字ではなく、実測とログのためのもの。
+   */
+  webSearches: number;
+  /**
+   * このリクエストでモデルへ渡した検索結果（#46）。
+   *
+   * **ここで返すのは、予算の実行文脈が `invokeTask` を抜けた時点で消えるため。**
+   * 呼び出し側から `webSearchHits()` を読んでも空になる。実測が「答えが検索結果に
+   * 紐づいているか」を突き合わせるのに要る — 後から同じクエリを投げ直しても、
+   * 検索結果は毎回同じではないので突き合わせにならない。
+   */
+  webSearchHits: readonly WebSearchHit[];
 }
 
 /**
@@ -59,13 +80,27 @@ export async function invokeTask(
   log: InvocationLogger,
 ): Promise<TaskInvocationResult> {
   const agent = getOrCreateDomainAgent(sessionId, taskId);
-  // 履歴の巻き戻しは invokeWithSchemaRetry が試行ごとに行うので、ここでは持たない。
-  return invokeWithSchemaRetry(
-    agent,
-    buildUserMessage(taskId, prompt, input),
-    // 入力を見ないと言えない不変条件（提案が入力の候補日程と過不足なく対応して
-    // いるか）もここに載せる。値域を外れた評点と同じく作り直しに回す。
-    outputSchemaFor(taskId, input),
-    log,
-  );
+  /*
+    Web 検索の予算をここで張る（#46）。**上限はリクエスト単位**（共通設計方針書
+    7.1節）なので、`invokeWithSchemaRetry` の作り直しを含めた全体を包む必要がある。
+    内側に張ると、Structured Output が1回失敗しただけで残高が戻る。
+    Web 検索を持たないドメインでは誰も引かないので、ここに分岐は要らない。
+  */
+  return withWebSearchBudget(async () => {
+    // 履歴の巻き戻しは invokeWithSchemaRetry が試行ごとに行うので、ここでは持たない。
+    const invoked = await invokeWithSchemaRetry(
+      agent,
+      buildUserMessage(taskId, prompt, input),
+      // 入力を見ないと言えない不変条件（提案が入力の候補日程と過不足なく対応して
+      // いるか）もここに載せる。値域を外れた評点と同じく作り直しに回す。
+      outputSchemaFor(taskId, input),
+      log,
+    );
+    // 予算の内側で読む。外へ出ると `AsyncLocalStorage` の文脈が切れて空になる。
+    return {
+      ...invoked,
+      webSearches: webSearchesUsed() ?? 0,
+      webSearchHits: webSearchHits(),
+    };
+  });
 }

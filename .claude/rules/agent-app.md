@@ -24,6 +24,12 @@ paths:
   `invocation/` にある**（シームは `invocation/invoke-task.ts` の `invokeTask`）
 - **`npm run dev` / `npm start` を直接使わず `agentcore dev` / `agentcore deploy` 経由で操作する**
   （プロセス単体をデバッグする場合を除く）
+- **ツールはドメインごとの表（`tools/load.ts`）から引く。** 交通ICだけが Web 検索
+  （AgentCore Gateway、`FORMECHO_WEB_SEARCH_GATEWAY_URL`）を持ち、**会議ロジには渡さない** —
+  後回しではなくそもそも不要（F-22）で、渡さないこと自体が #46 の成果に含まれる。
+  検索回数の上限はリクエスト単位なので `AsyncLocalStorage`（`tools/web-search.ts`）で持ち、
+  `invokeTask` が全体を包む。**`agent.invoke` ごとの `invocationState` では Structured Output の
+  作り直しで予算が戻ってしまう**
 - **相対的な日付・時刻は system prompt の「基準時刻」で解決する。時刻取得のツールを渡さない。**
   `invocation/system-prompt.ts` が JST の現在時刻を毎回埋め、`domain-agent.ts` がキャッシュ済み
   Agent にも貼り直す（system prompt は生成時に固定されるため、貼り直さないと追加の指示が初回の
@@ -37,10 +43,16 @@ paths:
 
 ## CLI の既知の穴
 
-- `agent-app/agentcore/aws-targets.json` は現在空。デプロイ先が未設定なので `agentcore deploy` と
-  `cdk synth` は実行できない
-- `agentcore package` は CLI 0.28.1 のバグで失敗する（esbuild が自身のバンドルに含まれており
-  バイナリを見つけられない）。`deploy` も同じ経路を通る可能性がある
+- **`agentcore deploy` は通る**（#46 で Gateway を張った）。`aws-targets.json` は CLI が自分で
+  埋める（`default` / 122664578519 / ap-northeast-1）ので、「デプロイ先が未設定」ではない
+- **ただし `runtimes` を含む synth は失敗する。** CodeZip の esbuild が `contracts/` の symlink
+  越しに `zod` を解決できない（`docs/reference-doc-fixes.md` F-26。`agentcore package` が
+  失敗する理由も現在はこれで、esbuild のバイナリの件ではない）。**Runtime を伴わない
+  リソースだけなら deploy できる** — #46 は `runtimes` を一時的に空にして Gateway だけを
+  張り、`agentcore.json` は元に戻してある（**Runtime は未デプロイのまま**）
+- **CLI と `agentcore/cdk` の `@aws/agentcore-cdk` はバージョンが噛み合っていないと
+  `deploy` だけが落ちる**（`validate` と `cdk synth` は通る）。F-25 と
+  `.claude/rules/agentcore-cdk.md`
 - **`agentcore dev` の備え付けチャット UI と `agentcore dev "<prompt>"` からはこの Runtime を
   動かせない。** どちらもスキャフォールド由来の `{"prompt": "…"}` しか送らず、`taskId` を
   付けられないため。プロンプトを試すときはフロントエンド（localhost:3000）か curl を使う。

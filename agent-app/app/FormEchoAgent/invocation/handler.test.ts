@@ -1,5 +1,5 @@
 import { ModelError } from '@strands-agents/sdk';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { z } from 'zod';
 import { resolveModelName } from '../config.js';
 import {
@@ -15,6 +15,7 @@ import {
 } from '../contracts/index.js';
 import { fakeModelScript } from '../model/fake.js';
 import {
+  clearWebSearchGateway,
   expectError,
   expectSuccess,
   invokeBoundary,
@@ -22,6 +23,7 @@ import {
   newSessionId,
   systemPromptOf,
   userMessagesOf,
+  useWebSearchGateway,
 } from '../tests/harness.js';
 
 /**
@@ -388,6 +390,39 @@ describe('構造化入力', () => {
       expect(fakeModelScript.calls).toHaveLength(0);
     },
   );
+});
+
+describe('Web 検索（#46）', () => {
+  afterEach(clearWebSearchGateway);
+
+  it('交通ICには Web 検索と Structured Output の両方のツールが渡る', async () => {
+    useWebSearchGateway();
+    fakeModelScript.write({
+      kind: 'structuredOutput',
+      output: VALID_OUTPUTS['ic-card.parse-reservation'],
+    });
+
+    expectSuccess(await invokeBoundary(REQUESTS['ic-card.parse-reservation']));
+
+    // Structured Output のツールが先頭に来る保証は無くなった。台本が名前で選んで
+    // いることをここで確かめる — 位置で取っていると、台本の出力が web_search の
+    // 入力として渡って原因の分からない失敗になる。
+    expect(lastCall().toolNames).toContain('web_search');
+    expect(lastCall().toolNames).toContain('strands_structured_output');
+  });
+
+  it('会議ロジには Gateway が設定されていてもツールが渡らない', async () => {
+    useWebSearchGateway();
+    fakeModelScript.write({
+      kind: 'structuredOutput',
+      output: VALID_OUTPUTS['meeting.parse-candidates'],
+    });
+
+    expectSuccess(await invokeBoundary(REQUESTS['meeting.parse-candidates']));
+
+    // #36 の「会議ロジにツールを1つも渡していない」は第3段でも崩さない（F-22）。
+    expect(lastCall().toolNames).toEqual(['strands_structured_output']);
+  });
 });
 
 describe('Structured Output の再試行', () => {

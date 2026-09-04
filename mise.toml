@@ -35,6 +35,15 @@ description = "AgentCore Runtime をローカル実行する (http://localhost:8
 dir = "agent-app"
 run = "agentcore dev --logs --skip-deploy"
 
+# 交通ICドメインエージェントに Web 検索を持たせる（#46）。ここに書かないと、
+# 手元で動かした画面では経路を尋ねても答えが返らず `sources` も空のままになる。
+#
+# 値は `agentcore/.cli/deployed-state.json` の `gatewayUrl`（デプロイの結果として
+# コミットされている）。秘密ではない — Gateway は SigV4 で守られており、URL を
+# 知っているだけでは叩けない。デプロイ先を張り替えたらここも直す。
+[tasks."dev:runtime".env]
+FORMECHO_WEB_SEARCH_GATEWAY_URL = "https://formecho-formechowebsearch-0sndza4xhi.gateway.bedrock-agentcore.ap-northeast-1.amazonaws.com/mcp"
+
 [tasks."dev:bff"]
 description = "BFF を起動する (http://localhost:8787)"
 dir = "hono-app"

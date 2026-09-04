@@ -22,6 +22,8 @@
 
 BFF が Runtime を叩く宛先は `FORMECHO_RUNTIME_URL`、フロントエンドが BFF を叩く宛先は `NEXT_PUBLIC_API_BASE_URL`（SSG なのでビルド時に埋め込まれる）。Runtime のモデルは `FORMECHO_MODEL`（`sonnet` / `haiku` / `fake`）、BFF の Runtime クライアントは `FORMECHO_RUNTIME_CLIENT`（`local` / `fake`）で切り替える。どちらの `fake` も外部に接続しない差し替えで、テストが使う（#40、#41）。
 
+交通ICの Web 検索は `FORMECHO_WEB_SEARCH_GATEWAY_URL` の有無で決まる（#46）。**未設定なら Web 検索を持たない**ので、実測の「無効」側はこの環境変数を外すだけで作れる。`mise run dev` は `mise.toml` の `[tasks."dev:runtime".env]` で有効側にしてある。
+
 ## contracts（入出力の契約）
 
 3プロジェクトが共有する入出力契約の正典。パッケージ化せず素の `.ts` で置き、各プロジェクトが
@@ -42,8 +44,9 @@ BFF が Runtime を叩く宛先は `FORMECHO_RUNTIME_URL`、フロントエン�
 `agentcore.json` や AgentCore リソースを触る前に `agent-app/AGENTS.md`（CLI が置くスキーマと
 リファレンス）を読むこと。
 
-**デプロイ先が未設定（`agentcore/aws-targets.json` が空）なので `agentcore deploy` と `cdk synth`
-は実行できない。** `agentcore/cdk` も生成物で編集不可。
+**`agentcore deploy` は通る**（#46 で Web 検索の Gateway を張った）。ただし **`runtimes` を含む
+synth は落ちる** — CodeZip の esbuild が `contracts/` の symlink 越しに `zod` を解決できない
+ため、**Runtime はまだデプロイできない。** `agentcore/cdk` は生成物で編集不可。
 
 Runtime の構造・CLI の既知の穴・テスト方針は `.claude/rules/agent-app.md`。`agent-app/` 配下を
 触った時に自動で載る。
