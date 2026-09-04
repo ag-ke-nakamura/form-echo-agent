@@ -11,11 +11,12 @@ function output(
   overrides: Partial<ParseReservationOutput> = {},
 ): ParseReservationOutput {
   return {
-    departure_date: null,
-    return_date: null,
+    borrow_at: null,
+    return_at: null,
     origin: null,
     destination: null,
     transport: null,
+    purpose: null,
     message: "",
     sources: [],
     ...overrides,
@@ -27,7 +28,7 @@ function output(
  *
  * WHY テストを持つか: 読み取れなかった欄を落とすと聞き返しの判断が
  * 「全部埋まった」に倒れ（`previewTone`）、空のプレビューが青いまま反映できてしまう。
- * 交通手段だけは契約の値と職員が読む語が違うので、素通しにするとその欄だけ
+ * 交通手段と利用目的は契約の値と職員が読む語が違うので、素通しにするとその欄だけ
  * 「押す前に確認する」が果たせない。
  */
 describe("reservationPreviewItems", () => {
@@ -37,25 +38,22 @@ describe("reservationPreviewItems", () => {
       EMPTY_FORM,
     );
     expect(items).toEqual([
-      { key: "departure_date", label: "出発日", value: null, preserved: false },
-      { key: "return_date", label: "帰着日", value: null, preserved: false },
+      { key: "borrow_at", label: "借りる日時", value: null, preserved: false },
+      { key: "return_at", label: "返す日時", value: null, preserved: false },
       { key: "origin", label: "出発地", value: "東京", preserved: false },
       { key: "destination", label: "目的地", value: "大阪", preserved: false },
       { key: "transport", label: "交通手段", value: null, preserved: false },
+      { key: "purpose", label: "利用目的", value: null, preserved: false },
     ]);
   });
 
-  it("交通手段は職員が読む語に写す", () => {
+  it("交通手段と利用目的は職員が読む語に写す", () => {
     const items = reservationPreviewItems(
-      output({ transport: "train" }),
+      output({ transport: "train", purpose: "training" }),
       EMPTY_FORM,
     );
-    expect(items.at(-1)).toEqual({
-      key: "transport",
-      label: "交通手段",
-      value: "鉄道",
-      preserved: false,
-    });
+    expect(items.find((item) => item.key === "transport")?.value).toBe("鉄道");
+    expect(items.find((item) => item.key === "purpose")?.value).toBe("研修");
   });
 
   /*
@@ -110,6 +108,23 @@ describe("applyToForm", () => {
     // 読み取れなかった欄は触らない。
     expect(next.destination).toEqual(EMPTY_FORM.destination);
     expect(report).toEqual({ updated: ["出発地", "交通手段"], preserved: [] });
+  });
+
+  /*
+    日時は出力契約が `YYYY-MM-DDTHH:mm` を保証するので、`<input type="datetime-local">`
+    へそのまま渡せる。整形を挟むと契約の形と画面の形が二重定義になる。
+  */
+  it("日時は出力契約の形のままフォームへ入る", () => {
+    const { next, report } = applyToForm(
+      EMPTY_FORM,
+      output({ borrow_at: "2026-10-15T09:00", return_at: "2026-10-18T18:00" }),
+    );
+    expect(next.borrow_at).toEqual({
+      value: "2026-10-15T09:00",
+      source: "ai",
+    });
+    expect(next.return_at).toEqual({ value: "2026-10-18T18:00", source: "ai" });
+    expect(report.updated).toEqual(["借りる日時", "返す日時"]);
   });
 
   it("手で書いた欄は上書きせず、守ったことを報告に載せる", () => {

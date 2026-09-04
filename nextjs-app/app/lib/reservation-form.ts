@@ -12,15 +12,19 @@ import type { PreviewItem } from "./ai-preview";
  * 参加可否タブの `availability-form.ts`・候補日提案タブの `recommend-form.ts` と同じ形。
  *
  * 欄の値域そのものは出力契約が持つ（`contracts/outputs.ts`）。ここに残るのは画面だけが
- * 要るもの — 欄の表示名、交通手段の選択肢の文言、写す規則である。
+ * 要るもの — 欄の表示名、選択肢の文言、写す規則である。
+ *
+ * **同行者とICカード利用枚数はここに無い**（#68）。出力契約に載せず AI にも埋めさせない
+ * 欄なので、写す規則の対象にならない。状態は `reservation-panel.tsx` が持つ。
  */
 
 export type FieldName =
-  | "departure_date"
-  | "return_date"
+  | "borrow_at"
+  | "return_at"
   | "origin"
   | "destination"
-  | "transport";
+  | "transport"
+  | "purpose";
 
 /**
  * 交通ICのフォームの状態モデル。スカラーの平坦なマップ。
@@ -32,11 +36,12 @@ export type FormState = Record<
 >;
 
 export const EMPTY_FORM: FormState = {
-  departure_date: { value: "", source: "manual" },
-  return_date: { value: "", source: "manual" },
+  borrow_at: { value: "", source: "manual" },
+  return_at: { value: "", source: "manual" },
   origin: { value: "", source: "manual" },
   destination: { value: "", source: "manual" },
   transport: { value: "", source: "manual" },
+  purpose: { value: "", source: "manual" },
 };
 
 /**
@@ -46,37 +51,76 @@ export const EMPTY_FORM: FormState = {
  * 画面のラベルと「更新: 出発日」の言い方が食い違う。
  */
 export const FIELD_LABELS: Record<FieldName, string> = {
-  departure_date: "出発日",
-  return_date: "帰着日",
+  borrow_at: "借りる日時",
+  return_at: "返す日時",
   origin: "出発地",
   destination: "目的地",
   transport: "交通手段",
+  /*
+    「目的」ではなく「利用目的」と呼ぶ。目的地が同じ画面に並んでいるので、
+    「目的」だと職員がどちらの欄を読んでいるのか一瞬で分からない。
+  */
+  purpose: "利用目的",
 };
 
 export const FIELD_NAMES = Object.keys(FIELD_LABELS) as FieldName[];
 
-export const TRANSPORT_LABELS = {
+/**
+ * 選択肢の欄の、契約の値から職員が読む語への対応。
+ *
+ * `Record<...>` で受けるのは網羅を型に見てもらうため。契約に選択肢が増えたときに
+ * ここが漏れると、`<select>` にその選択肢が出ないまま AI だけが返せる値になる。
+ */
+type Transport = NonNullable<ParseReservationOutput["transport"]>;
+type Purpose = NonNullable<ParseReservationOutput["purpose"]>;
+
+const TRANSPORT_LABELS: Record<Transport, string> = {
   train: "鉄道",
   flight: "航空機",
   other: "その他",
-} as const;
+};
+
+const PURPOSE_LABELS: Record<Purpose, string> = {
+  discussion: "打ち合わせ",
+  training: "研修",
+  inspection: "視察",
+  business_trip: "出張",
+  other: "その他",
+};
+
+/** 選択肢を持つ欄。`<select>` で描く欄と、表示名に写す欄はいつも同じ。 */
+export type SelectFieldName = "transport" | "purpose";
+
+/**
+ * 選択肢の欄の表示名の表。**プレビューと `<select>` が同じ表を引く。**
+ *
+ * WHY 欄名で引けるようにするか: 欄ごとに表を渡していると、`<select>` に交通手段の
+ * 表を渡しながらラベルは利用目的、という組を型が通してしまう。欄が増えても
+ * `previewValue` の分岐は増えない。
+ */
+export const SELECT_LABELS: Record<SelectFieldName, Record<string, string>> = {
+  transport: TRANSPORT_LABELS,
+  purpose: PURPOSE_LABELS,
+};
+
+function isSelectField(name: FieldName): name is SelectFieldName {
+  return name in SELECT_LABELS;
+}
 
 /**
  * プレビューに出す値（設計書 3.6.1節）。**フォームに入る値ではなく職員が読む文字列。**
  *
- * WHY 分けるか: 交通手段だけは契約の値（`train`）とフォームの値が同じで、職員が読む
- * 語（`鉄道`）が違う。プレビューに `train` と出すと、押す前に確認するという
- * ADR-0006 の目的がその欄だけ果たせない。
+ * WHY 分けるか: 選択肢の欄（交通手段・利用目的）は契約の値（`train`）とフォームの値が
+ * 同じで、職員が読む語（`鉄道`）が違う。プレビューに `train` と出すと、押す前に
+ * 確認するという ADR-0006 の目的がその欄だけ果たせない。
  */
 function previewValue(
   name: FieldName,
   result: ParseReservationOutput,
 ): string | null {
-  if (name === "transport") {
-    const raw = result.transport;
-    return raw === null ? null : TRANSPORT_LABELS[raw];
-  }
-  return result[name];
+  const raw = result[name];
+  if (raw === null) return null;
+  return isSelectField(name) ? SELECT_LABELS[name][raw] : raw;
 }
 
 /**
@@ -148,8 +192,8 @@ export function applyToForm(
     // 同じ値なら「更新」に数えない。読み取り直した項目を毎回並べると、実際に
     // 変わった項目が埋もれる（追加の指示は普通1〜2項目しか動かさない）。
     if (field.value === raw) continue;
-    // 日付は出力契約が YYYY-MM-DD を保証するので、`<input type="date">` へ
-    // そのまま渡せる。整形は要らない。
+    // 日時は出力契約が YYYY-MM-DDTHH:mm を保証するので、
+    // `<input type="datetime-local">` へそのまま渡せる。整形は要らない。
     next[name] = { value: raw, source: "ai" };
     updated.push(FIELD_LABELS[name]);
   }

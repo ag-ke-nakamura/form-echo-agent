@@ -114,12 +114,13 @@ const REQUESTS = {
  */
 const VALID_OUTPUTS = {
   'ic-card.parse-reservation': {
-    departure_date: '2026-10-15',
-    return_date: '2026-10-18',
+    borrow_at: '2026-10-15T09:00',
+    return_at: '2026-10-18T18:00',
     origin: '東京',
     destination: '大阪',
     transport: 'train',
-    message: '出発日・帰着日・目的地を読み取りました。',
+    purpose: 'business_trip',
+    message: '借りる日時・返す日時・目的地・利用目的を読み取りました。',
     sources: [],
   },
   'meeting.parse-candidates': {
@@ -362,10 +363,10 @@ describe('構造化入力', () => {
 describe('Structured Output の再試行', () => {
   it('2回続けて Structured Output を返さないと PARSE_FAILED になる', async () => {
     fakeModelScript.write(
-      { kind: 'text', text: '出発日が読み取れませんでした。' },
-      { kind: 'text', text: '出発日が読み取れませんでした。' },
-      { kind: 'text', text: '出発日が読み取れませんでした。' },
-      { kind: 'text', text: '出発日が読み取れませんでした。' },
+      { kind: 'text', text: '借りる日時が読み取れませんでした。' },
+      { kind: 'text', text: '借りる日時が読み取れませんでした。' },
+      { kind: 'text', text: '借りる日時が読み取れませんでした。' },
+      { kind: 'text', text: '借りる日時が読み取れませんでした。' },
     );
 
     const response = await invokeBoundary(
@@ -442,19 +443,39 @@ describe('出力契約が弾く形', () => {
 
   it.each([
     {
-      name: '日付が YYYY-MM-DD でない',
+      name: '日時が YYYY-MM-DDTHH:mm でない',
       taskId: 'ic-card.parse-reservation',
       output: {
         ...VALID_OUTPUTS['ic-card.parse-reservation'],
-        departure_date: '2026/10/15',
+        borrow_at: '2026/10/15 09:00',
       },
     },
     {
-      name: '暦に存在しない日付',
+      // ICカードの貸出・返却は時点なので、日付だけでは借りる日時にならない（#68）。
+      // 契約が受け取ると `<input type="datetime-local">` が黙って空欄を表示する。
+      name: '日時のはずが日付だけ',
       taskId: 'ic-card.parse-reservation',
       output: {
         ...VALID_OUTPUTS['ic-card.parse-reservation'],
-        departure_date: '2026-02-31',
+        borrow_at: '2026-10-15',
+      },
+    },
+    {
+      name: '暦に存在しない日付の日時',
+      taskId: 'ic-card.parse-reservation',
+      output: {
+        ...VALID_OUTPUTS['ic-card.parse-reservation'],
+        borrow_at: '2026-02-31T09:00',
+      },
+    },
+    {
+      // 利用目的は自由文字列にせず選択肢にした（#68）。表記の揺れた値が通ると、
+      // 画面の `<select>` がどの選択肢にも一致せず未選択に見える。
+      name: '利用目的が選択肢の外',
+      taskId: 'ic-card.parse-reservation',
+      output: {
+        ...VALID_OUTPUTS['ic-card.parse-reservation'],
+        purpose: '打ち合わせ',
       },
     },
     {
@@ -628,7 +649,7 @@ describe('セッションと会話履歴', () => {
         kind: 'structuredOutput',
         output: {
           ...VALID_OUTPUTS['ic-card.parse-reservation'],
-          departure_date: '2026-10-16',
+          borrow_at: '2026-10-16T09:00',
         },
       },
     );
