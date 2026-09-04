@@ -91,9 +91,14 @@ export const FAKE_GUARDRAIL_STRATEGY_NAME = 'fake';
 /**
  * テストは実際の AWS 呼び出し（案A・案B）を fake に差し替える。
  *
- * 日本固有 PII の正規表現（案C、`pii.ts`）は AWS を呼ばない純関数なので
+ * 日本固有 PII の正規表現チェック（`pii.ts`）は AWS を呼ばない純関数なので
  * fake 化の対象にしない — 差し替えなくても決定的で、テストでも実物のロジックを
  * そのまま検証できる。
+ *
+ * **「案C」と呼ばない。** チケット #43 は `BedrockModel` の `guardrailConfig`
+ * （不採用）を案Cと呼んでいる。この正規表現チェックはそれとは別物で、A/B のような
+ * 実装方式の選択肢ではなく、A/B のどちらを選んでも必要になる補助的なチェック
+ * （F-03・F-16）。
  */
 export function isGuardrailFake(): boolean {
   return (
@@ -116,18 +121,18 @@ export interface GuardrailLayers {
   invokeChecks: boolean;
   /** 案B（`ApplyGuardrail`）。Guardrail リソースが要るので既定 OFF。 */
   applyGuardrail: boolean;
-  /** 案C（日本固有 PII のカスタム正規表現、マイナンバー）。既定 ON。 */
+  /** 日本固有 PII のカスタム正規表現（マイナンバー）。既定 ON。 */
   customRegex: boolean;
 }
 
 /**
- * 案A・案B・案Cをそれぞれ独立に ON/OFF できるようにする（#43）。
+ * 案A・案B・正規表現チェックをそれぞれ独立に ON/OFF できるようにする（#43）。
  *
  * ADR-032「入力検証方式の選択」の実測の土台がこのチケットで、決めるのは
  * 別チケット。3つを1つの排他的な選択にすると、「案Aだけ／案Bだけでマイナンバーを
- * 検知できるか」を試せない — 案Cが常時 ON だと、案Aと案Bのどちらを選んでも
- * 結果が案Cに覆い隠される。組み合わせて有効化できることで、この切り分けが
- * 設定だけでできる。
+ * 検知できるか」を試せない — 正規表現チェックが常時 ON だと、案Aと案Bのどちらを
+ * 選んでも結果がそちらに覆い隠される。組み合わせて有効化できることで、この
+ * 切り分けが設定だけでできる。
  */
 export function resolveGuardrailLayers(): GuardrailLayers {
   return {

@@ -13,14 +13,20 @@ import type {
  * この Runtime が使う Guardrail 全体。`invoke-task.ts` が入力（自然文）と出力
  * （Structured Output のパース結果）の両方でこれを呼ぶ。
  *
- * 案A・案B・案C（日本固有 PII の正規表現）はそれぞれ独立に ON/OFF できる
+ * 案A・案B・日本固有 PII の正規表現チェックはそれぞれ独立に ON/OFF できる
  * （`resolveGuardrailLayers`）。1つの排他的な選択にしないのは、「案Aだけ／
  * 案Bだけでマイナンバーを検知できるか」を確かめる実測（#43 の受け入れ条件）で、
  * 常時 ON の層が他の層の結果を覆い隠さないようにするため。有効な層をすべて
  * 並行に呼び、1つでもブロックすれば全体もブロックする。
  *
  * `FORMECHO_GUARDRAIL_STRATEGY=fake` のときは案A・案Bの呼び先を fake に
- * 差し替える（AWS を呼ばない）。案Cは純関数で決定的なので差し替えの対象にしない。
+ * 差し替える（AWS を呼ばない）。正規表現チェックは純関数で決定的なので差し替えの
+ * 対象にしない。
+ *
+ * WHY 正規表現チェックを「案C」と呼ばないか: チケット #43 は `BedrockModel` の
+ * `guardrailConfig`（不採用）を案Cと呼んでいる。この正規表現チェックは A/B の
+ * どちらを選んでも必要になる補助的なチェック（F-03・F-16）で、A/B と並ぶ実装
+ * 方式の選択肢ではない。
  */
 export async function checkGuardrail(
   text: string,
