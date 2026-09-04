@@ -93,7 +93,7 @@ export function ReservationPanel() {
           "同行者とICカード利用枚数は対象外です。手で入力してください。"
         }
         placeholder="予約内容を自然な言葉で入力してください..."
-        followUpPlaceholder="借りるのは10月16日の朝でした"
+        followUpPlaceholder="借りるのは9時、返すのは18時です"
         submitLabel="AIで入力内容を生成"
         pendingLabel="生成中..."
         generatingMessage="AIが内容を生成しています..."
