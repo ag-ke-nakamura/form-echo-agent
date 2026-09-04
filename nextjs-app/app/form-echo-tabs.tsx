@@ -7,6 +7,7 @@ import {
   CandidatesPanel,
   useCandidateRows,
 } from "./candidates-panel";
+import { useMeetingInfo } from "./meeting-info";
 import { RecommendPanel } from "./recommend-panel";
 import { ReservationPanel } from "./reservation-panel";
 
@@ -38,11 +39,27 @@ export function FormEchoTabs() {
    */
   const candidates = useCandidateRows();
 
+  /**
+   * 会議情報（会議名・所要時間・参加形式）もタブ層で持つ。
+   *
+   * WHY: 入れるのはタブ2だが、読むのはタブ3のヘッダー（何の会議に答えているのか）
+   * とタブ4の内訳表示（参加形式で現地/リモートの内訳を出すかが決まる。#71）である。
+   * 候補日程と同じ形で、上がったのは置き場所だけ — 状態モデルの定義は
+   * `meeting-info.tsx` に残す。**タブ4はまだ読まないが、読む先が増えても
+   * タブ層から渡すだけで済む。**
+   */
+  const meetingInfo = useMeetingInfo();
+
   const panels: Record<TabId, ReactNode> = {
     "ic-card": <ReservationPanel />,
-    "meeting-candidates": <CandidatesPanel candidates={candidates} />,
+    "meeting-candidates": (
+      <CandidatesPanel candidates={candidates} meetingInfo={meetingInfo} />
+    ),
     "meeting-availability": (
-      <AvailabilityPanel dates={candidateDates(candidates.rows)} />
+      <AvailabilityPanel
+        dates={candidateDates(candidates.rows)}
+        meetingInfo={meetingInfo.info}
+      />
     ),
     /*
       候補日程タブ・参加可否タブとは連動しない。参加可否表は自分のモックを持つ

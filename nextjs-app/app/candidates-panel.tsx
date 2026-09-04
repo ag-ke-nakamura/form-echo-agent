@@ -11,6 +11,7 @@ import {
 } from "./field-source";
 import { FormSection } from "./form-section";
 import { CANDIDATES_TASK_ID } from "./lib/api";
+import { MeetingInfoFields, type MeetingInfoApi } from "./meeting-info";
 import { ManualInputDivider, TabHeading } from "./screen-layout";
 
 /**
@@ -237,14 +238,18 @@ export function useCandidateRows(): CandidateRowsApi {
 
 export function CandidatesPanel({
   candidates,
+  meetingInfo,
 }: {
   candidates: CandidateRowsApi;
+  meetingInfo: MeetingInfoApi;
 }) {
   const { rows, setField, addRow, removeRow, applyResult, reset } = candidates;
 
   return (
     <div className="mx-auto max-w-3xl">
       <TabHeading>会議作成 STEP3: 候補日程</TabHeading>
+
+      <MeetingInfoFields meetingInfo={meetingInfo} />
 
       <AiAssistant
         taskId={CANDIDATES_TASK_ID}
