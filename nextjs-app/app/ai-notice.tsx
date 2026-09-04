@@ -32,7 +32,12 @@ export function AiPendingNotice({ message }: { message: string }) {
  * こちらは画面が実際にやったことだけを言う。**`message` では代われない。**
  */
 export function ApplyReportView({ report }: { report: ApplyReport }) {
-  if (report.updated.length === 0 && report.preserved.length === 0) {
+  const dropped = report.dropped ?? [];
+  if (
+    report.updated.length === 0 &&
+    report.preserved.length === 0 &&
+    dropped.length === 0
+  ) {
     return (
       <p className="mt-3 text-dns-12N-130 text-solid-gray-600">
         フォームは変わっていません。
@@ -53,6 +58,12 @@ export function ApplyReportView({ report }: { report: ApplyReport }) {
           <dd className="text-solid-gray-900">
             {report.preserved.join(" / ")}
           </dd>
+        </div>
+      )}
+      {dropped.length > 0 && (
+        <div className="flex gap-2">
+          <dt className="shrink-0 text-solid-gray-600">当てる先が無く未反映</dt>
+          <dd className="text-solid-gray-900">{dropped.join(" / ")}</dd>
         </div>
       )}
     </dl>

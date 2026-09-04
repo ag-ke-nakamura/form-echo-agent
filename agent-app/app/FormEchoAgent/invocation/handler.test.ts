@@ -5,7 +5,6 @@ import { resolveModelName } from '../config.js';
 import {
   type AiTaskRequest,
   ALLOWED_TASK_IDS,
-  MAX_AVAILABILITY_ENTRIES,
   MAX_CANDIDATES,
   type OUTPUT_SCHEMAS,
   type ParseAvailabilityInput,
@@ -133,10 +132,18 @@ const VALID_OUTPUTS = {
   },
   'meeting.parse-availability': {
     availability: [
-      { date: '2026-10-15', available: true },
-      { date: '2026-10-16', available: false },
+      {
+        candidate_id: 'candidate-1',
+        availability: 'attend_onsite',
+        note: null,
+      },
+      {
+        candidate_id: 'candidate-2',
+        availability: 'absent',
+        note: '午前中は別の予定があります',
+      },
     ],
-    message: '2日分の参加可否を読み取りました。',
+    message: '2件の候補日程の参加可否を読み取りました。',
     sources: [],
   },
   'meeting.recommend-schedule': {
@@ -433,14 +440,6 @@ describe('出力契約が弾く形', () => {
     }),
   );
 
-  const overLimitAvailability = Array.from(
-    { length: MAX_AVAILABILITY_ENTRIES + 1 },
-    (_, index) => ({
-      date: `2026-10-${String(index + 1).padStart(2, '0')}`,
-      available: true,
-    }),
-  );
-
   it.each([
     {
       name: '日付が YYYY-MM-DD でない',
@@ -491,11 +490,52 @@ describe('出力契約が弾く形', () => {
       },
     },
     {
-      name: '参加可否が上限件数を超える',
+      name: '入力に無い候補日程の参加可否を返す',
       taskId: 'meeting.parse-availability',
       output: {
         ...VALID_OUTPUTS['meeting.parse-availability'],
-        availability: overLimitAvailability,
+        availability: [
+          {
+            candidate_id: 'candidate-99',
+            availability: 'attend_onsite',
+            note: null,
+          },
+        ],
+      },
+    },
+    {
+      name: '同じ候補日程に2度答える',
+      taskId: 'meeting.parse-availability',
+      output: {
+        ...VALID_OUTPUTS['meeting.parse-availability'],
+        availability: [
+          {
+            candidate_id: 'candidate-1',
+            availability: 'attend_onsite',
+            note: null,
+          },
+          { candidate_id: 'candidate-1', availability: 'absent', note: null },
+        ],
+      },
+    },
+    {
+      name: '参加可否が値域の外',
+      taskId: 'meeting.parse-availability',
+      output: {
+        ...VALID_OUTPUTS['meeting.parse-availability'],
+        availability: [
+          { candidate_id: 'candidate-1', availability: 'attend', note: null },
+        ],
+      },
+    },
+    {
+      name: '判定できなかった候補日程を null で埋める',
+      taskId: 'meeting.parse-availability',
+      output: {
+        ...VALID_OUTPUTS['meeting.parse-availability'],
+        availability: [
+          { candidate_id: 'candidate-1', availability: null, note: null },
+        ],
       },
     },
     {

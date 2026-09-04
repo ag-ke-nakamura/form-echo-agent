@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { candidateIdSchema, isoDateSchema, timeOfDaySchema } from './fields.js';
+import {
+  availabilitySchema,
+  candidateIdSchema,
+  isoDateSchema,
+  timeOfDaySchema,
+} from './fields.js';
 import { MAX_INPUT_CANDIDATES } from './meeting.js';
 import type { TaskId } from './task-ids.js';
 
@@ -74,21 +79,39 @@ export const parseCandidatesOutputSchema = z.object({
 export type ParseCandidatesOutput = z.infer<typeof parseCandidatesOutputSchema>;
 
 /**
- * 候補日程ひとつに対する参加可否。
+ * 候補日程ひとつに対する参加可否。**候補日程は識別子で指す**（ADR-0005）。
  *
- * 候補日程IDではなく日付で写す。ユーザーの自然文が言っているのは日付であって
- * 候補日程IDではなく、この日付を画面が持っている候補日程の一覧に当てる突き合わせは
- * フロントエンドが行う。ADR-0005 で候補日程の一覧を**入力として**渡すようになったので、
- * AI が候補日程に無い日付を答える余地はほぼ無くなった（一覧に無い日付を答えないことは
- * `SKILL.md` の制約が言う）。
+ * 日付で写していたのは、契約に識別子が無かったからである。クリック単位が候補日程に
+ * なった結果（#69）**同じ日に複数の候補日程が普通に発生する**ので、日付で指すと
+ * 「10月15日の14時には出られるが16時は無理」を表せない。
  *
- * 4状態の参加可否（`availabilitySchema`）と備考へ移すのは #70 が担当する。
+ * **判定できなかった候補日程は要素を持たない。`null` を返させない。** 参加可否の
+ * 値域に「判定できず」を足すのと同じことになり、参加者が答えた未定と AI が読み取れ
+ * なかったことが同じ列挙に並ぶ（`CONTEXT.md`「未定」）。要素の不在で表せば、画面は
+ * 「（判定できませんでした）」として聞き返しの対象にできる。
  */
-const dateAvailabilitySchema = z.object({
-  date: isoDateSchema.describe('参加可否を答えた日付。YYYY-MM-DD 形式'),
-  available: z
-    .boolean()
-    .describe('その日付に参加できるなら true、できないなら false'),
+const candidateAvailabilitySchema = z.object({
+  candidate_id: candidateIdSchema.describe(
+    '参加可否を答えた候補日程の識別子。入力の candidates にあるものだけを使う',
+  ),
+  availability: availabilitySchema,
+  /**
+   * 備考（`CONTEXT.md`「備考」）。4つの選択肢に収まらない事情をここへ移す。
+   *
+   * WHY 参加可否と別の欄にするか: 「午前中は別の予定があります」を参加可否の値で
+   * 表そうとすると、値域が事情の数だけ増える。欄を分ければ、参加可否は4状態のまま
+   * 保たれ、画面は備考欄へそのまま写せる。
+   *
+   * WHY `note` か（設計書 6.4節の `comment` ではなく）: 用語集が「コメント」を
+   * _Avoid_ にしている。契約の欄名も3プロジェクトが共有する語彙なので、日本語に
+   * 戻したときに用語集と食い違う語を選ばない。
+   */
+  note: z
+    .string()
+    .nullable()
+    .describe(
+      '参加可否に収まらない事情（例:「午前中は別の予定があります」）。無ければ null',
+    ),
 });
 
 /**
@@ -100,15 +123,20 @@ const dateAvailabilitySchema = z.object({
  * 超えた分の候補日程に参加者が答えられないのに、契約もモデルもそれを失敗として
  * 扱わない（`SKILL.md` が先頭から切り詰めるよう指示するだけ）。**画面には可否の
  * 付かない候補日程が黙って残る。**
+ *
+ * 識別子で答えるようになった（#70）ので、この上限は `findAvailabilityMismatch` の
+ * 部分集合の検査に含まれるようになった（入力の候補日程も同じ数で頭打ちになり、
+ * 重複も弾かれるため）。それでも残すのは、**この数だけが JSON Schema に写る**ため
+ * — 入力を見る検査は `safeParse` の段でしか効かず、モデルへの指示にはならない。
  */
 export const MAX_AVAILABILITY_ENTRIES = MAX_INPUT_CANDIDATES;
 
 export const parseAvailabilityOutputSchema = z.object({
   availability: z
-    .array(dateAvailabilitySchema)
+    .array(candidateAvailabilitySchema)
     .max(MAX_AVAILABILITY_ENTRIES)
     .describe(
-      `日付ごとの参加可否。多くとも${MAX_AVAILABILITY_ENTRIES}件。読み取れない場合は空配列`,
+      `候補日程ごとの参加可否。多くとも${MAX_AVAILABILITY_ENTRIES}件。判定できなかった候補日程は含めない`,
     ),
   ...commonOutputFields,
 });

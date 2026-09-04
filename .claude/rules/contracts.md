@@ -37,11 +37,15 @@ BFF の再検査の両方が引く。
 3タスクへ広がった）。候補日程は `/^candidate-\d{1,6}$/`、参加者は `/^参加者[A-Z]$/`。参加者の実名を
 送らないのは ADR-0008。
 
-**識別子はフロントエンドが発番し、AI は自分では作らない。** 候補日程を選ぶ出力
-（`meeting.recommend-schedule`）は `candidate_id` だけを返し、日付や開始時刻を写さない。入力に無い
-識別子が返っていないかは `findRecommendationMismatch` が見る（Runtime の再試行と BFF の再検査の
-両方から `outputSchemaFor` 越しに引かれる）。新しい候補日程を作る `meeting.parse-candidates` は
-逆に識別子を返さない — 選ぶべき既存の識別子が無いため。
+**識別子はフロントエンドが発番し、AI は自分では作らない。** 候補日程を選ぶ2つの出力
+（`meeting.parse-availability` / `meeting.recommend-schedule`）は `candidate_id` だけを返し、日付や
+開始時刻を写さない。入力に無い識別子が返っていないかは `output-schema.ts` の2関数が見る（Runtime の
+再試行と BFF の再検査の両方から `outputSchemaFor` 越しに引かれる）。新しい候補日程を作る
+`meeting.parse-candidates` は逆に識別子を返さない — 選ぶべき既存の識別子が無いため。
+
+**この2つは抜けの扱いが逆。** `findRecommendationMismatch` は過不足なく対応することを要求し、
+`findAvailabilityMismatch` は**抜けを許して重複だけ弾く** — 判定できなかった候補日程は要素を
+持たないことで表す（`null` を返させない）ので、抜けは失敗ではなく画面が聞き返す材料になる。
 
 **候補日程は終了時刻を持たない。** 終わる時刻は会議の所要時間から導く。導出が要るのは画面だけ
 なので、関数は `nextjs-app/app/lib/meeting-info.ts` にある（誰も引かない関数を契約に置かない）。

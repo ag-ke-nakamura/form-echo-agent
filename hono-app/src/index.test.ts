@@ -117,10 +117,18 @@ const VALID_RESULTS = {
   },
   'meeting.parse-availability': {
     availability: [
-      { date: '2026-10-15', available: true },
-      { date: '2026-10-16', available: false },
+      {
+        candidate_id: 'candidate-1',
+        availability: 'attend_onsite',
+        note: null,
+      },
+      {
+        candidate_id: 'candidate-2',
+        availability: 'absent',
+        note: '午前中は別の予定があります',
+      },
     ],
-    message: '2日分の参加可否を読み取りました。',
+    message: '2件の候補日程の参加可否を読み取りました。',
     sources: [],
   },
   'meeting.recommend-schedule': {
@@ -616,6 +624,78 @@ describe('出力契約の再検査', () => {
 
     const response = await postTask({
       ...REQUESTS['meeting.recommend-schedule'],
+      sessionId: SESSION_ID,
+    })
+
+    expect((await expectError(response)).code).toBe('PARSE_FAILED')
+  })
+
+  it('入力に無い候補日程の参加可否を通さない', async () => {
+    // 参加可否も候補日程を識別子で指すようになった（#70）。出力契約は単独では
+    // これを言えないので、`outputSchemaFor` が入力を見る検査を重ねる。
+    fakeRuntimeScript.write(
+      runtimeReturns({
+        availability: [
+          {
+            candidate_id: 'candidate-99',
+            availability: 'attend_onsite',
+            note: null,
+          },
+        ],
+        message: '入力に無い候補日程に答えました。',
+        sources: [],
+      }),
+    )
+
+    const response = await postTask({
+      ...REQUESTS['meeting.parse-availability'],
+      sessionId: SESSION_ID,
+    })
+
+    expect((await expectError(response)).code).toBe('PARSE_FAILED')
+  })
+
+  it('同じ候補日程に2度答えた参加可否を通さない', async () => {
+    // どちらを採るかを画面が決めることになるが、その判断はどう決めても参加者の
+    // 答えではない（`findAvailabilityMismatch`）。
+    fakeRuntimeScript.write(
+      runtimeReturns({
+        availability: [
+          {
+            candidate_id: 'candidate-1',
+            availability: 'attend_onsite',
+            note: null,
+          },
+          { candidate_id: 'candidate-1', availability: 'absent', note: null },
+        ],
+        message: '同じ候補日程に2度答えました。',
+        sources: [],
+      }),
+    )
+
+    const response = await postTask({
+      ...REQUESTS['meeting.parse-availability'],
+      sessionId: SESSION_ID,
+    })
+
+    expect((await expectError(response)).code).toBe('PARSE_FAILED')
+  })
+
+  it('判定できなかった候補日程を null で埋めた参加可否を通さない', async () => {
+    // 判定できなかったことは要素の不在で表す（`outputs.ts`）。`null` を許すと、
+    // 参加者が答えた未定と AI が読み取れなかったことが同じ欄に並ぶ。
+    fakeRuntimeScript.write(
+      runtimeReturns({
+        availability: [
+          { candidate_id: 'candidate-1', availability: null, note: null },
+        ],
+        message: '1件は判定できませんでした。',
+        sources: [],
+      }),
+    )
+
+    const response = await postTask({
+      ...REQUESTS['meeting.parse-availability'],
       sessionId: SESSION_ID,
     })
 

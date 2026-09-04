@@ -1,26 +1,29 @@
 "use client";
 
 import type { ParseAvailabilityOutput } from "@contracts/index.js";
-import { Info } from "lucide-react";
+import type { Availability } from "@contracts/meeting";
+import { AlertCircle } from "lucide-react";
 import { useId, useState } from "react";
 import { AiAssistant } from "./ai-assistant";
 import type { SelectedCandidate } from "./candidates-panel";
-import { AiBadge, type ApplyReport, type FieldSource } from "./field-source";
+import { AiBadge, type ApplyReport } from "./field-source";
 import { FormSection } from "./form-section";
 import { AVAILABILITY_TASK_ID } from "./lib/api";
+import {
+  type AvailabilityAnswer,
+  type AvailabilityAnswers,
+  type AvailabilityChoice,
+  applyAvailabilityResult,
+  availabilityChoicesFor,
+  candidateLabel,
+  dateHeadingText,
+  groupCandidatesByDate,
+  unjudgedCandidates,
+} from "./lib/availability-form";
 import { candidateLimitReason } from "./lib/candidate-limit";
 import { candidateRangeText, type MeetingInfo } from "./lib/meeting-info";
 import { MeetingInfoHeader } from "./meeting-info";
 import { ManualInputDivider, TabHeading } from "./screen-layout";
-
-/**
- * 参加可否ひとつ。未回答は `null`、それ以外は出力契約の `available` をそのまま持つ。
- *
- * 画面独自の列挙（`"yes" | "no"`）にしない。出力契約が既に○×の2値なので、別の型を
- * 挟むと写像が単純な代入でなくなり、AI の出力とフォーム状態の間に変換が生まれる
- * （#23 Testing Decisions の「素直な代入に留める」）。
- */
-type Answer = { choice: boolean | null; source: FieldSource };
 
 type AvailabilityPanelProps = {
   /**
@@ -41,107 +44,123 @@ type AvailabilityPanelProps = {
    * メールのリンクから開く画面）。会議情報を持つのはタブ2なので、候補日程と同じ
    * 経路で受け取る。**書き換えはしない** — 参加者が会議の性質を変える画面ではない
    * ので、`MeetingInfoApi` ではなく値だけを受ける。
+   *
+   * 参加形式はここでは表示だけの値ではない。**参加可否の選択肢を決める**
+   * （`CONTEXT.md`「参加形式」）ので、ラジオの組み立てと AI 出力の正規化が引く。
    */
   meetingInfo: MeetingInfo;
 };
 
-/*
-  このタブの AI入力アシスタントの文言だけ `CONTEXT.md` の用語集と食い違う（用語集は
-  「出欠」「○×」を _Avoid_ とし「参加可否」を正としている）。設計書が指定した文言を
-  そのまま出すことが #73 の受け入れ条件で、ここは設計書の字面が優先する。参加可否が
-  4状態になる #70 で設計書側の語も動くので、揃えるのはそのとき。
-*/
 export function AvailabilityPanel({
   candidates,
   meetingInfo,
 }: AvailabilityPanelProps) {
-  /*
-    可否を付ける単位は日付のまま。出力契約が日付ごとに可否を返すので、同じ日付の
-    候補日程が2つあってもこの画面に並ぶ行はひとつになる。**候補日程ごとの4状態と
-    日付でのグループ化は #70 が担当する** — このチケットで替わったのは、AI へ渡す
-    与件が識別子付きの一覧になったことだけ。
-  */
-  const dates = [...new Set(candidates.map((candidate) => candidate.date))];
   /**
-   * 日付をキーにした参加可否。行の識別子を持たない。
+   * 候補日程の識別子をキーにした回答。
    *
-   * WHY: 候補日程の一覧はこのタブの持ち物ではないので、行を足し引きする側と
-   * 番号を取り合わずに済む形にする。日付で引く限り、候補日程タブで並べ替えや
-   * 追加が起きても職員が付けた○×はその日付に残る。
+   * WHY 日付ではなく識別子か: クリック単位が候補日程になった結果（#69）、同じ日に
+   * 複数の候補日程が普通に発生する。日付で持つと「15日の14時は出られるが16時は無理」
+   * を表せず、AI が候補日程ごとに返す判定（#70 の出力契約）を当てる先も無くなる。
+   * 識別子は候補日程タブが単調増加で配るので、行を消しても他の行の鍵は動かない。
    */
-  const [answers, setAnswers] = useState<Record<string, Answer>>({});
+  const [answers, setAnswers] = useState<AvailabilityAnswers>({});
   /**
-   * 直近の AI 応答が返した参加可否。**落ちた分を描画時に導くために持つ。**
+   * 直近の AI 応答が判定した候補日程の識別子。まだ一度も答えていなければ `null`。
    *
-   * WHY: 候補日程の一覧を与件として渡すようになった（ADR-0005）ので、AI が一覧に
-   * 無い日付を答える余地はほぼ無い。それでも突き合わせを残すのは、落ちた分を黙って
-   * 捨てないため — モデルの出力が制約に届かなかったことが画面に出る唯一の場所で、
-   * プロンプトの効きを追うのがこの検証環境の目的である。
+   * WHY 持つか: 判定できなかった候補日程は出力契約が**要素を持たない**ことで表す
+   * （`null` を返させない）。何が判定されなかったかは、返ってきたものの裏側にしか
+   * 無いので、応答の側を控えておかないと聞き返しの対象を作れない。
    *
-   * 落ちた分を確定させて持たないのは、職員がその日付を候補日程に足した後も「無い」と
-   * 言い続けてしまうため。応答そのものを持って毎回突き合わせ直せば、表示は常に今の
-   * 候補日程の一覧と一致する。
+   * 確定した一覧ではなく識別子だけを持ち、表示は毎回いまの候補日程から導く。職員が
+   * 候補日程を足し引きしても、聞き返しの一覧が消えた候補日程を指し続けない。
    */
-  const [lastAnswers, setLastAnswers] = useState<
-    ParseAvailabilityOutput["availability"]
-  >([]);
+  const [judgedCandidateIds, setJudgedCandidateIds] = useState<string[] | null>(
+    null,
+  );
+  /**
+   * 「回答を提出」を押した後か。**押した後に手を入れたら下ろす。**
+   *
+   * WHY: 永続化も送信APIも無い（#70）ので、完了メッセージが表すのは「この内容で
+   * 提出した」という参加者の操作だけである。提出後の編集を反映せずに出し続けると、
+   * 画面に見えている回答と完了メッセージが指すものが食い違う。
+   */
+  const [submitted, setSubmitted] = useState(false);
 
-  function setAnswer(date: string, choice: boolean) {
+  const groups = groupCandidatesByDate(candidates);
+  const choices = availabilityChoicesFor(meetingInfo.format);
+
+  function setAvailability(id: string, availability: Availability) {
+    setSubmitted(false);
     setAnswers((current) => ({
       ...current,
-      [date]: { choice, source: "manual" },
+      // 手を入れた時点で印が落ちる（設計書 6.3節）。備考は保つ — 参加可否を
+      // 選び直しただけで参加者が書いた事情を消す理由が無い。
+      [id]: {
+        availability,
+        source: "manual",
+        note: current[id]?.note ?? "",
+        noteSource: current[id]?.noteSource ?? "manual",
+      },
     }));
   }
 
   /**
-   * AI が返した日付を候補日程の一覧に当てる。
+   * 備考だけを書き換える。**印には触らない**（設計書 6.5節）。
    *
-   * 候補日程に無い日付は書き込まない。書き込むと、後からその日付が候補日程に
-   * 足された瞬間に、職員が見ていない○×が現れることになる。
-   *
-   * **手で付けた○×は上書きしない**（#38 の判断）。ここは特に効く — 職員が手で
-   * 付けた可否は本人の予定そのもので、AI が自然文から読み取った推測より確かである。
-   * 触らなかった日付は報告に載せ、指示したのに変わらない理由が分かるようにする。
+   * 参加可否がまだ無い候補日程には備考を書けない。備考は参加可否に添えるもので
+   * （`CONTEXT.md`「備考」）、単独で残ると「何に対する事情なのか」が消える。
+   * 画面側でも参加可否を選ぶまで備考欄を無効にしてある。
+   */
+  function setNote(id: string, note: string) {
+    setSubmitted(false);
+    setAnswers((current) => {
+      const answer = current[id];
+      if (answer === undefined) return current;
+      return {
+        ...current,
+        [id]: { ...answer, note, noteSource: "manual" },
+      };
+    });
+  }
+
+  /**
+   * AI が返した参加可否をフォームへ写す。**判断は `applyAvailabilityResult` が持つ**
+   * （手入力の保護・備考の保護・参加形式への寄せ）。
    *
    * 判断を setState の updater の中に置けないのは、何を更新して何を守ったかを
    * **同期で**返す必要があるため（updater は純粋に保つ約束があり、実行も後になる）。
    */
   function applyResult(result: ParseAvailabilityOutput): ApplyReport {
-    const known = new Set(dates);
-    const next = { ...answers };
-    const updated: string[] = [];
-    const preserved: string[] = [];
+    const applied = applyAvailabilityResult(answers, result, {
+      candidates,
+      format: meetingInfo.format,
+      durationMinutes: meetingInfo.durationMinutes,
+    });
 
-    for (const entry of result.availability) {
-      // 落ちた分はここでは数えない。今の候補日程の一覧から導いて別枠で出す（下）。
-      if (!known.has(entry.date)) continue;
-      const current = next[entry.date];
-      // `answers` に入るのは職員か AI が実際に付けた○×だけ（未回答はキーが無い）。
-      if (current?.source === "manual") {
-        preserved.push(entry.date);
-        continue;
-      }
-      // 同じ○×なら「更新」に数えない。読み取り直した日付を毎回並べると、実際に
-      // 変わった日付が埋もれる。
-      if (current?.choice === entry.available) continue;
-      next[entry.date] = { choice: entry.available, source: "ai" };
-      updated.push(entry.date);
-    }
-
-    setAnswers(next);
-    setLastAnswers(result.availability);
-    return { updated, preserved };
+    setSubmitted(false);
+    setAnswers(applied.answers);
+    setJudgedCandidateIds(applied.judgedCandidateIds);
+    return applied.report;
   }
 
   function reset() {
     setAnswers({});
-    setLastAnswers([]);
+    setJudgedCandidateIds(null);
+    setSubmitted(false);
   }
 
-  // 突き合わせに失敗した分。状態として持たず今の候補日程の一覧から導くので、
-  // 候補日程タブでその日付が足されればその場で消える。
-  const known = new Set(dates);
-  const dropped = lastAnswers.filter((entry) => !known.has(entry.date));
+  /*
+    聞き返しの対象（設計書 4.6.3節）。AI が一度も答えていないうちは出さない — 候補日程を
+    見に来ただけの参加者に「判定できませんでした」と言うことになる。
+  */
+  const unjudged =
+    judgedCandidateIds === null
+      ? []
+      : unjudgedCandidates(
+          candidates,
+          judgedCandidateIds,
+          Object.keys(answers),
+        );
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -162,7 +181,7 @@ export function AvailabilityPanel({
         }}
         /*
           入力契約を満たさない画面状態では送らせない。押しても BFF の門で必ず
-          INVALID_INPUT になり、職員は自分の書いた自然文を疑うことになる。
+          INVALID_INPUT になり、参加者は自分の書いた自然文を疑うことになる。
           下限（1件以上）はこのタブの事情、上限は契約が持つ。
         */
         submitBlockedReason={
@@ -170,69 +189,80 @@ export function AvailabilityPanel({
             ? "候補日程がまだありません。「会議候補日設定」タブで作ると AI に判定させられます。"
             : candidateLimitReason(candidates.length)
         }
-        nonAiPathHint="AI を使わなくても、候補日程ごとに手で○×を付けられます。候補日程がまだ無いときは「会議候補日設定」タブで先に作ってください。"
+        nonAiPathHint="AI を使わなくても、候補日程ごとに手で参加可否を選べます。候補日程がまだ無いときは「会議候補日設定」タブで先に作ってください。"
         description={
-          "自然な言葉で出欠を入力すると、AIが自動的に判定します。\n" +
+          "自然な言葉で参加可否を入力すると、AIが自動的に判定します。\n" +
           "例: 「10月15日は出席可能、17日は不可」「火曜は全部出席できます」"
         }
-        placeholder="出欠を自然な言葉で入力してください..."
-        followUpPlaceholder="16日も参加できるようになりました"
-        submitLabel="AIで出欠を判定"
+        placeholder="参加可否を自然な言葉で入力してください..."
+        followUpPlaceholder="すみません、15日は欠席でした"
+        submitLabel="AIで参加可否を判定"
         pendingLabel="判定中..."
-        generatingMessage="AIが出欠を判定しています..."
+        generatingMessage="AIが参加可否を判定しています..."
         onResult={applyResult}
         onReset={reset}
       />
 
-      <ManualInputDivider />
+      <ManualInputDivider label="または、各候補に直接入力" />
 
       <FormSection taskId={AVAILABILITY_TASK_ID}>
-        {dropped.length > 0 && (
-          <div
-            role="status"
-            className="mb-6 rounded-md border-l-4 border-solid-yellow-700 bg-solid-yellow-50 p-3"
-          >
-            <p className="flex items-center gap-2 text-dns-14M-130 text-solid-yellow-900">
-              <Info
-                aria-hidden="true"
-                className="size-5 shrink-0 text-solid-yellow-800"
-              />
-              候補日程に無い日付があり、次の回答は反映されませんでした。
-            </p>
-            <ul className="mt-2 list-disc pl-5 text-dns-14N-130 text-solid-gray-900">
-              {dropped.map((entry) => (
-                <li key={entry.date}>
-                  {entry.date} —{" "}
-                  {entry.available ? "○（参加できる）" : "×（参加できない）"}
+        {unjudged.length > 0 && (
+          <UnjudgedNotice
+            candidates={unjudged}
+            durationMinutes={meetingInfo.durationMinutes}
+          />
+        )}
+
+        {groups.length === 0 ? (
+          <p className="text-dns-14N-130 text-solid-gray-700">
+            候補日程がまだありません。「会議候補日設定」タブで候補日程を作ると、
+            ここに並んで参加可否を選べるようになります。
+          </p>
+        ) : (
+          <>
+            <ul className="grid gap-6">
+              {groups.map((group) => (
+                <li key={group.date}>
+                  <h3 className="text-dns-16M-130 text-solid-gray-900">
+                    {dateHeadingText(group.date)}
+                  </h3>
+                  <ul className="mt-2 grid gap-3">
+                    {group.candidates.map((candidate) => (
+                      <li key={candidate.id}>
+                        <AvailabilityFields
+                          candidate={candidate}
+                          durationMinutes={meetingInfo.durationMinutes}
+                          choices={choices}
+                          answer={answers[candidate.id]}
+                          onSelect={setAvailability}
+                          onNoteChange={setNote}
+                        />
+                      </li>
+                    ))}
+                  </ul>
                 </li>
               ))}
             </ul>
-            <p className="mt-2 text-dns-14N-130 text-solid-gray-700">
-              「会議候補日設定」タブでこの日付を足してからもう一度送るか、AI
-              への指示を書き直してください。
-            </p>
-          </div>
-        )}
 
-        {dates.length === 0 ? (
-          <p className="text-dns-14N-130 text-solid-gray-700">
-            候補日程がまだありません。「会議候補日設定」タブで候補日程を作ると、
-            ここに並んで○×を付けられるようになります。
-          </p>
-        ) : (
-          <ul className="grid gap-4">
-            {dates.map((date, index) => (
-              <li key={date}>
-                <AvailabilityFields
-                  date={date}
-                  index={index}
-                  timeRanges={timeRangesOn(candidates, date, meetingInfo)}
-                  answer={answers[date] ?? { choice: null, source: "manual" }}
-                  onChange={setAnswer}
-                />
-              </li>
-            ))}
-          </ul>
+            <div className="mt-8">
+              <button
+                type="button"
+                onClick={() => setSubmitted(true)}
+                className="rounded-md bg-solid-blue-700 px-4 py-2 text-dns-16M-130 text-white"
+              >
+                回答を提出
+              </button>
+              {submitted && (
+                <p
+                  role="status"
+                  className="mt-3 border-l-4 border-solid-blue-700 bg-solid-blue-50 p-3 text-dns-14N-130 text-solid-gray-900"
+                >
+                  回答を受け付けました。この検証環境では保存されないので、画面を
+                  読み込み直すと消えます。
+                </p>
+              )}
+            </div>
+          </>
         )}
       </FormSection>
     </div>
@@ -240,87 +270,141 @@ export function AvailabilityPanel({
 }
 
 /**
- * その日付の候補日程の時間帯。**終わる時刻は会議の所要時間から導く**（ADR-0005）。
+ * 直近の応答が判定できなかった候補日程（設計書 4.6.1節・4.6.3節）。
  *
- * 可否を付ける単位は日付なので、同じ日付に候補日程が2つあれば両方を並べる。
- * 片方だけ出すと、職員が見ていない候補日程に可否が付くことになる。
+ * WHY 画面に出すか: 判定できなかったことは出力契約では**要素の不在**でしか表れない
+ * ので、黙っていると参加者にはラジオが空のままの候補日程が残るだけになる。AI が
+ * 読み取れなかったのか、そもそも触れなかったのかも区別が付かない。ここに挙げれば
+ * そのまま追加の指示に書き写せる。
  */
-function timeRangesOn(
-  candidates: readonly SelectedCandidate[],
-  date: string,
-  meetingInfo: MeetingInfo,
-): string[] {
-  return candidates
-    .filter((candidate) => candidate.date === date)
-    .map((candidate) =>
-      candidateRangeText(candidate.start_time, meetingInfo.durationMinutes),
-    );
+function UnjudgedNotice({
+  candidates,
+  durationMinutes,
+}: {
+  candidates: readonly SelectedCandidate[];
+  durationMinutes: number;
+}) {
+  return (
+    <div
+      role="status"
+      className="mb-6 rounded-md border-l-4 border-solid-yellow-700 bg-solid-yellow-50 p-3"
+    >
+      <p className="flex items-center gap-2 text-dns-14M-130 text-solid-yellow-900">
+        <AlertCircle
+          aria-hidden="true"
+          className="size-5 shrink-0 text-solid-yellow-800"
+        />
+        以下の候補日程について、参加可否を教えてください。
+      </p>
+      <ul className="mt-2 list-disc pl-5 text-dns-14N-130 text-solid-gray-900">
+        {candidates.map((candidate) => (
+          <li key={candidate.id}>
+            {candidateLabel(candidate, durationMinutes)} —{" "}
+            <span className="text-solid-gray-600">
+              （判定できませんでした）
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-dns-14N-130 text-solid-gray-700">
+        AI に書き足して送り直すか、下のラジオで直接選んでください。
+      </p>
+    </div>
+  );
 }
 
 type AvailabilityFieldsProps = {
-  date: string;
-  index: number;
-  timeRanges: string[];
-  answer: Answer;
-  onChange: (date: string, choice: boolean) => void;
+  candidate: SelectedCandidate;
+  durationMinutes: number;
+  choices: readonly AvailabilityChoice[];
+  /** 未回答なら `undefined`。ラジオはどれも選ばれない。 */
+  answer: AvailabilityAnswer | undefined;
+  onSelect: (id: string, availability: Availability) => void;
+  onNoteChange: (id: string, note: string) => void;
 };
 
-const CHOICES = [
-  { value: "yes", choice: true, label: "○ 参加できる" },
-  { value: "no", choice: false, label: "× 参加できない" },
-] as const;
-
 function AvailabilityFields({
-  date,
-  index,
-  timeRanges,
+  candidate,
+  durationMinutes,
+  choices,
   answer,
-  onChange,
+  onSelect,
+  onNoteChange,
 }: AvailabilityFieldsProps) {
   // ラジオは1つの候補日程でひとつのグループにする。候補日程をまたいで同じ name に
   // なると、画面全体で1つしか選べなくなる。
   const groupName = useId();
+  const legendId = useId();
+  const noteId = useId();
 
   return (
     <div className="rounded-md border border-solid-gray-300 p-4">
+      {/*
+        印は候補日程の時間表示の隣に置く（設計書 6.2節）。日付は候補日程タブで職員が
+        決めたものだが、それは日付グループの見出しの側にあるので、この枠に付いた印は
+        この候補日程への回答を指す。
+      */}
       <div className="flex items-center gap-2">
         <span className="text-dns-14M-130 text-solid-gray-900">
-          候補日程 {index + 1}
+          {candidateRangeText(candidate.start_time, durationMinutes)}
         </span>
-        <span className="text-dns-14N-130 text-solid-gray-700">
-          {date} {timeRanges.join(" / ")}
-        </span>
+        {answer?.source === "ai" && (
+          <AiBadge
+            label="AI判定"
+            description="この参加可否はAIが判定しました"
+          />
+        )}
       </div>
 
       <fieldset className="mt-3">
-        {/*
-          印は候補日程の見出しではなく可否の側に付ける。日付は候補日程タブで職員が
-          決めたものなので、全体に付けると「AI が日付も入れた」と読めてしまう。
-        */}
-        <legend className="flex items-center gap-2 text-dns-12M-130 text-solid-gray-700">
+        <legend id={legendId} className="text-dns-12M-130 text-solid-gray-700">
           参加可否
-          {answer.source === "ai" && (
-            <AiBadge label="AI判定" description="この値はAIが判定しました" />
-          )}
         </legend>
-        <div className="mt-1 flex gap-4 py-2">
-          {CHOICES.map(({ value, choice, label }) => (
+        {/*
+          `role="radiogroup"` と `aria-labelledby` は設計書 10.2節の指定。中身は素の
+          ラジオなので、矢印キーでの移動は同じ `name` を共有していることで成り立つ
+          （JavaScript で組み直さない）。
+        */}
+        <div
+          role="radiogroup"
+          aria-labelledby={legendId}
+          className="mt-1 flex flex-wrap gap-x-4 gap-y-2 py-2"
+        >
+          {choices.map((choice) => (
             <label
-              key={value}
+              key={choice.value}
               className="flex items-center gap-2 text-dns-16N-130 text-solid-gray-900"
             >
               <input
                 type="radio"
                 name={groupName}
-                value={value}
-                checked={answer.choice === choice}
-                onChange={() => onChange(date, choice)}
+                value={choice.value}
+                checked={answer?.availability === choice.value}
+                onChange={() => onSelect(candidate.id, choice.value)}
               />
-              {label}
+              {choice.label}
             </label>
           ))}
         </div>
       </fieldset>
+
+      <div className="mt-2">
+        <label
+          htmlFor={noteId}
+          className="text-dns-12M-130 text-solid-gray-700"
+        >
+          備考（任意。参加可否を選ぶと書けます）
+        </label>
+        <textarea
+          id={noteId}
+          rows={2}
+          value={answer?.note ?? ""}
+          disabled={answer === undefined}
+          onChange={(event) => onNoteChange(candidate.id, event.target.value)}
+          placeholder="午前中は別の予定があります"
+          className="mt-1 w-full rounded-md border border-solid-gray-600 bg-white px-3 py-2 text-dns-16N-130 text-solid-gray-900 disabled:bg-solid-gray-50 disabled:text-solid-gray-600"
+        />
+      </div>
     </div>
   );
 }
