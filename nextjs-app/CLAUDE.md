@@ -20,8 +20,10 @@ SSG なので BFF の宛先 `NEXT_PUBLIC_API_BASE_URL` はビルド時に埋め�
 - `app/recommend-panel.tsx` — 候補日提案（推薦系）。参加可否表は読み取り専用の与件で、
   職員が触るのは「開催する候補日程を1つ選ぶ」ラジオと「別のサンプルに差し替え」だけ
 - `app/lib/availability-table.ts` — 参加可否表のモック生成器（#58 のシーム3）
-- `app/lib/meeting-info.ts` — 会議情報の表示文字列と、所要時間から終わる時刻を導く関数。
-  **値域（参加形式・参加可否・所要時間の選択肢）は `contracts/meeting.ts` にある**
+- `app/lib/meeting-info.ts` — 会議情報と参加可否の表示名、所要時間から終わる時刻を導く関数。
+  **値域（参加形式・参加可否・所要時間の選択肢・候補日程の識別子）は `contracts/meeting.ts`**
+- `app/lib/candidate-limit.ts` — 候補日程の件数が入力契約の上限に収まるか。足す側（タブ2）と
+  送る側（タブ3）の両方が引く
 - `app/ai-assistant.tsx` — **抽出系3タブ**が共有する AI入力アシスタント。違うのは `taskId` と
   文言だけ。**`sessionId` と会話ログをタブごとにここで持つ**（タブは別々の会話として進む）。
   候補日提案タブはこれを使わず、`recommend-panel.tsx` が「AI提案」ボタンだけを持つ

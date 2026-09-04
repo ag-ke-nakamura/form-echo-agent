@@ -1,10 +1,7 @@
 // 値として引くので `index.js` ではなくモジュール直指し（理由は `ai-assistant.tsx` の
 // 同じ import）。`meeting.ts` は zod を持たないので、バンドルにスキーマが乗らない。
-import {
-  DURATION_OPTIONS,
-  type MeetingFormat,
-  MEETING_FORMAT_ORDER,
-} from "@contracts/meeting";
+import type { Availability, MeetingFormat } from "@contracts/meeting";
+import { DURATION_OPTIONS } from "@contracts/meeting";
 
 /**
  * 会議情報（会議名・所要時間・参加形式）の表示文字列と、そこから導かれる時刻。
@@ -17,9 +14,6 @@ import {
  * 所要時間は Runtime へ渡す構造化入力に載るようになったので、3プロジェクトの共有語彙に
  * なった。ここに残るのは画面だけが要るもの — 表示名と、終わる時刻の導出である。
  */
-export { DURATION_OPTIONS, MEETING_FORMAT_ORDER };
-export type { MeetingFormat };
-
 /**
  * 参加形式の表示名。`CONTEXT.md` の用語集の語をそのまま使う。
  *
@@ -31,6 +25,20 @@ export const MEETING_FORMAT_LABELS: Record<MeetingFormat, string> = {
   hybrid: "ハイブリッド",
   onsite: "現地のみ",
   online: "オンラインのみ",
+};
+
+/**
+ * 参加可否の表示名。**記号（○×）に畳まない。**
+ *
+ * WHY: 4状態になった以上、2記号では現地とリモート、欠席と未定を区別できず、職員と AI が
+ * 見ている表が食い違う（`CONTEXT.md`「参加可否」は○×を _Avoid_ にしている）。未回答は
+ * ここに無い — 回答の不在はセルが存在しないことで表され、参加可否の値ではない。
+ */
+export const AVAILABILITY_LABELS: Record<Availability, string> = {
+  attend_onsite: "現地",
+  attend_remote: "リモート",
+  absent: "欠席",
+  undecided: "未定",
 };
 
 /**

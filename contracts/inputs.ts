@@ -5,6 +5,7 @@ import {
   durationMinutesSchema,
   meetingFormatSchema,
 } from './fields.js';
+import { MAX_INPUT_CANDIDATES } from './meeting.js';
 import type { TaskId } from './task-ids.js';
 
 /**
@@ -21,19 +22,6 @@ const participantSchema = z
   .string()
   .regex(PARTICIPANT)
   .describe('参加者の識別子。「参加者A」のような形');
-
-/**
- * 1回のリクエストで渡せる候補日程の上限。**出力の上限（`MAX_CANDIDATES`）とは別に持つ。**
- *
- * WHY: あちらは AI が1回の応答で作れる件数で、こちらは画面が抱えている件数である。
- * 職員は AI に何度も作らせ、カレンダーで手でも足せる（#69）ので、入力の件数は
- * 1回の応答の上限を素直に超える。同じ数を使うと、11件目を足した職員がタブ3・タブ4で
- * INVALID_INPUT に当たる — 画面には何も悪いところが無いのに AI だけが使えなくなる。
- *
- * 上限そのものは要る。構造化入力はサニタイズを通らないので、件数を縛らないと
- * 参照ドキュメント 13.1節の入力想定をいくらでも超えられる。
- */
-export const MAX_INPUT_CANDIDATES = 30;
 
 /**
  * 会議の与件のうち、参加可否の選択肢と候補日程の長さを決める2つ。

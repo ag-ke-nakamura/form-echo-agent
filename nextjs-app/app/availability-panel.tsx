@@ -8,6 +8,7 @@ import type { SelectedCandidate } from "./candidates-panel";
 import { AiBadge, type ApplyReport, type FieldSource } from "./field-source";
 import { FormSection } from "./form-section";
 import { AVAILABILITY_TASK_ID } from "./lib/api";
+import { candidateLimitReason } from "./lib/candidate-limit";
 import { candidateRangeText, type MeetingInfo } from "./lib/meeting-info";
 import { MeetingInfoHeader } from "./meeting-info";
 import { ManualInputDivider, TabHeading } from "./screen-layout";
@@ -160,13 +161,14 @@ export function AvailabilityPanel({
           candidates: [...candidates],
         }}
         /*
-          候補日程が0件のときは送らせない。入力契約が1件以上を要求する（AI が答える
-          対象そのものなので）ので、押しても BFF の門で必ず弾かれる。
+          入力契約を満たさない画面状態では送らせない。押しても BFF の門で必ず
+          INVALID_INPUT になり、職員は自分の書いた自然文を疑うことになる。
+          下限（1件以上）はこのタブの事情、上限は契約が持つ。
         */
         submitBlockedReason={
           candidates.length === 0
             ? "候補日程がまだありません。「会議候補日設定」タブで作ると AI に判定させられます。"
-            : null
+            : candidateLimitReason(candidates.length)
         }
         nonAiPathHint="AI を使わなくても、候補日程ごとに手で○×を付けられます。候補日程がまだ無いときは「会議候補日設定」タブで先に作ってください。"
         description={

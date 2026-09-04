@@ -1,5 +1,9 @@
 // 値として引くのは `meeting.ts` だけ（zod を持たないので SSG のバンドルに乗らない）。
-import { type Availability, isAttending } from "@contracts/meeting";
+import {
+  type Availability,
+  candidateIdOf,
+  isAttending,
+} from "@contracts/meeting";
 import type { RecommendScheduleInput } from "@contracts/index.js";
 
 /**
@@ -134,11 +138,6 @@ function participantAt(index: number): string {
   return `参加者${String.fromCharCode("A".charCodeAt(0) + index)}`;
 }
 
-/** 候補日程の識別子。入力契約の `/^candidate-\d{1,6}$/` に適合させる。 */
-function candidateIdAt(index: number): string {
-  return `candidate-${index + 1}`;
-}
-
 /**
  * その候補日程に参加できると答えた人数。**欠席・未定・未回答は数えない。**
  *
@@ -196,7 +195,7 @@ export function generateAvailabilityTable(seed: number): AvailabilityTable {
       shuffled(random, participants).slice(0, availableCount),
     );
     return {
-      id: candidateIdAt(index),
+      id: candidateIdOf(index + 1),
       date: addDays(BASE_DATE, offsets[index]),
       start_time: startTimes[index],
       answers: participants.map((participant) => ({

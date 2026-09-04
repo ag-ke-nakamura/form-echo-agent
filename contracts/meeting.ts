@@ -70,3 +70,44 @@ export function isAttending(availability: Availability): boolean {
 export const DURATION_OPTIONS = [30, 60, 90, 120] as const;
 
 export type DurationMinutes = (typeof DURATION_OPTIONS)[number];
+
+/**
+ * 候補日程を一意に指す識別子の形。**フロントエンドが発番し、AI は自分では作らない**
+ * （ADR-0005）。
+ *
+ * WHY 形を縛るか: 構造化入力はサニタイズも Guardrail チェックも通らない（ADR-0004）。
+ * 検査を通さない値に自由文字列を許すと、そこが prompt injection の窓になる。参加者の
+ * 識別子（`/^参加者[A-Z]$/`）を縛ったのと同じ理由がそのまま候補日程にも要る。
+ *
+ * WHY この形か: 設計書（`temp/design/schedule-recommend-ai-screen-design.md` 8節）が
+ * 例に挙げる `candidate-1` をそのまま採る。本番で候補日程が DB のレコードIDを持つように
+ * なったら、緩めるのはここ1箇所で済む — 突き合わせが識別子ベースであること自体は
+ * 変わらない。桁数を縛るのは、上限の無い数字列でトークンを食わせられないようにするため。
+ *
+ * WHY 値域の側に置くか: 発番する側（画面）と検査する側（`fields.ts` の Zod スキーマ）が
+ * 同じ形を2度書かないため。画面は zod を持ち込めないので、両者が引ける場所はここしかない。
+ */
+export const CANDIDATE_ID_PATTERN = /^candidate-\d{1,6}$/;
+
+/** 連番から候補日程の識別子を作る。発番するのは画面だけで、AI は選ぶだけ。 */
+export function candidateIdOf(sequence: number): string {
+  return `candidate-${sequence}`;
+}
+
+/**
+ * 1回のリクエストで渡せる候補日程の上限。**AI が1回の応答で作れる件数
+ * （`MAX_CANDIDATES`）とは別物。**
+ *
+ * WHY 分けるか: あちらは AI が作れる件数で、こちらは画面が抱えている件数である。
+ * 職員は AI に何度も作らせ、カレンダーで手でも足せる（#69）ので、入力の件数は
+ * 1回の応答の上限を素直に超える。同じ数を使うと、11件目を足した職員がタブ3・タブ4で
+ * INVALID_INPUT に当たる — 画面には何も悪いところが無いのに AI だけが使えなくなる。
+ *
+ * WHY 上限そのものは要るか: 構造化入力はサニタイズを通らないので、件数を縛らないと
+ * 参照ドキュメント 13.1節の入力想定をいくらでも超えられる。
+ *
+ * **画面はこの上限を超える前に手を打つ責任を負う**（`nextjs-app/app/lib/candidate-limit.ts`）。
+ * 超えたリクエストは BFF の門が INVALID_INPUT で弾くが、職員から見ると自分の書いた
+ * 自然文が悪かったように読める。だから値として引ける場所に置いてある。
+ */
+export const MAX_INPUT_CANDIDATES = 30;

@@ -1,11 +1,15 @@
+import {
+  AVAILABILITY_ORDER,
+  DURATION_OPTIONS,
+  MEETING_FORMAT_ORDER,
+} from "@contracts/meeting";
 import { describe, expect, it } from "vitest";
 import {
+  AVAILABILITY_LABELS,
   candidateEndTime,
   candidateRangeText,
-  DURATION_OPTIONS,
   INITIAL_MEETING_INFO,
   MEETING_FORMAT_LABELS,
-  MEETING_FORMAT_ORDER,
   meetingHeadingText,
   meetingSubInfoText,
 } from "./meeting-info";
@@ -26,6 +30,25 @@ describe("MEETING_FORMAT_LABELS", () => {
       onsite: "現地のみ",
       online: "オンラインのみ",
     });
+  });
+});
+
+describe("AVAILABILITY_LABELS", () => {
+  it("4状態すべてに表示名がある", () => {
+    // 記号（○×）に畳まない。2記号では現地とリモート、欠席と未定を区別できない。
+    expect(AVAILABILITY_LABELS).toEqual({
+      attend_onsite: "現地",
+      attend_remote: "リモート",
+      absent: "欠席",
+      undecided: "未定",
+    });
+  });
+
+  it("どの値も別の語で呼ばれる", () => {
+    const labels = AVAILABILITY_ORDER.map(
+      (availability) => AVAILABILITY_LABELS[availability],
+    );
+    expect(new Set(labels).size).toBe(AVAILABILITY_ORDER.length);
   });
 });
 

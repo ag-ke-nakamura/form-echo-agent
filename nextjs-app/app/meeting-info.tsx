@@ -1,12 +1,14 @@
 "use client";
 
-import { useId, useState } from "react";
 import {
   DURATION_OPTIONS,
+  type MeetingFormat,
+  MEETING_FORMAT_ORDER,
+} from "@contracts/meeting";
+import { useId, useState } from "react";
+import {
   INITIAL_MEETING_INFO,
   MEETING_FORMAT_LABELS,
-  MEETING_FORMAT_ORDER,
-  type MeetingFormat,
   type MeetingInfo,
   meetingHeadingText,
   meetingSubInfoText,

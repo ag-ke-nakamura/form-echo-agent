@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { candidateIdSchema, isoDateSchema, timeOfDaySchema } from './fields.js';
+import { MAX_INPUT_CANDIDATES } from './meeting.js';
 import type { TaskId } from './task-ids.js';
 
 /**
@@ -90,8 +91,17 @@ const dateAvailabilitySchema = z.object({
     .describe('その日付に参加できるなら true、できないなら false'),
 });
 
-/** 1回の応答で返せる参加可否の上限。`SKILL.md` の制約と同じ数を置く。 */
-export const MAX_AVAILABILITY_ENTRIES = 10;
+/**
+ * 1回の応答で返せる参加可否の上限。**入力の候補日程の上限と同じ数にする。**
+ *
+ * WHY 候補日程の生成（`MAX_CANDIDATES`）と揃えないか: あちらは AI が新しく作る件数で、
+ * 「候補日程は数件であって全営業日ではない」という判断から来ている。こちらは**渡された
+ * 候補日程に答える**件数なので、渡しうる件数を下回ってはいけない — 下回ると、上限を
+ * 超えた分の候補日程に参加者が答えられないのに、契約もモデルもそれを失敗として
+ * 扱わない（`SKILL.md` が先頭から切り詰めるよう指示するだけ）。**画面には可否の
+ * 付かない候補日程が黙って残る。**
+ */
+export const MAX_AVAILABILITY_ENTRIES = MAX_INPUT_CANDIDATES;
 
 export const parseAvailabilityOutputSchema = z.object({
   availability: z

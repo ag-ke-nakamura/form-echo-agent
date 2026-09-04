@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   AVAILABILITY_ORDER,
+  CANDIDATE_ID_PATTERN,
   DURATION_OPTIONS,
   MEETING_FORMAT_ORDER,
 } from './meeting.js';
@@ -69,23 +70,11 @@ const HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/;
 export const timeOfDaySchema = z.string().regex(HH_MM);
 
 /**
- * 候補日程を一意に指す識別子。**フロントエンドが発番し、AI は自分では作らない**
- * （ADR-0005）。
- *
- * WHY 形を縛るか: 構造化入力はサニタイズも Guardrail チェックも通らない（ADR-0004）。
- * 検査を通さない値に自由文字列を許すと、そこが prompt injection の窓になる。参加者の
- * 識別子（`/^参加者[A-Z]$/`）を縛ったのと同じ理由がそのまま候補日程にも要る。
- *
- * WHY この形か: 設計書（`temp/design/schedule-recommend-ai-screen-design.md` 8節）が
- * 例に挙げる `candidate-1` をそのまま採る。本番で候補日程が DB のレコードIDを持つように
- * なったら、緩めるのはこの1箇所で済む — 突き合わせが識別子ベースであること自体は
- * 変わらない。桁数を縛るのは、上限の無い数字列でトークンを食わせられないようにするため。
+ * 候補日程の識別子。形と発番は `meeting.ts` が持つ（画面が zod を持ち込めないため）。
  */
-const CANDIDATE_ID = /^candidate-\d{1,6}$/;
-
 export const candidateIdSchema = z
   .string()
-  .regex(CANDIDATE_ID)
+  .regex(CANDIDATE_ID_PATTERN)
   .describe('候補日程の識別子。入力で与えられたものをそのまま使う');
 
 /**

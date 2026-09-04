@@ -2,7 +2,7 @@
 
 import type { RecommendScheduleOutput } from "@contracts/index.js";
 // 値として引くのはこのモジュールだけ（理由は `ai-assistant.tsx` の同じ import）。
-import { type Availability, isAttending } from "@contracts/meeting";
+import { isAttending } from "@contracts/meeting";
 import { Info } from "lucide-react";
 import { useId, useMemo, useRef, useState } from "react";
 import { AiErrorNotice, AiPendingNotice, ApplyReportView } from "./ai-notice";
@@ -17,7 +17,11 @@ import {
   type TableCandidate,
 } from "./lib/availability-table";
 import { type ErrorGuidance, errorGuidanceFor } from "./lib/error-guidance";
-import { candidateRangeText, type MeetingInfo } from "./lib/meeting-info";
+import {
+  AVAILABILITY_LABELS,
+  candidateRangeText,
+  type MeetingInfo,
+} from "./lib/meeting-info";
 import { TabHeading } from "./screen-layout";
 
 /**
@@ -60,19 +64,6 @@ function candidateLabel(
 ): string {
   return `${candidate.date} ${candidateRangeText(candidate.start_time, meetingInfo.durationMinutes)}`;
 }
-
-/**
- * 参加可否の表示。**未回答と書き分ける**ために語で書く（ストーリー11）。
- *
- * 記号（○×）に畳まない。4状態になった以上、○×の2記号では現地とリモート、欠席と
- * 未定を区別できず、職員と AI が見ている表が食い違う（`CONTEXT.md`「参加可否」）。
- */
-const AVAILABILITY_LABELS: Record<Availability, string> = {
-  attend_onsite: "現地",
-  attend_remote: "リモート",
-  absent: "欠席",
-  undecided: "未定",
-};
 
 /** 非AI経路の一文。失敗の案内に添える（他タブは `AiAssistant` の prop で渡す）。 */
 const NON_AI_PATH_HINT = "AI を使わなくても、表から候補日程を1つ選べます。";

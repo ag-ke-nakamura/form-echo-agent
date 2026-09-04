@@ -1,6 +1,10 @@
 "use client";
 
-import type { ParseCandidatesOutput } from "@contracts/index.js";
+import type {
+  ParseAvailabilityInput,
+  ParseCandidatesOutput,
+} from "@contracts/index.js";
+import { candidateIdOf } from "@contracts/meeting";
 import { useId, useRef, useState } from "react";
 import { AiAssistant } from "./ai-assistant";
 import {
@@ -11,6 +15,7 @@ import {
 } from "./field-source";
 import { FormSection } from "./form-section";
 import { CANDIDATES_TASK_ID } from "./lib/api";
+import { candidateLimitReason } from "./lib/candidate-limit";
 import { candidateRangeText, type MeetingInfo } from "./lib/meeting-info";
 import { type MeetingInfoApi, MeetingInfoFields } from "./meeting-info";
 import { ManualInputDivider, TabHeading } from "./screen-layout";
@@ -68,22 +73,14 @@ function hasManualInput(row: CandidateRow): boolean {
 }
 
 /**
- * 候補日程の識別子。入力契約の `/^candidate-\d{1,6}$/` に適合させる。
- *
- * 画面だけの識別子だった頃は `row-0` で足りたが、いまは Runtime と BFF が同じ形で
- * 検査する（ADR-0004 の「構造化入力に自由文字列を置かない」が候補日程にも及ぶ）。
- */
-function candidateId(index: number): string {
-  return `candidate-${index}`;
-}
-
-/**
  * 非AI経路の起点。空の1行から始めれば、AI を一度も呼ばずに手で埋めきれる。
  *
- * id を固定値にするのは SSG のため。初期状態で乱数や連番を採ると、
- * ビルド時に描いた HTML とブラウザの初回描画が食い違う。
+ * 識別子を固定値にするのは SSG のため。初期状態で乱数や連番を採ると、
+ * ビルド時に描いた HTML とブラウザの初回描画が食い違う。形と発番は契約が持つ
+ * （`contracts/meeting.ts` の `candidateIdOf`）— 画面だけの識別子だった頃は `row-0` で
+ * 足りたが、いまは Runtime と BFF が同じ形で検査する。
  */
-const INITIAL_ROWS: CandidateRow[] = [blankRow(candidateId(0))];
+const INITIAL_ROWS: CandidateRow[] = [blankRow(candidateIdOf(0))];
 
 /**
  * 候補日程タブの状態を外から持てるようにしたもの。
@@ -102,12 +99,11 @@ export type CandidateRowsApi = {
   reset: () => void;
 };
 
-/** 契約に載る形の候補日程ひとつ。Runtime へはこの形で渡る。 */
-export type SelectedCandidate = {
-  id: string;
-  date: string;
-  start_time: string;
-};
+/**
+ * 契約に載る形の候補日程ひとつ。入力契約から導き、画面側で書き写さない
+ * （契約に欄が増減したとき、型検査がこの画面まで届くようにする）。
+ */
+export type SelectedCandidate = ParseAvailabilityInput["candidates"][number];
 
 /**
  * 他のタブと Runtime へ渡す候補日程。
@@ -177,7 +173,7 @@ export function useCandidateRows(): CandidateRowsApi {
   /** 識別子を配る。setState の updater は純粋に保つので、必ず外側で呼ぶ。 */
   function takeRowIds(count: number): string[] {
     const ids = Array.from({ length: count }, (_, offset) =>
-      candidateId(nextRowNumber.current + offset),
+      candidateIdOf(nextRowNumber.current + offset),
     );
     nextRowNumber.current += count;
     return ids;
@@ -266,6 +262,12 @@ export function CandidatesPanel({
   meetingInfo: MeetingInfoApi;
 }) {
   const { rows, setField, addRow, removeRow, applyResult, reset } = candidates;
+  /*
+    上限は入力契約が持つ（`contracts/meeting.ts`）。足せてしまうと、超えた瞬間に
+    タブ3・タブ4の AI だけが INVALID_INPUT で使えなくなり、画面のどこにも
+    「多すぎる」と出ない。
+  */
+  const limitReason = candidateLimitReason(rows.length + 1);
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -321,10 +323,16 @@ export function CandidatesPanel({
         <button
           type="button"
           onClick={addRow}
-          className="mt-6 rounded-md border border-solid-gray-600 bg-white px-4 py-2 text-dns-14M-130 text-solid-gray-900"
+          disabled={limitReason !== null}
+          className="mt-6 rounded-md border border-solid-gray-600 bg-white px-4 py-2 text-dns-14M-130 text-solid-gray-900 disabled:opacity-40"
         >
           候補日程を追加
         </button>
+        {limitReason !== null && (
+          <p className="mt-1 text-dns-12N-130 text-solid-gray-600">
+            {limitReason}
+          </p>
+        )}
       </FormSection>
     </div>
   );
