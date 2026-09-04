@@ -8,16 +8,34 @@
  */
 export type FieldSource = "manual" | "ai";
 
-export function AiBadge() {
+/**
+ * 設計書 5.2節のバッジ。文言も設計書に合わせる。
+ *
+ * 参加可否タブだけ「AI判定」（guest-response 設計書 6.2節）で、AI がしたことが
+ * 「生成」ではなく既にある候補への「判定」だから。既定は他3タブの「AIが生成」。
+ *
+ * `aria-label` は設計書 7.2節の指定。バッジは値の隣に置かれるので、字面だけだと
+ * 何が AI 由来なのかが読み上げでは分からない。
+ */
+export function AiBadge({
+  label = "AIが生成",
+  description = "この値はAIが生成しました",
+}: {
+  label?: string;
+  description?: string;
+} = {}) {
   return (
-    <span className="rounded-full bg-blue-600/10 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:bg-blue-400/15 dark:text-blue-300">
-      AI が入力
+    <span
+      aria-label={description}
+      className="rounded bg-solid-blue-100 px-2 py-1 text-dns-12M-130 text-solid-blue-900"
+    >
+      {label}
     </span>
   );
 }
 
 /**
- * 再生成が実際にフォームへ何をしたか。AI チャット欄が会話ログのターンに添える。
+ * 再生成が実際にフォームへ何をしたか。AI入力アシスタントが会話ログのターンに添える。
  *
  * WHY: 「再生成は AI 由来の値だけを上書きし、手で直した値には触らない」と決めた
  * ため（#38）、職員から見ると**追加で指示したのに変わらない項目**が出る。触らな

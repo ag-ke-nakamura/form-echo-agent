@@ -1,11 +1,13 @@
 "use client";
 
 import type { ParseAvailabilityOutput } from "@contracts/index.js";
+import { Info } from "lucide-react";
 import { useId, useState } from "react";
-import { AiChatPanel } from "./ai-chat-panel";
+import { AiAssistant } from "./ai-assistant";
 import { AiBadge, type ApplyReport, type FieldSource } from "./field-source";
 import { FormSection } from "./form-section";
 import { AVAILABILITY_TASK_ID } from "./lib/api";
+import { ManualInputDivider, TabHeading } from "./screen-layout";
 
 /**
  * 参加可否ひとつ。未回答は `null`、それ以外は出力契約の `available` をそのまま持つ。
@@ -27,6 +29,12 @@ type AvailabilityPanelProps = {
   dates: readonly string[];
 };
 
+/*
+  このタブの AI入力アシスタントの文言だけ `CONTEXT.md` の用語集と食い違う（用語集は
+  「出欠」「○×」を _Avoid_ とし「参加可否」を正としている）。設計書が指定した文言を
+  そのまま出すことが #73 の受け入れ条件で、ここは設計書の字面が優先する。参加可否が
+  4状態になる #70 で設計書側の語も動くので、揃えるのはそのとき。
+*/
 export function AvailabilityPanel({ dates }: AvailabilityPanelProps) {
   /**
    * 日付をキーにした参加可否。行の識別子を持たない。
@@ -106,23 +114,41 @@ export function AvailabilityPanel({ dates }: AvailabilityPanelProps) {
   const dropped = lastAnswers.filter((entry) => !known.has(entry.date));
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[1fr_20rem]">
-      <FormSection taskId={AVAILABILITY_TASK_ID}>
-        <h2 className="text-lg font-semibold">参加可否回答</h2>
-        <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          AI を使わずに、各候補日程に手で○×を付けられます。候補日程そのものは
-          「会議候補日設定」タブで足し引きします。
-        </p>
+    <div className="mx-auto max-w-3xl">
+      <TabHeading>会議ロジ参加可否回答</TabHeading>
 
+      <AiAssistant
+        taskId={AVAILABILITY_TASK_ID}
+        nonAiPathHint="AI を使わなくても、候補日程ごとに手で○×を付けられます。候補日程がまだ無いときは「会議候補日設定」タブで先に作ってください。"
+        description={
+          "自然な言葉で出欠を入力すると、AIが自動的に判定します。\n" +
+          "例: 「10月15日は出席可能、17日は不可」「火曜は全部出席できます」"
+        }
+        placeholder="出欠を自然な言葉で入力してください..."
+        followUpPlaceholder="16日も参加できるようになりました"
+        submitLabel="AIで出欠を判定"
+        pendingLabel="判定中..."
+        generatingMessage="AIが出欠を判定しています..."
+        onResult={applyResult}
+        onReset={reset}
+      />
+
+      <ManualInputDivider />
+
+      <FormSection taskId={AVAILABILITY_TASK_ID}>
         {dropped.length > 0 && (
           <div
             role="status"
-            className="mt-6 rounded-md border border-amber-500/40 p-3 text-sm"
+            className="mb-6 rounded-md border-l-4 border-solid-yellow-700 bg-solid-yellow-50 p-3"
           >
-            <p className="font-medium">
+            <p className="flex items-center gap-2 text-dns-14M-130 text-solid-yellow-900">
+              <Info
+                aria-hidden="true"
+                className="size-5 shrink-0 text-solid-yellow-800"
+              />
               候補日程に無い日付があり、次の回答は反映されませんでした。
             </p>
-            <ul className="mt-2 list-disc pl-5">
+            <ul className="mt-2 list-disc pl-5 text-dns-14N-130 text-solid-gray-900">
               {dropped.map((entry) => (
                 <li key={entry.date}>
                   {entry.date} —{" "}
@@ -130,7 +156,7 @@ export function AvailabilityPanel({ dates }: AvailabilityPanelProps) {
                 </li>
               ))}
             </ul>
-            <p className="mt-2 text-black/60 dark:text-white/60">
+            <p className="mt-2 text-dns-14N-130 text-solid-gray-700">
               「会議候補日設定」タブでこの日付を足してからもう一度送るか、AI
               への指示を書き直してください。
             </p>
@@ -138,12 +164,12 @@ export function AvailabilityPanel({ dates }: AvailabilityPanelProps) {
         )}
 
         {dates.length === 0 ? (
-          <p className="mt-6 text-sm text-black/60 dark:text-white/60">
+          <p className="text-dns-14N-130 text-solid-gray-700">
             候補日程がまだありません。「会議候補日設定」タブで候補日程を作ると、
             ここに並んで○×を付けられるようになります。
           </p>
         ) : (
-          <ul className="mt-6 grid gap-4">
+          <ul className="grid gap-4">
             {dates.map((date, index) => (
               <li key={date}>
                 <AvailabilityFields
@@ -157,16 +183,6 @@ export function AvailabilityPanel({ dates }: AvailabilityPanelProps) {
           </ul>
         )}
       </FormSection>
-
-      <AiChatPanel
-        taskId={AVAILABILITY_TASK_ID}
-        nonAiPathHint="AI を使わなくても、候補日程ごとに手で○×を付けられます。候補日程がまだ無いときは「会議候補日設定」タブで先に作ってください。"
-        description="参加できる日・できない日を文章で書くと、左の候補日程に○×を付けます。あとから答えを変える指示も送れます。「15日」のように月を省いた書き方は今日以降の直近の15日として解決されるので、別の月なら月から書いてください。"
-        placeholder="15日と17日は大丈夫ですが16日は無理です"
-        followUpPlaceholder="16日も参加できるようになりました"
-        onResult={applyResult}
-        onReset={reset}
-      />
     </div>
   );
 }
@@ -194,10 +210,12 @@ function AvailabilityFields({
   const groupName = useId();
 
   return (
-    <div className="rounded-md border border-black/10 p-4 dark:border-white/15">
+    <div className="rounded-md border border-solid-gray-300 p-4">
       <div className="flex items-center gap-2">
-        <span className="text-sm font-medium">候補日程 {index + 1}</span>
-        <span className="text-sm text-black/60 dark:text-white/60">{date}</span>
+        <span className="text-dns-14M-130 text-solid-gray-900">
+          候補日程 {index + 1}
+        </span>
+        <span className="text-dns-14N-130 text-solid-gray-700">{date}</span>
       </div>
 
       <fieldset className="mt-3">
@@ -205,13 +223,18 @@ function AvailabilityFields({
           印は候補日程の見出しではなく可否の側に付ける。日付は候補日程タブで職員が
           決めたものなので、全体に付けると「AI が日付も入れた」と読めてしまう。
         */}
-        <legend className="flex items-center gap-2 text-xs text-black/60 dark:text-white/60">
+        <legend className="flex items-center gap-2 text-dns-12M-130 text-solid-gray-700">
           参加可否
-          {answer.source === "ai" && <AiBadge />}
+          {answer.source === "ai" && (
+            <AiBadge label="AI判定" description="この値はAIが判定しました" />
+          )}
         </legend>
         <div className="mt-1 flex gap-4 py-2">
           {CHOICES.map(({ value, choice, label }) => (
-            <label key={value} className="flex items-center gap-2 text-sm">
+            <label
+              key={value}
+              className="flex items-center gap-2 text-dns-16N-130 text-solid-gray-900"
+            >
               <input
                 type="radio"
                 name={groupName}

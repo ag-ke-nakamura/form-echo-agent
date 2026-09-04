@@ -2,7 +2,7 @@
 
 import type { ParseCandidatesOutput } from "@contracts/index.js";
 import { useId, useRef, useState } from "react";
-import { AiChatPanel } from "./ai-chat-panel";
+import { AiAssistant } from "./ai-assistant";
 import {
   AiBadge,
   type ApplyReport,
@@ -11,6 +11,7 @@ import {
 } from "./field-source";
 import { FormSection } from "./form-section";
 import { CANDIDATES_TASK_ID } from "./lib/api";
+import { ManualInputDivider, TabHeading } from "./screen-layout";
 
 /**
  * 職員が直接編集する欄。出力契約の候補日程から導き、UI 側で列挙し直さない
@@ -242,14 +243,29 @@ export function CandidatesPanel({
   const { rows, setField, addRow, removeRow, applyResult, reset } = candidates;
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[1fr_20rem]">
-      <FormSection taskId={CANDIDATES_TASK_ID}>
-        <h2 className="text-lg font-semibold">会議候補日設定</h2>
-        <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          AI を使わずに、最初からこのフォームだけで候補日程を足せます。
-        </p>
+    <div className="mx-auto max-w-3xl">
+      <TabHeading>会議作成 STEP3: 候補日程</TabHeading>
 
-        <ul className="mt-6 grid gap-4">
+      <AiAssistant
+        taskId={CANDIDATES_TASK_ID}
+        nonAiPathHint="AI を使わなくても、「候補日程を追加」から手で足せます。"
+        description={
+          "自然な言葉で候補日程を入力すると、AIが自動的にカレンダーに反映します。\n" +
+          "例: 「来月の午後、できれば火曜か木曜」「10月第2週の14時から」"
+        }
+        placeholder="候補日程を自然な言葉で入力してください..."
+        followUpPlaceholder="水曜は避けたい"
+        submitLabel="AIで候補日程を生成"
+        pendingLabel="生成中..."
+        generatingMessage="AIが候補日程を生成しています..."
+        onResult={applyResult}
+        onReset={reset}
+      />
+
+      <ManualInputDivider />
+
+      <FormSection taskId={CANDIDATES_TASK_ID}>
+        <ul className="grid gap-4">
           {rows.map((row, index) => (
             <li key={row.id}>
               <CandidateFields
@@ -263,7 +279,7 @@ export function CandidatesPanel({
         </ul>
 
         {rows.length === 0 && (
-          <p className="mt-6 text-sm text-black/60 dark:text-white/60">
+          <p className="text-dns-14N-130 text-solid-gray-700">
             候補日程がありません。下のボタンで足すか、AI に作らせてください。
           </p>
         )}
@@ -271,21 +287,11 @@ export function CandidatesPanel({
         <button
           type="button"
           onClick={addRow}
-          className="mt-6 rounded-md border border-black/15 px-4 py-2 text-sm font-medium dark:border-white/20"
+          className="mt-6 rounded-md border border-solid-gray-600 bg-white px-4 py-2 text-dns-14M-130 text-solid-gray-900"
         >
           候補日程を追加
         </button>
       </FormSection>
-
-      <AiChatPanel
-        taskId={CANDIDATES_TASK_ID}
-        nonAiPathHint="AI を使わなくても、「候補日程を追加」から手で足せます。"
-        description="会議の条件を文章で書くと、左に候補日程の列を作ります。条件を足して作り直させることもできます。"
-        placeholder="来月の午後で3時間"
-        followUpPlaceholder="水曜は避けたい"
-        onResult={applyResult}
-        onReset={reset}
-      />
     </div>
   );
 }
@@ -308,14 +314,16 @@ function CandidateFields({
   const endId = useId();
 
   return (
-    <div className="rounded-md border border-black/10 p-4 dark:border-white/15">
+    <div className="rounded-md border border-solid-gray-300 p-4">
       <div className="flex items-center gap-2">
-        <span className="text-sm font-medium">候補日程 {index + 1}</span>
+        <span className="text-dns-14M-130 text-solid-gray-900">
+          候補日程 {index + 1}
+        </span>
         {hasAiField(row) && <AiBadge />}
         <button
           type="button"
           onClick={() => onRemove(row.id)}
-          className="ml-auto text-xs text-black/50 underline underline-offset-2 dark:text-white/50"
+          className="ml-auto text-dns-12N-130 text-solid-gray-600 underline underline-offset-2"
         >
           削除
         </button>
@@ -325,7 +333,7 @@ function CandidateFields({
         <div>
           <label
             htmlFor={dateId}
-            className="text-xs text-black/60 dark:text-white/60"
+            className="text-dns-12M-130 text-solid-gray-700"
           >
             日付
           </label>
@@ -334,13 +342,13 @@ function CandidateFields({
             type="date"
             value={row.fields.date.value}
             onChange={(event) => onChange(row.id, "date", event.target.value)}
-            className="mt-1 w-full rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20"
+            className="mt-1 w-full rounded-md border border-solid-gray-600 bg-white px-3 py-2 text-dns-16N-130 text-solid-gray-900"
           />
         </div>
         <div>
           <label
             htmlFor={startId}
-            className="text-xs text-black/60 dark:text-white/60"
+            className="text-dns-12M-130 text-solid-gray-700"
           >
             開始時刻
           </label>
@@ -351,13 +359,13 @@ function CandidateFields({
             onChange={(event) =>
               onChange(row.id, "start_time", event.target.value)
             }
-            className="mt-1 w-full rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20"
+            className="mt-1 w-full rounded-md border border-solid-gray-600 bg-white px-3 py-2 text-dns-16N-130 text-solid-gray-900"
           />
         </div>
         <div>
           <label
             htmlFor={endId}
-            className="text-xs text-black/60 dark:text-white/60"
+            className="text-dns-12M-130 text-solid-gray-700"
           >
             終了時刻
           </label>
@@ -368,7 +376,7 @@ function CandidateFields({
             onChange={(event) =>
               onChange(row.id, "end_time", event.target.value)
             }
-            className="mt-1 w-full rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20"
+            className="mt-1 w-full rounded-md border border-solid-gray-600 bg-white px-3 py-2 text-dns-16N-130 text-solid-gray-900"
           />
         </div>
       </div>

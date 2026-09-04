@@ -6,7 +6,10 @@ Next.js 16 + pnpm。検証環境のフロントエンド層で、BFF（`hono-app
 SSG なので BFF の宛先 `NEXT_PUBLIC_API_BASE_URL` はビルド時に埋め込まれる。
 `agentcore.json` からは参照されない（デプロイ対象は `agent-app/` だけ）。
 
-画面は1つで、AI 機能ごとのタブを持つ（`app/form-echo-tabs.tsx`）。
+画面は1つで、AI 機能ごとのタブを持つ（`app/form-echo-tabs.tsx`）。**タブ1〜3 は縦積み**で、
+上から「見出し → AI入力アシスタント（折りたたみ、初期は展開）→ 区切り線『または、手動で入力』
+→ 非AI経路のフォーム」の順に並ぶ（#73。設計書 `temp/design/` の共通レイアウト）。
+タブ4だけはこの構造を採らない — 自然文入力欄も区切り線も持たない。
 
 - `app/reservation-panel.tsx` — 交通IC予約。スカラーの平坦なマップ
 - `app/candidates-panel.tsx` — 会議候補日設定。候補日程の配列。**状態は `useCandidateRows()`
@@ -17,8 +20,12 @@ SSG なので BFF の宛先 `NEXT_PUBLIC_API_BASE_URL` はビルド時に埋め�
   ラジオと「別のサンプルに差し替え」だけ
 - `app/lib/availability-table.ts` — 参加可否表のモック生成器。**このリポジトリで唯一
   テストを持つフロントエンドのモジュール**（#58 のシーム3）
-- `app/ai-chat-panel.tsx` — 全タブ共通の AI チャット欄。違うのは `taskId` と文言だけ。
-  **`sessionId` と会話ログをタブごとにここで持つ**（タブは別々の会話として進む）
+- `app/ai-assistant.tsx` — **抽出系3タブ**が共有する AI入力アシスタント。違うのは `taskId` と
+  文言だけ。**`sessionId` と会話ログをタブごとにここで持つ**（タブは別々の会話として進む）。
+  候補日提案タブはこれを使わず、`recommend-panel.tsx` が「AI提案」ボタンだけを持つ
+- `app/ai-notice.tsx` — 失敗の表示（`role="alert"` `aria-live="assertive"`）。AI入力アシスタントと
+  候補日提案タブの両方から引く
+- `app/screen-layout.tsx` — タブ見出しと「または、手動で入力」の区切り線
 - `app/field-source.tsx` — 「AI 由来か手入力か」の印と、再生成の報告（`ApplyReport`）。
   **タブ間で共有するのはこれだけ**で、フォームの状態モデルはタブごとに分ける
   （汎用のフォーム状態モデルを作らない）
@@ -42,10 +49,14 @@ SSG なので BFF の宛先 `NEXT_PUBLIC_API_BASE_URL` はビルド時に埋め�
 | 参加可否回答 | 日付 | 手で付けた可否は本人の予定そのもので、自然文からの読み取りより確か |
 | 候補日提案 | 開催する候補日程の選択 | AI が埋めるのは順位と理由だけで、職員が触れる欄はこの1つしかない |
 
-触らなかった分は `ApplyReport` に載せて会話ログに出す。**`message` では代われない** —
-あれはモデルが書いた文であって、画面が実際に反映したかどうかは保証しない。
+触らなかった分は `ApplyReport` に載せて出す。**`message` では代われない** — あれは
+モデルが書いた文であって、画面が実際に反映したかどうかは保証しない。抽出系3タブは
+会話ログのターンに、候補日提案タブは AI提案バナーの下に添える（`ApplyReportView`）。
 
-`onResult` / `onReset` は `AiChatPanel` の中で ref に写して最新のものを呼ぶ。応答を待つ間に
+**ADR-0006（プレビューを挟んでから反映する）はまだ入っていない**（#65）。4タブとも
+応答が来た瞬間にフォームへ書き込む従来の形のままで、#73 が変えたのは器だけ。
+
+`onResult` / `onReset` は `AiAssistant` の中で ref に写して最新のものを呼ぶ。応答を待つ間に
 職員がフォームを触ると、実行中のクロージャが掴んでいる古い関数が編集前の状態を見て上書きの
 可否を決めてしまい、待っている間の手入力を踏み潰す。
 
@@ -59,6 +70,18 @@ SSG なので BFF の宛先 `NEXT_PUBLIC_API_BASE_URL` はビルド時に埋め�
 
 出力契約は tsconfig の `paths` で `@contracts/*` として引く（emit しないので `rootDir` の
 制約を受けない）。詳細はリポジトリルートの `CLAUDE.md` と `docs/adr/0002-contracts-as-plain-ts.md`。
+
+## デザイントークン（#73）
+
+設計書に出てくるクラス名がそのままコードに現れるよう、`app/globals.css` の `@theme` に色24個・
+タイポグラフィ8個を置いている。**デジタル庁デザインシステム（DADS）の名前を借りているだけで
+値は DADS のものではない** — 理由は `globals.css` のコメント。設計書に無いトークンを足さない
+（使われないトークンは「設計書にある」の証拠にならない）。
+
+設計書は明るい面だけで書かれているので、`prefers-color-scheme: dark` の反転は持たない。
+`dark:` 変種を書くと、トークンで塗った面だけが明るいまま浮く。
+
+アイコンは `lucide-react`（**dependency**。ブラウザへ配られるので devDependency ではない）。
 
 ## Commands
 

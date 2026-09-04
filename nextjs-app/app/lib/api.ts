@@ -27,7 +27,7 @@ export const AVAILABILITY_TASK_ID =
 export const RECOMMEND_TASK_ID = "meeting.recommend-schedule" satisfies TaskId;
 
 /**
- * taskId から出力の型を引く表。AI チャット欄はこの表を通してタブに紐づく。
+ * taskId から出力の型を引く表。AI入力アシスタントはこの表を通してタブに紐づく。
  *
  * 出力契約の `OUTPUT_SCHEMAS` から導く。同じ対応を手で書き写すと、taskId を
  * 足すときの編集箇所が `ALLOWED_TASK_IDS` / `OUTPUT_SCHEMAS` / ここの3つになり、

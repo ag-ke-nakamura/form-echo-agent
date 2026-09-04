@@ -12,6 +12,7 @@
     "format:check": "biome format ."
   },
   "dependencies": {
+    "lucide-react": "^1.40.0",
     "next": "16.3.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
