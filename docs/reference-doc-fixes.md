@@ -241,7 +241,11 @@ agentcore add gateway-target --name WebSearch --gateway FormEchoWebSearch \
 
 Runtime 側も取り違えを起動時に落とす（`config.ts` の `resolveWebSearchGatewayUrl` がホスト名のリージョンを検査する）。
 
-**ただし「検索クエリと結果が ap-northeast-1 に閉じる」は証明できていない。** 上の3点が言うのは *我々が ap-northeast-1 のエンドポイントにしか話しかけない* ことまでで、**コネクタがその先で検索事業者へどう出ていくかは観測していない。** 7.1節の「Web Search は strictly regional」は構成と矛盾しないが、裏付けるには CloudTrail のデータイベントか AWS への確認が要る。**本番設計へ持っていくなら、ここは申し送りになる。**
+**コネクタの先については、AWS 自身が文書で保証している。** Web Search Tool のドキュメントの「Private by design」が次のように書いており、構成からの推論では届かない部分をここが埋める。
+
+> When your agent issues a search, the query is served entirely within AWS infrastructure. Customer queries are **not sent to a third-party search engine or routed outside AWS**. The Gateway authenticates to the AWS-owned connector and routes the request internally, so the data path stays inside AWS end to end.
+
+Amazon が自前の索引を運用しており（第三者検索エンジンのラッパーではない）、利用可能リージョンも `us-east-1` / `eu-west-1` / `ap-northeast-1` の3つに限られる。**指定リージョンのみで通信することは別途確認済み**（2026-09-04）。7.1節の「Web Search は strictly regional でクロスリージョンルーティングが発生しない」はこれで裏付けられた。
 
 呼ぶ側（Runtime）に要るのは Gateway を叩く権限だけで、**Web 検索そのものの権限は持たない。**
 
@@ -260,11 +264,17 @@ Runtime 側も取り違えを起動時に落とす（`config.ts` の `resolveWeb
 
 **対応**: Runtime が実際に取得した Search Result の出典を、AI の出力とは別に応答へ載せた（`AiTaskSuccessResponse.citations`）。画面はこちらを表示の正典にする。**遵守をモデルの協力に依存させない。**
 
-- Runtime — `citations` に `{title, url, publishedDate?}` を載せる。**本文（`text`）は載せない**（bulk での抽出・保存・複製の禁止に触れないため、かつ表示に要らないため）。URL で重複を落とす
+- Runtime — `citations` に `{title, url, publishedDate?}` を載せる。**本文（`text`）は載せない** — 表示の義務が掛かっているのは出典とリンクであって本文ではなく、載せると応答が1件あたり数千字ぶん太るため。URL で重複を落とす
 - BFF — 契約で検査して通す。**壊れた出典は黙って落とさず `PARSE_FAILED` にする**（落とすと、規約に反したまま画面が成功として描く）
 - 画面 — 出典・リンク・ホスト名・公開日を並べる。`sources` は AI の出力契約に残るが、**リンクの表示はもう `sources` から導かない**
 
 **修正案**: 7.1節に利用条件として明記する。「`sources` を画面に出す」を透明性の推奨ではなく**必須**として書き、表示の根拠を AI の出力ではなく実際の検索結果に置くこと。**本番設計でも同じ制約が掛かる。**
+
+##### (a) の「一括で」を読み違えないこと
+
+**一括での抽出・保存・再現の禁止は、`text` を応答に載せない理由にはならない。** 禁じているのは *in bulk*（一括で）の収集であって、検索結果の内容を回答の根拠に使うことではない。**Runtime は現に本文をモデルへ渡しており**（渡さなければ裏取りが成立しない）、応答に載せないことをこの条項で説明すると自分たちの実装と食い違う。
+
+一度その説明を書いたので残す。**この条項が実際に効くのは、検索結果を溜める・永続化する・索引を作る使い方をしたとき**である。現状の実装はどれも踏んでいない — 本文はリクエストの実行文脈にしか存在せず、応答にもログにも残らない。**検索結果の本文を監査ログや精度評価の記録に残す設計を足すなら、そこで初めてこの条項の検討が要る**（#23 は監査ログの CloudWatch 記録と精度評価の DynamoDB 記録をどちらも Out of Scope にしているので、本検証環境では起きない）。
 
 **あわせて公開日の形が2つある。** ドキュメントの Response format の例は `2024-10-07` だが、実物は `05:00PM, Thursday, August 27 2026, PDT` の形でも返る（`new Date()` が解釈できない）。分からないときは `unknown` という文字列が入る。
 

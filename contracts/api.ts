@@ -87,8 +87,14 @@ export type Usage = z.infer<typeof usageSchema>;
  * Search Result in any output you surface to your end users that uses the Search
  * Result.」— 出典（`title`）とリンク（`url`）の両方を、職員に見せる出力に添える。
  *
- * **本文（`text`）は載せない。** 同じ規約が Search Result の内容を bulk で
- * 抽出・保存・複製することを禁じており、表示に要るのは出典とリンクだけである。
+ * **本文（`text`）は載せない。** 表示の義務が掛かっているのは出典とリンクであって
+ * 本文ではなく、載せると応答が1件あたり数千字ぶん太る。
+ *
+ * **「一括での抽出・保存・再現の禁止」を理由にしてはいけない。** あの条項が禁じるのは
+ * bulk での収集であって、検索結果の内容を回答の根拠に使うことではない — Runtime は
+ * 現に本文をモデルへ渡しており（渡さなければ裏取りが成立しない）、応答に載せない
+ * 理由をそこへ求めると自分たちの実装と食い違う。**この条項が効くのは、検索結果を
+ * 溜める・永続化する・索引を作るといった使い方をしたときである。**
  */
 export const webSearchCitationSchema = z.object({
   /** 出典（ページのタイトル）。Search Result が持たなければ URL で代える。 */
