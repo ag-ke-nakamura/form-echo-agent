@@ -1,5 +1,4 @@
 import type { z } from 'zod';
-import { candidateKey } from './candidate-key.js';
 import type { RecommendScheduleInput } from './inputs.js';
 import { recommendScheduleInputSchema } from './inputs.js';
 import {
@@ -10,16 +9,18 @@ import {
 import type { TaskId } from './task-ids.js';
 
 /**
- * 提案が入力の候補日程と一致しているかを見る（ADR-0004）。
+ * 提案が入力の候補日程と一致しているかを見る（ADR-0004 / ADR-0005）。
  *
- * WHY: 抽出系には無かった検査で、入力と出力の両方を見られることから来る。
- * ADR-003 は「AI が候補日程に無い日付を返すとフロントエンドで黙って落ちる」と書いたが、
- * 推薦系ではそれが順位の抜けになる — 順位は 1..N の順列なので、入力に無い候補日程が
- * 1つ混ざると入力にある候補日程が1つ順位を失う。画面は落ちた行を無印のまま描き、
- * 職員には「AI が触らなかった候補日程」と見分けが付かない。
+ * WHY: 抽出系には無かった検査で、入力と出力の両方を見られることから来る。入力に無い
+ * 候補日程が1つ混ざると順位の抜けになる — 順位は 1..N の順列なので、入力にある候補日程が
+ * 1つ順位を失う。画面は落ちた行を無印のまま描き、職員には「AI が触らなかった候補日程」と
+ * 見分けが付かない。
  *
  * 出力契約（`recommendScheduleOutputSchema`）は単独ではこれを言えない。入力を知らないため、
  * 順位が 1..N の順列であることまでしか検査できない。
+ *
+ * 突き合わせは**識別子**で行う（ADR-0005）。以前は3項目を連結した鍵を組み立てていたが、
+ * それは契約に識別子が無かったからで、その理由は消えた。
  *
  * 一致しない理由の文字列を返す（一致していれば null）。件数ではなく候補日程を名指し
  * するのは、プロンプトの効きを追うのがこの検証環境の目的だから — 何を取りこぼし、
@@ -29,11 +30,13 @@ export function findRecommendationMismatch(
   input: RecommendScheduleInput,
   output: RecommendScheduleOutput,
 ): string | null {
-  const expected = new Set(input.candidates.map(candidateKey));
-  const returned = new Set(output.recommendations.map(candidateKey));
+  const expected = new Set(input.candidates.map((candidate) => candidate.id));
+  const returned = new Set(
+    output.recommendations.map((entry) => entry.candidate_id),
+  );
 
-  const unexpected = [...returned].filter((key) => !expected.has(key));
-  const missing = [...expected].filter((key) => !returned.has(key));
+  const unexpected = [...returned].filter((id) => !expected.has(id));
+  const missing = [...expected].filter((id) => !returned.has(id));
 
   if (unexpected.length === 0 && missing.length === 0) return null;
 

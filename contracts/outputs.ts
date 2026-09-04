@@ -1,10 +1,5 @@
 import { z } from 'zod';
-import {
-  candidateFieldsSchema,
-  END_AFTER_START_ERROR,
-  endsAfterStart,
-  isoDateSchema,
-} from './fields.js';
+import { candidateIdSchema, isoDateSchema, timeOfDaySchema } from './fields.js';
 import type { TaskId } from './task-ids.js';
 
 /**
@@ -47,17 +42,27 @@ export type ParseReservationOutput = z.infer<
   typeof parseReservationOutputSchema
 >;
 
-const candidateSchema = candidateFieldsSchema.refine(
-  endsAfterStart,
-  END_AFTER_START_ERROR,
-);
+/**
+ * 新しく作られた候補日程ひとつ。**識別子を持たない。**
+ *
+ * WHY: 識別子はフロントエンドが発番し、AI は自分では作らない（ADR-0005）。このタスクは
+ * まだ存在しない候補日程を作るので、AI には選ぶべき既存の識別子が無い。発番させると、
+ * 画面が既に配った識別子と衝突する組を作れてしまう。
+ *
+ * 終了時刻も持たない。終わる時刻は会議の所要時間から導く（`CONTEXT.md`「候補日程」）。
+ * 所要時間は構造化入力として渡してあるので、AI は開始時刻だけを決めればよい。
+ */
+const newCandidateSchema = z.object({
+  date: isoDateSchema.describe('候補日程の日付。YYYY-MM-DD 形式'),
+  start_time: timeOfDaySchema.describe('開始時刻。HH:mm 形式（24時間表記）'),
+});
 
 /** 1回の応答で返せる候補日程の上限。`SKILL.md` の制約と同じ数を置く。 */
 export const MAX_CANDIDATES = 10;
 
 export const parseCandidatesOutputSchema = z.object({
   candidates: z
-    .array(candidateSchema)
+    .array(newCandidateSchema)
     .max(MAX_CANDIDATES)
     .describe(
       `会議の候補日程。多くとも${MAX_CANDIDATES}件。読み取れない場合は空配列`,
@@ -71,16 +76,15 @@ export type ParseCandidatesOutput = z.infer<typeof parseCandidatesOutputSchema>;
  * 候補日程ひとつに対する参加可否。
  *
  * 候補日程IDではなく日付で写す。ユーザーの自然文が言っているのは日付であって
- * 候補日程IDではなく、IDへの解決は AI にとって余計な仕事になる（ADR-003）。この日付を
- * 画面が持っている候補日程の一覧に当てる突き合わせはフロントエンドが行う。
+ * 候補日程IDではなく、この日付を画面が持っている候補日程の一覧に当てる突き合わせは
+ * フロントエンドが行う。ADR-0005 で候補日程の一覧を**入力として**渡すようになったので、
+ * AI が候補日程に無い日付を答える余地はほぼ無くなった（一覧に無い日付を答えないことは
+ * `SKILL.md` の制約が言う）。
+ *
+ * 4状態の参加可否（`availabilitySchema`）と備考へ移すのは #70 が担当する。
  */
-const availabilitySchema = z.object({
+const dateAvailabilitySchema = z.object({
   date: isoDateSchema.describe('参加可否を答えた日付。YYYY-MM-DD 形式'),
-  /**
-   * ○×の2値に留める。`maybe` や時間帯を足すと、手で埋める側（各候補日程に手動で○×）
-   * にもそれを入れる UI が要り、非AI経路と形が揃わなくなる。「16日の午後なら大丈夫」
-   * のような入力は `message` が説明して吸収する。
-   */
   available: z
     .boolean()
     .describe('その日付に参加できるなら true、できないなら false'),
@@ -91,7 +95,7 @@ export const MAX_AVAILABILITY_ENTRIES = 10;
 
 export const parseAvailabilityOutputSchema = z.object({
   availability: z
-    .array(availabilitySchema)
+    .array(dateAvailabilitySchema)
     .max(MAX_AVAILABILITY_ENTRIES)
     .describe(
       `日付ごとの参加可否。多くとも${MAX_AVAILABILITY_ENTRIES}件。読み取れない場合は空配列`,
@@ -106,33 +110,34 @@ export type ParseAvailabilityOutput = z.infer<
 /**
  * 候補日程ひとつに対する順位と理由。
  *
- * 候補日程は3項目の組で指す。推薦系の入力は自然文ではないので、日付だけをキーに
- * した ADR-003 の根拠（「ユーザーの自然文が言っているのは日付」）が効かない。
- * 日付だけにすると同じ日の別の時間帯を区別できず、どちらを薦めたのか画面が決められない。
+ * **候補日程は識別子で指す**（ADR-0005）。3項目を連結した鍵で突き合わせていたのは、
+ * 契約に識別子が無かったからで、その理由は消えた。日付と開始時刻を写させると、
+ * 同じものを2通りで指すことになり、片方だけ書き間違えた組が契約を通ってしまう。
  */
-const recommendationSchema = candidateFieldsSchema
-  .extend({
-    rank: z
-      .int()
-      .min(1)
-      .describe('順位。1が最も推奨。全候補日程で重複しない 1..N の値'),
-    reason: z
-      .string()
-      .describe(
-        'この候補日程がこの順位になった理由。参加できない参加者や未回答の参加者に触れる',
-      ),
-  })
-  .refine(endsAfterStart, END_AFTER_START_ERROR);
+const recommendationSchema = z.object({
+  candidate_id: candidateIdSchema.describe(
+    '順位を付けた候補日程の識別子。入力の candidates にあるものだけを使う',
+  ),
+  rank: z
+    .int()
+    .min(1)
+    .describe('順位。1が最も推奨。全候補日程で重複しない 1..N の値'),
+  reason: z
+    .string()
+    .describe(
+      'この候補日程がこの順位になった理由。参加できない参加者や未回答の参加者に触れる',
+    ),
+});
 
 /**
  * 順位が 1..N の順列であること。
  *
- * WHY: モックの参加可否表は最多○が同数の候補日程を2つ作るので、AI は同数をどう
+ * WHY: モックの参加可否表は参加可能人数が最多の候補日程を2つ作るので、AI は同数をどう
  * 捌くかを説明せざるを得ない。同順位（両方1位）を許すと、その説明を回避できてしまう。
  * 抜け（1,2,4,5）も同じで、順位が全体の中の位置を表さなくなる。
  *
- * 欄をまたぐ不変条件なので JSON Schema には写らない。`start_time < end_time` と同じく
- * `safeParse` の段で弾かれて再試行に回るため、同じ制約を `SKILL.md` にも書く。
+ * 欄をまたぐ不変条件なので JSON Schema には写らない。`safeParse` の段で初めて弾かれて
+ * 再試行に回るため、同じ制約を `SKILL.md` にも書く。
  */
 function isRankPermutation(
   recommendations: readonly { rank: number }[],

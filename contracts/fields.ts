@@ -1,11 +1,17 @@
 import { z } from 'zod';
+import {
+  AVAILABILITY_ORDER,
+  DURATION_OPTIONS,
+  MEETING_FORMAT_ORDER,
+} from './meeting.js';
 
 /**
  * 入力契約と出力契約が共有する欄の定義。
  *
- * WHY: 候補日程の3項目（日付・開始時刻・終了時刻）は、抽出系の出力（`meeting.parse-candidates`）
- * と推薦系の入出力（`meeting.recommend-schedule`）の両方に現れる。同じ形を2度書くと、
- * 片方だけに制約が足された瞬間に「同じ候補日程」が2つの意味を持つ。
+ * WHY: 候補日程の項目（識別子・日付・開始時刻）は、抽出系の入出力
+ * （`meeting.parse-candidates` / `meeting.parse-availability`）と推薦系の入出力
+ * （`meeting.recommend-schedule`）の両方に現れる。同じ形を2度書くと、片方だけに
+ * 制約が足された瞬間に「同じ候補日程」が2つの意味を持つ。
  */
 
 /**
@@ -60,46 +66,59 @@ export const isoDateSchema = z
  */
 const HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
+export const timeOfDaySchema = z.string().regex(HH_MM);
+
+/**
+ * 候補日程を一意に指す識別子。**フロントエンドが発番し、AI は自分では作らない**
+ * （ADR-0005）。
+ *
+ * WHY 形を縛るか: 構造化入力はサニタイズも Guardrail チェックも通らない（ADR-0004）。
+ * 検査を通さない値に自由文字列を許すと、そこが prompt injection の窓になる。参加者の
+ * 識別子（`/^参加者[A-Z]$/`）を縛ったのと同じ理由がそのまま候補日程にも要る。
+ *
+ * WHY この形か: 設計書（`temp/design/schedule-recommend-ai-screen-design.md` 8節）が
+ * 例に挙げる `candidate-1` をそのまま採る。本番で候補日程が DB のレコードIDを持つように
+ * なったら、緩めるのはこの1箇所で済む — 突き合わせが識別子ベースであること自体は
+ * 変わらない。桁数を縛るのは、上限の無い数字列でトークンを食わせられないようにするため。
+ */
+const CANDIDATE_ID = /^candidate-\d{1,6}$/;
+
+export const candidateIdSchema = z
+  .string()
+  .regex(CANDIDATE_ID)
+  .describe('候補日程の識別子。入力で与えられたものをそのまま使う');
+
 /**
  * 会議の候補日程ひとつ。
  *
- * 所要時間（`duration`）を持たない。「3時間」は `end_time - start_time` で導ける。
- * 両方持つと、モデルがどちらかを取り違えたときに不整合な組が契約を通ってしまう。
+ * **終了時刻を持たない**（ADR-0005 / `CONTEXT.md`「候補日程」）。終わる時刻は会議の
+ * 所要時間から導く。両方持つと、モデルがどちらかを取り違えたときに不整合な組が契約を
+ * 通ってしまう — 以前は逆に所要時間を持たず `end_time - start_time` で導いていたが、
+ * 所要時間が会議の属性として画面に入った（#66）ので、導出の向きが反転した。
  */
 export const candidateFieldsSchema = z.object({
+  id: candidateIdSchema,
   date: isoDateSchema.describe('候補日程の日付。YYYY-MM-DD 形式'),
-  start_time: z
-    .string()
-    .regex(HH_MM)
-    .describe('開始時刻。HH:mm 形式（24時間表記）'),
-  end_time: z
-    .string()
-    .regex(HH_MM)
-    .describe('終了時刻。HH:mm 形式（24時間表記）'),
+  start_time: timeOfDaySchema.describe('開始時刻。HH:mm 形式（24時間表記）'),
 });
 
-/**
- * 終了時刻は開始時刻より後、という欄をまたぐ不変条件。
- *
- * WHY: #23 が所要時間（`duration`）を欄として持たないと決めた理由は
- * 「`end_time - start_time` で導ける」だった。逆順の組を通すとその導出が負になり、
- * `duration` を捨てた代わりに契約が引き受けたはずの不変条件が守られない。画面側でも
- * `<input type="time">` は2つの欄の関係を見ないので、逆順のまま表示されて誰も気付かない。
- *
- * 日をまたぐ会議（`22:00`–`01:00`）は存在しないものとして扱うので、比較は素直な大小で
- * よい。`HH_MM` が桁揃えを保証しているため、辞書順の比較がそのまま時刻の前後になる。
- *
- * この検査は JSON Schema に写らないため、モデルへの指示としては効かず `safeParse` の段で
- * 初めて弾かれて再試行に回る。`.max(10)` とは効き方が違うので、`SKILL.md` にも同じ制約を書く。
- */
-export function endsAfterStart(fields: {
-  start_time: string;
-  end_time: string;
-}): boolean {
-  return fields.start_time < fields.end_time;
-}
+/** 会議の所要時間（分）。終わる時刻はこの値と開始時刻から導かれる。 */
+export const durationMinutesSchema = z
+  .literal(DURATION_OPTIONS)
+  .describe(
+    `会議の所要時間（分）。候補日程の終了時刻はこの値から導く。${DURATION_OPTIONS.join(' / ')} のいずれか`,
+  );
 
-export const END_AFTER_START_ERROR = {
-  error: '終了時刻は開始時刻より後である必要があります',
-  path: ['end_time'],
-};
+/** 参加形式。会議ごとに1つ決まり、参加者に見せる参加可否の選択肢を決める。 */
+export const meetingFormatSchema = z
+  .enum(MEETING_FORMAT_ORDER)
+  .describe(
+    '参加形式。hybrid=ハイブリッド / onsite=現地のみ / online=オンラインのみ',
+  );
+
+/** 参加可否ひとつ。未回答はこの値では表さず、参加可否表のセルが無いことで表す。 */
+export const availabilitySchema = z
+  .enum(AVAILABILITY_ORDER)
+  .describe(
+    '参加可否。attend_onsite=現地で出席 / attend_remote=リモートで出席 / absent=欠席 / undecided=未定',
+  );

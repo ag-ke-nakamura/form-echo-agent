@@ -121,6 +121,13 @@ export function ReservationPanel() {
 
       <AiAssistant
         taskId={RESERVATION_TASK_ID}
+        /*
+          このタブだけは構造化入力を持たない（ADR-0005 の表）。送るべき画面状態が
+          無く、相対的な日付を解決する基準時刻は Runtime の system prompt が持つ。
+          省略ではなく `undefined` を書くのは `INPUT_SCHEMAS` の `null` と同じ理由で、
+          まだ足していないのか足さないと決めたのかを区別するため。
+        */
+        input={undefined}
         nonAiPathHint="AI を使わなくても、すべての項目を手で埋められます。"
         description={
           "自然な言葉で予約内容を入力すると、AIが自動的にフォームに入力します。\n" +

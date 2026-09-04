@@ -3,8 +3,8 @@
 import { type ReactNode, useState } from "react";
 import { AvailabilityPanel } from "./availability-panel";
 import {
-  candidateDates,
   CandidatesPanel,
+  selectedCandidates,
   useCandidateRows,
 } from "./candidates-panel";
 import { useMeetingInfo } from "./meeting-info";
@@ -43,10 +43,9 @@ export function FormEchoTabs() {
    * 会議情報（会議名・所要時間・参加形式）もタブ層で持つ。
    *
    * WHY: 入れるのはタブ2だが、読むのはタブ3のヘッダー（何の会議に答えているのか）
-   * とタブ4の内訳表示（参加形式で現地/リモートの内訳を出すかが決まる。#71）である。
-   * 候補日程と同じ形で、上がったのは置き場所だけ — 状態モデルの定義は
-   * `meeting-info.tsx` に残す。**タブ4はまだ読まないが、読む先が増えても
-   * タブ層から渡すだけで済む。**
+   * とタブ4（参加可否表とともに Runtime へ渡す与件。ADR-0005）である。所要時間は
+   * 候補日程の終わる時刻も決めるので、タブ2の表示自体もここから引く。候補日程と
+   * 同じ形で、上がったのは置き場所だけ — 状態モデルの定義は `meeting-info.tsx` に残す。
    */
   const meetingInfo = useMeetingInfo();
 
@@ -57,7 +56,7 @@ export function FormEchoTabs() {
     ),
     "meeting-availability": (
       <AvailabilityPanel
-        dates={candidateDates(candidates.rows)}
+        candidates={selectedCandidates(candidates.rows)}
         meetingInfo={meetingInfo.info}
       />
     ),
@@ -65,8 +64,10 @@ export function FormEchoTabs() {
       候補日程タブ・参加可否タブとは連動しない。参加可否表は自分のモックを持つ
       （#58）。候補日程タブに同じサンプルを焼き込むと、焼いた行が手入力として
       扱われ、AI が候補日程を作り直したときにサンプル行の上へ積み上がる。
+      会議情報だけは受け取る — 参加形式と所要時間は Runtime へ渡す与件であり、
+      モックの表が持つべきものではない（`lib/availability-table.ts`）。
     */
-    "meeting-recommend": <RecommendPanel />,
+    "meeting-recommend": <RecommendPanel meetingInfo={meetingInfo.info} />,
   };
 
   return (

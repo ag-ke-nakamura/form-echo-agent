@@ -4,10 +4,11 @@ import type { ParseAvailabilityOutput } from "@contracts/index.js";
 import { Info } from "lucide-react";
 import { useId, useState } from "react";
 import { AiAssistant } from "./ai-assistant";
+import type { SelectedCandidate } from "./candidates-panel";
 import { AiBadge, type ApplyReport, type FieldSource } from "./field-source";
 import { FormSection } from "./form-section";
 import { AVAILABILITY_TASK_ID } from "./lib/api";
-import type { MeetingInfo } from "./lib/meeting-info";
+import { candidateRangeText, type MeetingInfo } from "./lib/meeting-info";
 import { MeetingInfoHeader } from "./meeting-info";
 import { ManualInputDivider, TabHeading } from "./screen-layout";
 
@@ -22,13 +23,16 @@ type Answer = { choice: boolean | null; source: FieldSource };
 
 type AvailabilityPanelProps = {
   /**
-   * ○×を付ける対象の候補日程の日付。候補日程タブが持っているものを受け取る。
+   * 参加可否を答える対象の候補日程。候補日程タブが持っているものを受け取る。
    *
-   * WHY: このタブの AI は既にある候補日程へ○×を付けるだけで、候補日程そのものを
+   * WHY: このタブの AI は既にある候補日程へ可否を付けるだけで、候補日程そのものを
    * 作らない。対象が無ければ AI が何を答えても当てる先が無く、必ず空振りする。
    * 候補日程を作る場所はこの画面に既にあるので、そこから引く。
+   *
+   * **日付だけでなく識別子と開始時刻ごと受け取る**（ADR-0005）。この一覧をそのまま
+   * 与件として Runtime へ渡すので、画面の表示に要る分だけに削ると渡せなくなる。
    */
-  dates: readonly string[];
+  candidates: readonly SelectedCandidate[];
   /**
    * ヘッダーに出す会議情報。タブ2で職員が入れたものを受け取る。
    *
@@ -47,9 +51,16 @@ type AvailabilityPanelProps = {
   4状態になる #70 で設計書側の語も動くので、揃えるのはそのとき。
 */
 export function AvailabilityPanel({
-  dates,
+  candidates,
   meetingInfo,
 }: AvailabilityPanelProps) {
+  /*
+    可否を付ける単位は日付のまま。出力契約が日付ごとに可否を返すので、同じ日付の
+    候補日程が2つあってもこの画面に並ぶ行はひとつになる。**候補日程ごとの4状態と
+    日付でのグループ化は #70 が担当する** — このチケットで替わったのは、AI へ渡す
+    与件が識別子付きの一覧になったことだけ。
+  */
+  const dates = [...new Set(candidates.map((candidate) => candidate.date))];
   /**
    * 日付をキーにした参加可否。行の識別子を持たない。
    *
@@ -61,10 +72,14 @@ export function AvailabilityPanel({
   /**
    * 直近の AI 応答が返した参加可否。**落ちた分を描画時に導くために持つ。**
    *
-   * WHY: ADR-003 は Runtime に候補日程の一覧を渡さないと決めたので、AI が候補日程に
-   * 無い日付を答える経路は必ず起きうる。落ちた分を確定させて持つと、職員がその日付を
-   * 候補日程に足した後も「無い」と言い続ける。応答そのものを持って毎回突き合わせ直せば、
-   * 表示は常に今の候補日程の一覧と一致する。
+   * WHY: 候補日程の一覧を与件として渡すようになった（ADR-0005）ので、AI が一覧に
+   * 無い日付を答える余地はほぼ無い。それでも突き合わせを残すのは、落ちた分を黙って
+   * 捨てないため — モデルの出力が制約に届かなかったことが画面に出る唯一の場所で、
+   * プロンプトの効きを追うのがこの検証環境の目的である。
+   *
+   * 落ちた分を確定させて持たないのは、職員がその日付を候補日程に足した後も「無い」と
+   * 言い続けてしまうため。応答そのものを持って毎回突き合わせ直せば、表示は常に今の
+   * 候補日程の一覧と一致する。
    */
   const [lastAnswers, setLastAnswers] = useState<
     ParseAvailabilityOutput["availability"]
@@ -78,7 +93,7 @@ export function AvailabilityPanel({
   }
 
   /**
-   * AI が返した日付を候補日程の一覧に当てる（ADR-003 の突き合わせ）。
+   * AI が返した日付を候補日程の一覧に当てる。
    *
    * 候補日程に無い日付は書き込まない。書き込むと、後からその日付が候補日程に
    * 足された瞬間に、職員が見ていない○×が現れることになる。
@@ -135,6 +150,24 @@ export function AvailabilityPanel({
 
       <AiAssistant
         taskId={AVAILABILITY_TASK_ID}
+        /*
+          参加形式・所要時間・候補日程の一覧を与件として送る（ADR-0005 の表）。
+          識別子はこの画面が発番したもので、AI は選ぶだけになる。
+        */
+        input={{
+          meeting_format: meetingInfo.format,
+          duration_minutes: meetingInfo.durationMinutes,
+          candidates: [...candidates],
+        }}
+        /*
+          候補日程が0件のときは送らせない。入力契約が1件以上を要求する（AI が答える
+          対象そのものなので）ので、押しても BFF の門で必ず弾かれる。
+        */
+        submitBlockedReason={
+          candidates.length === 0
+            ? "候補日程がまだありません。「会議候補日設定」タブで作ると AI に判定させられます。"
+            : null
+        }
         nonAiPathHint="AI を使わなくても、候補日程ごとに手で○×を付けられます。候補日程がまだ無いときは「会議候補日設定」タブで先に作ってください。"
         description={
           "自然な言葉で出欠を入力すると、AIが自動的に判定します。\n" +
@@ -191,6 +224,7 @@ export function AvailabilityPanel({
                 <AvailabilityFields
                   date={date}
                   index={index}
+                  timeRanges={timeRangesOn(candidates, date, meetingInfo)}
                   answer={answers[date] ?? { choice: null, source: "manual" }}
                   onChange={setAnswer}
                 />
@@ -203,9 +237,28 @@ export function AvailabilityPanel({
   );
 }
 
+/**
+ * その日付の候補日程の時間帯。**終わる時刻は会議の所要時間から導く**（ADR-0005）。
+ *
+ * 可否を付ける単位は日付なので、同じ日付に候補日程が2つあれば両方を並べる。
+ * 片方だけ出すと、職員が見ていない候補日程に可否が付くことになる。
+ */
+function timeRangesOn(
+  candidates: readonly SelectedCandidate[],
+  date: string,
+  meetingInfo: MeetingInfo,
+): string[] {
+  return candidates
+    .filter((candidate) => candidate.date === date)
+    .map((candidate) =>
+      candidateRangeText(candidate.start_time, meetingInfo.durationMinutes),
+    );
+}
+
 type AvailabilityFieldsProps = {
   date: string;
   index: number;
+  timeRanges: string[];
   answer: Answer;
   onChange: (date: string, choice: boolean) => void;
 };
@@ -218,6 +271,7 @@ const CHOICES = [
 function AvailabilityFields({
   date,
   index,
+  timeRanges,
   answer,
   onChange,
 }: AvailabilityFieldsProps) {
@@ -231,7 +285,9 @@ function AvailabilityFields({
         <span className="text-dns-14M-130 text-solid-gray-900">
           候補日程 {index + 1}
         </span>
-        <span className="text-dns-14N-130 text-solid-gray-700">{date}</span>
+        <span className="text-dns-14N-130 text-solid-gray-700">
+          {date} {timeRanges.join(" / ")}
+        </span>
       </div>
 
       <fieldset className="mt-3">

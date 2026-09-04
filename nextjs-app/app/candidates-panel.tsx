@@ -11,12 +11,16 @@ import {
 } from "./field-source";
 import { FormSection } from "./form-section";
 import { CANDIDATES_TASK_ID } from "./lib/api";
-import { MeetingInfoFields, type MeetingInfoApi } from "./meeting-info";
+import { candidateRangeText, type MeetingInfo } from "./lib/meeting-info";
+import { type MeetingInfoApi, MeetingInfoFields } from "./meeting-info";
 import { ManualInputDivider, TabHeading } from "./screen-layout";
 
 /**
  * 職員が直接編集する欄。出力契約の候補日程から導き、UI 側で列挙し直さない
  * （契約に欄が増減したとき、型検査がこの画面まで届くようにする）。
+ *
+ * 終了時刻はここに無い。候補日程は終了時刻を持たず、終わる時刻は会議の所要時間から
+ * 導かれる（ADR-0005）。
  */
 type CandidateField = keyof ParseCandidatesOutput["candidates"][number];
 
@@ -26,9 +30,10 @@ type CandidateField = keyof ParseCandidatesOutput["candidates"][number];
  * 欄ごとに `{value, source}` を持つ形は交通ICと揃える。タブ間で共有するのは
  * この「AI 由来か手入力か」の印の付け方だけで、配列という入れ物は共有しない。
  *
- * `id` は React の key と `<label>` の紐づけのために持つ、画面だけの識別子。
- * 出力契約にも BFF へのリクエストにも乗らない（ADR-003: Runtime へ渡すのは
- * 自然文だけで、画面が持っているフォームの状態は渡さない）。
+ * `id` は**契約に載る識別子**になった（ADR-0005）。React の key と `<label>` の
+ * 紐づけに使いつつ、タブ3・タブ4が候補日程を指す鍵としてそのまま Runtime へ渡る。
+ * 発番するのはこの画面で、**AI は自分では作らない** — AI が選べる識別子は渡した
+ * 一覧の中にしか無い。
  */
 type CandidateRow = {
   id: string;
@@ -41,7 +46,6 @@ function blankRow(id: string): CandidateRow {
     fields: {
       date: { value: "", source: "manual" },
       start_time: { value: "", source: "manual" },
-      end_time: { value: "", source: "manual" },
     },
   };
 }
@@ -64,21 +68,30 @@ function hasManualInput(row: CandidateRow): boolean {
 }
 
 /**
+ * 候補日程の識別子。入力契約の `/^candidate-\d{1,6}$/` に適合させる。
+ *
+ * 画面だけの識別子だった頃は `row-0` で足りたが、いまは Runtime と BFF が同じ形で
+ * 検査する（ADR-0004 の「構造化入力に自由文字列を置かない」が候補日程にも及ぶ）。
+ */
+function candidateId(index: number): string {
+  return `candidate-${index}`;
+}
+
+/**
  * 非AI経路の起点。空の1行から始めれば、AI を一度も呼ばずに手で埋めきれる。
  *
  * id を固定値にするのは SSG のため。初期状態で乱数や連番を採ると、
  * ビルド時に描いた HTML とブラウザの初回描画が食い違う。
  */
-const INITIAL_ROWS: CandidateRow[] = [blankRow("row-0")];
+const INITIAL_ROWS: CandidateRow[] = [blankRow(candidateId(0))];
 
 /**
  * 候補日程タブの状態を外から持てるようにしたもの。
  *
- * WHY: 参加可否タブが○×を付ける対象は、このタブが持っている候補日程の日付である。
- * どちらかのタブの内側に状態を置くと相手から見えないので、状態の持ち主を
- * `FormEchoTabs` に上げる。**状態モデルの定義はこのファイルに残す**（#23
- * Implementation Decisions: フォームの状態モデルはタブごとに分ける）。上がったのは
- * 置き場所だけで、参加可否タブが受け取るのも `CandidateRow` ではなく日付の列に留める。
+ * WHY: 参加可否タブが答える対象は、このタブが持っている候補日程である。どちらかの
+ * タブの内側に状態を置くと相手から見えないので、状態の持ち主を `FormEchoTabs` に上げる。
+ * **状態モデルの定義はこのファイルに残す**（#23 Implementation Decisions:
+ * フォームの状態モデルはタブごとに分ける）。
  */
 export type CandidateRowsApi = {
   rows: CandidateRow[];
@@ -89,18 +102,30 @@ export type CandidateRowsApi = {
   reset: () => void;
 };
 
+/** 契約に載る形の候補日程ひとつ。Runtime へはこの形で渡る。 */
+export type SelectedCandidate = {
+  id: string;
+  date: string;
+  start_time: string;
+};
+
 /**
- * 参加可否タブへ渡す候補日程の日付。
+ * 他のタブと Runtime へ渡す候補日程。
  *
- * 空欄と重複を落とす。空欄を渡すと、日付を入れていない行が参加可否タブに
- * 「日付の無い候補日程」として並んでしまう。
+ * 日付か開始時刻が空の行を落とす。埋まっていない行を渡すと、参加可否タブに
+ * 「日付の無い候補日程」が並び、Runtime へは入力契約に適合しない `input` が飛ぶ。
  */
-export function candidateDates(rows: CandidateRow[]): string[] {
-  return [
-    ...new Set(
-      rows.map((row) => row.fields.date.value).filter((value) => value !== ""),
-    ),
-  ];
+export function selectedCandidates(rows: CandidateRow[]): SelectedCandidate[] {
+  return rows
+    .filter(
+      (row) =>
+        row.fields.date.value !== "" && row.fields.start_time.value !== "",
+    )
+    .map((row) => ({
+      id: row.id,
+      date: row.fields.date.value,
+      start_time: row.fields.start_time.value,
+    }));
 }
 
 /**
@@ -111,19 +136,17 @@ export function candidateDates(rows: CandidateRow[]): string[] {
  * ので、ここも日付を挙げて揃える。写像そのものは素直な代入のままで、これは報告の
  * ためだけの計算（#23: 写像に条件分岐を育てない）。
  *
- * 時刻だけが動いた場合も拾うため、変化の有無は日付ではなく3項目の組で見る。
+ * 時刻だけが動いた場合も拾うため、変化の有無は日付ではなく日付と開始時刻の組で見る。
  */
 function describeChange(
   replaced: CandidateRow[],
   candidates: ParseCandidatesOutput["candidates"],
 ): string[] {
   const before = replaced.map(
-    (row) =>
-      `${row.fields.date.value} ${row.fields.start_time.value}-${row.fields.end_time.value}`,
+    (row) => `${row.fields.date.value} ${row.fields.start_time.value}`,
   );
   const after = candidates.map(
-    (candidate) =>
-      `${candidate.date} ${candidate.start_time}-${candidate.end_time}`,
+    (candidate) => `${candidate.date} ${candidate.start_time}`,
   );
   if (
     before.length === after.length &&
@@ -151,11 +174,10 @@ export function useCandidateRows(): CandidateRowsApi {
   // 初期行の id と衝突しない位置から始める。
   const nextRowNumber = useRef(INITIAL_ROWS.length);
 
-  /** 行 id を配る。setState の updater は純粋に保つので、必ず外側で呼ぶ。 */
+  /** 識別子を配る。setState の updater は純粋に保つので、必ず外側で呼ぶ。 */
   function takeRowIds(count: number): string[] {
-    const ids = Array.from(
-      { length: count },
-      (_, offset) => `row-${nextRowNumber.current + offset}`,
+    const ids = Array.from({ length: count }, (_, offset) =>
+      candidateId(nextRowNumber.current + offset),
     );
     nextRowNumber.current += count;
     return ids;
@@ -189,9 +211,10 @@ export function useCandidateRows(): CandidateRowsApi {
    * 「水曜は避けたい」のような追加の指示で候補日程の列を作り直す。
    *
    * **守る単位は行**（交通ICは欄単位）。欄ごとに混ぜられないのは、作り直された列と
-   * 既にある行を対応付ける手がかりが無いため — 行の識別子は画面だけのもので出力契約に
-   * 乗らない（ADR-003）ので、AI が返した3件目が既にある3行目の作り直しなのか別物なのか
-   * を知る方法がない。職員が1欄でも書き込んだ行はその行ごと残す。
+   * 既にある行を対応付ける手がかりが無いため — AI は候補日程の識別子を返さない
+   * （返せない。作っているのは新しい候補日程で、既存の識別子を選ぶ場面ではない）ので、
+   * AI が返した3件目が既にある3行目の作り直しなのか別物なのかを知る方法がない。
+   * 職員が1欄でも書き込んだ行はその行ごと残す。
    */
   function applyResult(result: ParseCandidatesOutput): ApplyReport {
     // 読み取れなかった場合（空配列）は何も触らない。職員が先に手で入れていた
@@ -214,7 +237,6 @@ export function useCandidateRows(): CandidateRowsApi {
           // `<input type="time">` へそのまま渡せる。整形は要らない。
           date: { value: candidate.date, source: "ai" as const },
           start_time: { value: candidate.start_time, source: "ai" as const },
-          end_time: { value: candidate.end_time, source: "ai" as const },
         },
       })),
     ]);
@@ -226,8 +248,8 @@ export function useCandidateRows(): CandidateRowsApi {
   }
 
   /**
-   * 行 id の採番は戻さない。戻すと、作り直しの直後に足した行が消えた行と同じ id を
-   * 持ちうる（React の key が重複する）。
+   * 識別子の採番は戻さない。戻すと、作り直しの直後に足した行が消えた行と同じ識別子を
+   * 持ちうる（React の key が重複し、参加可否タブとタブ4の突き合わせも壊れる）。
    */
   function reset() {
     setRows(INITIAL_ROWS);
@@ -253,6 +275,12 @@ export function CandidatesPanel({
 
       <AiAssistant
         taskId={CANDIDATES_TASK_ID}
+        /*
+          所要時間だけを与件として送る（ADR-0005 の表）。既に選択済みの候補日程は
+          送らない — 「来月の午後」→「火曜と木曜だけにして」という書き直しの往復は
+          `sessionId` の会話履歴で成立する。
+        */
+        input={{ duration_minutes: meetingInfo.info.durationMinutes }}
         nonAiPathHint="AI を使わなくても、「候補日程を追加」から手で足せます。"
         description={
           "自然な言葉で候補日程を入力すると、AIが自動的にカレンダーに反映します。\n" +
@@ -276,6 +304,7 @@ export function CandidatesPanel({
               <CandidateFields
                 row={row}
                 index={index}
+                durationMinutes={meetingInfo.info.durationMinutes}
                 onChange={setField}
                 onRemove={removeRow}
               />
@@ -304,6 +333,7 @@ export function CandidatesPanel({
 type CandidateFieldsProps = {
   row: CandidateRow;
   index: number;
+  durationMinutes: MeetingInfo["durationMinutes"];
   onChange: (id: string, field: CandidateField, value: string) => void;
   onRemove: (id: string) => void;
 };
@@ -311,12 +341,12 @@ type CandidateFieldsProps = {
 function CandidateFields({
   row,
   index,
+  durationMinutes,
   onChange,
   onRemove,
 }: CandidateFieldsProps) {
   const dateId = useId();
   const startId = useId();
-  const endId = useId();
 
   return (
     <div className="rounded-md border border-solid-gray-300 p-4">
@@ -367,24 +397,54 @@ function CandidateFields({
             className="mt-1 w-full rounded-md border border-solid-gray-600 bg-white px-3 py-2 text-dns-16N-130 text-solid-gray-900"
           />
         </div>
+        {/*
+          終了時刻は入力欄ではなく表示に変わった（ADR-0005）。所要時間から導かれる
+          ので、ここで独立に選べると2つの与件が食い違う組を職員が作れてしまう。
+          変えたいときに触る先は会議情報の「所要時間」であることが分かるよう、
+          導出元をそのまま添える。
+        */}
         <div>
-          <label
-            htmlFor={endId}
-            className="text-dns-12M-130 text-solid-gray-700"
-          >
-            終了時刻
-          </label>
-          <input
-            id={endId}
-            type="time"
-            value={row.fields.end_time.value}
-            onChange={(event) =>
-              onChange(row.id, "end_time", event.target.value)
-            }
-            className="mt-1 w-full rounded-md border border-solid-gray-600 bg-white px-3 py-2 text-dns-16N-130 text-solid-gray-900"
-          />
+          <span className="text-dns-12M-130 text-solid-gray-700">終了時刻</span>
+          <p className="mt-1 px-3 py-2 text-dns-16N-130 text-solid-gray-900">
+            <EndTime
+              startTime={row.fields.start_time.value}
+              durationMinutes={durationMinutes}
+            />
+          </p>
         </div>
       </div>
     </div>
+  );
+}
+
+function EndTime({
+  startTime,
+  durationMinutes,
+}: {
+  startTime: string;
+  durationMinutes: MeetingInfo["durationMinutes"];
+}) {
+  if (startTime === "") {
+    return (
+      <span className="text-solid-gray-600">開始時刻を入れると出ます</span>
+    );
+  }
+  const range = candidateRangeText(startTime, durationMinutes);
+  // 導けなかった場合、`candidateRangeText` は開始時刻だけを返す。日をまたぐ会議は
+  // 無いものとして扱うので、そのまま置くと欄が黙って開始時刻を繰り返す。
+  if (range === startTime) {
+    return (
+      <span className="text-solid-gray-600">
+        日をまたぐため所要時間ぶんが取れません
+      </span>
+    );
+  }
+  return (
+    <>
+      {range.split("–")[1]}
+      <span className="ml-2 text-dns-12N-130 text-solid-gray-600">
+        （所要時間 {durationMinutes}分）
+      </span>
+    </>
   );
 }
