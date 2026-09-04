@@ -10,21 +10,32 @@ import type { TaskId } from "@contracts/index.js";
 import { isPromptRequired } from "@contracts/prompt-requirement";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
-import { AiErrorNotice, AiPendingNotice, ApplyReportView } from "./ai-notice";
+import {
+  AiErrorNotice,
+  AiPendingNotice,
+  AiPreview,
+  ApplyReportView,
+} from "./ai-notice";
 import type { ApplyReport } from "./field-source";
+import { formSectionId } from "./form-section";
+import { MAX_CONSECUTIVE_FAILURES, type PreviewItem } from "./lib/ai-preview";
 import { requestAiTask, type TaskInputs, type TaskOutputs } from "./lib/api";
 import { type ErrorGuidance, errorGuidanceFor } from "./lib/error-guidance";
 
 /**
- * 会話ログの1往復。職員が送った指示と、それに対する結果を対で持つ。
+ * 反映を待っている結果（ADR-0006）。
  *
- * 失敗した往復もログに残す。消してしまうと、指示が Runtime に届かなかったのか、
- * 届いた上でフォームが変わらなかったのかが区別できなくなる。
+ * **フォームはまだ変わっていない。** 職員が反映を押すまでこれが唯一の置き場所で、
+ * タブを移って戻ってきても残る（タブは描かれたまま `hidden` で隠れるだけなので、
+ * 状態はここに置くだけで寿命がタブと同じになる）。
+ *
+ * 送った指示も一緒に持つ。書き直すときに前の指示が読めないと、何をどう変えたのかが
+ * 手元に残らない（成功したときは入力欄を空にするため）。
  */
-type Turn = { id: string; prompt: string } & (
-  | { ok: true; message: string; report: ApplyReport }
-  | { ok: false; guidance: ErrorGuidance }
-);
+type Preview<TTaskId extends TaskId> = {
+  prompt: string;
+  result: TaskOutputs[TTaskId];
+};
 
 type AiAssistantProps<TTaskId extends TaskId> = {
   taskId: TTaskId;
@@ -71,8 +82,21 @@ type AiAssistantProps<TTaskId extends TaskId> = {
   pendingLabel: string;
   /** 送信中の読み上げ文（設計書 3.5節）。「AIが候補日程を生成しています...」など。 */
   generatingMessage: string;
-  /** 結果をフォームへ写し、何を更新して何を守ったかを返す。 */
-  onResult: (result: TaskOutputs[TTaskId]) => ApplyReport;
+  /** 反映のボタンの文言（設計書 3.6.4節）。「この内容でフォームに入力」など。 */
+  applyLabel: string;
+  /** 抽出・判定できなかった行に添える文字列（設計書 3.6.1節・4.6.1節）。 */
+  emptyItemText: string;
+  /**
+   * 結果をプレビューの一覧へ写す（ADR-0006）。
+   *
+   * WHY 反映（`onApply`）と別に持つか: プレビューは**フォームを触らずに**結果を読む
+   * 必要がある。反映と同じ関数で作ると、押す前に見せるだけのために状態を書き換える
+   * ことになる。描画のたびに呼ぶので、画面の今の状態（参加可否タブなら候補日程の
+   * 一覧）を見た一覧になる。
+   */
+  previewItems: (result: TaskOutputs[TTaskId]) => PreviewItem[];
+  /** プレビューの内容をフォームへ写し、何を更新して何を守ったかを返す。 */
+  onApply: (result: TaskOutputs[TTaskId]) => ApplyReport;
   /** このタブのフォームを初期状態へ戻す。 */
   onReset: () => void;
 };
@@ -84,9 +108,15 @@ type AiAssistantProps<TTaskId extends TaskId> = {
  * 「同じアシスタントが taskId を切り替えて違う結果を返す」という参照アーキテクチャの
  * 構造を、画面の実物として見えるようにするため。
  *
- * 会話ログの形にしたのは #38 の判断。単一のテキストエリアに出し直す形だと、
- * セッションが続いていること自体が画面から見えない（送った指示も前の応答も残らない）。
- * `sessionId` をタブごとにここで持つ理由も同じで、タブは別々の会話として進む。
+ * 責務は「送る・プレビューを持つ・反映を親に伝える」（ADR-0006）。**応答が来ても
+ * フォームは変わらない** — 職員が反映を押したときだけ `onApply` が呼ばれる。
+ * 受信と同時に書き込んで事後報告する形をやめたのは、事後報告が「何が変わったか」は
+ * 伝えても「変えるかどうか」を職員に選ばせないため。
+ *
+ * `sessionId` をタブごとにここで持つのは #38 の判断（タブは別々の会話として進む）。
+ * 会話ログは持たない — プレビューが1つで、そこに送った指示と結果が並ぶ。往復のたびに
+ * プレビューを積むと、**一度も反映されなかった結果に緑のチェックが並ぶ**一覧になり、
+ * フォームに入っているものと見分けが付かない。セッションが続いていることは往復数で出す。
  *
  * **候補日提案タブはこれを使わない。** 設計書がそこを「AI の提案は叩き台であって
  * 対話相手ではない」と位置づけており、自然文入力欄も折りたたみも持たない。
@@ -102,19 +132,31 @@ export function AiAssistant<TTaskId extends TaskId>({
   submitLabel,
   pendingLabel,
   generatingMessage,
-  onResult,
+  applyLabel,
+  emptyItemText,
+  previewItems,
+  onApply,
   onReset,
 }: AiAssistantProps<TTaskId>) {
   const [prompt, setPrompt] = useState("");
   const [pending, setPending] = useState(false);
-  const [turns, setTurns] = useState<Turn[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  /** これまでの往復数。セッションが続いていること自体を画面に出すために持つ（#38）。 */
+  const [exchanges, setExchanges] = useState(0);
+  /** 反映を待っている結果。押すまでフォームは変わらない（ADR-0006）。 */
+  const [preview, setPreview] = useState<Preview<TTaskId> | null>(null);
+  /** 直近の失敗。赤で出す（`AiErrorCode` が返ったときだけ）。 */
+  const [failure, setFailure] = useState<ErrorGuidance | null>(null);
+  /** 続けて失敗した回数が上限に達したか（設計書 3.7節）。 */
+  const [exhausted, setExhausted] = useState(false);
+  /** 直近の反映が実際にフォームへ何をしたか（#38）。 */
+  const [applied, setApplied] = useState<ApplyReport | null>(null);
   /** 設計書 3.1節: 初期は展開。何ができる画面なのかを最初に見せる。 */
   const [expanded, setExpanded] = useState(true);
 
   const promptId = useId();
   const bodyId = useId();
-  const nextTurnNumber = useRef(0);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
 
   /**
    * 自然文が要るかどうかは契約の表から引く（ADR-0004）。
@@ -129,24 +171,58 @@ export function AiAssistant<TTaskId extends TaskId>({
    * 送信ごとの連番。
    *
    * WHY: 応答を待っている間に「最初からやり直す」が押されても、飛んでいる
-   * リクエストは止まらない。番号で照合せずに結果を書き込むと、空にしたはずの
-   * フォームが数秒後に埋まり、消した会話ログに1往復だけ現れる。
+   * リクエストの結果が返ってくることはある（`abort` はネットワークを止めるが、
+   * すでに応答本文が届いていれば `await` は成功で戻る）。番号で照合せずに
+   * プレビューへ入れると、消したはずの結果が数秒後に反映待ちとして現れる。
    */
   const submitSerial = useRef(0);
 
   /**
-   * 最新の `onResult` / `onReset`。
+   * 実行中のリクエストを打ち切る手。「最初からやり直す」が引く。
+   *
+   * 連番で捨てるだけでは Runtime は最後まで推論する。職員が捨てると決めた往復に
+   * 時間と課金を使わないよう、実際に止める。
+   */
+  const inFlight = useRef<AbortController | null>(null);
+
+  /**
+   * 続けて失敗した回数。**state ではなく ref で持つ。**
+   *
+   * WHY: 数える場所が `await` の後になるので、state から読むとその往復が始まった
+   * 時点の値になる。表示に要るのは「上限に達したか」だけ（`exhausted`）で、
+   * 回数そのものは描画に出ない。
+   */
+  const failureStreak = useRef(0);
+
+  /**
+   * 最新の `onApply` / `onReset`。
    *
    * WHY: 応答を待っている間に職員がフォームを触ると親が再レンダーされるが、実行中の
-   * `handleSubmit` のクロージャは古い prop を掴んだままになる。古い `onResult` は
+   * `handleSubmit` のクロージャは古い prop を掴んだままになる。古い `onApply` は
    * 編集前のフォーム状態を見て上書きの可否を決めるので、**待っている間の手入力を
    * AI 由来と誤認して踏み潰す**。「手入力は上書きしない」を守るには、写す時点で
    * 最新の状態を見ている関数を呼ぶ必要がある。
+   *
+   * 反映がプレビューを挟むようになって待ち時間はさらに伸びた（応答の到着ではなく
+   * 職員が押した時点で写す）ので、ref から引く必要はむしろ強くなった。
+   *
+   * `previewItems` はここに入れない。描画のたびに呼ぶので、そもそも古いものを
+   * 掴む余地が無い。
    */
-  const handlers = useRef({ onResult, onReset });
+  const handlers = useRef({ onApply, onReset });
   useEffect(() => {
-    handlers.current = { onResult, onReset };
-  }, [onResult, onReset]);
+    handlers.current = { onApply, onReset };
+  }, [onApply, onReset]);
+
+  /**
+   * 非AI経路のフォームへフォーカスを移す（設計書 3.7節）。
+   *
+   * 飛び先は `FormSection`（`tabIndex={-1}` を持つ）。リンクを踏ませずに移すのは、
+   * 続けて失敗した職員には次の一手がもう1つしか無いため。
+   */
+  function focusNonAiPath() {
+    document.getElementById(formSectionId(taskId))?.focus();
+  }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -154,7 +230,10 @@ export function AiAssistant<TTaskId extends TaskId>({
     if (pending || submitBlockedReason !== null) return;
     if (promptRequired && sent === "") return;
     const serial = ++submitSerial.current;
+    const controller = new AbortController();
+    inFlight.current = controller;
     setPending(true);
+    setFailure(null);
 
     const outcome = await requestAiTask({
       taskId,
@@ -164,35 +243,43 @@ export function AiAssistant<TTaskId extends TaskId>({
       sessionId,
       // 送信のたびに今の画面の状態を送る（`AiAssistantProps` の `input`）。
       input,
+      signal: controller.signal,
     });
     // 待っている間にやり直されていたら、この結果は捨てる（`pending` は
     // `handleReset` が下ろしている）。
     if (serial !== submitSerial.current) return;
-
-    const id = `turn-${nextTurnNumber.current++}`;
+    inFlight.current = null;
 
     if (outcome.ok) {
       setSessionId(outcome.sessionId);
-      // setTurns の updater の外で呼ぶ。updater は純粋に保つ約束があり、中で
-      // フォームを書き換えると StrictMode の二重呼び出しで二重に反映される。
-      const report = handlers.current.onResult(outcome.result);
-      setTurns((current) => [
-        ...current,
-        { id, prompt: sent, ok: true, message: outcome.result.message, report },
-      ]);
+      setExchanges((current) => current + 1);
+      failureStreak.current = 0;
+      setExhausted(false);
+      setPreview({ prompt: sent, result: outcome.result });
+      /*
+        前の反映の報告は消す。あれは「その時フォームへ何をしたか」なので、新しい結果が
+        届いた時点で今の画面と対応しなくなる（残すと、まだ反映していない結果の隣に
+        反映済みの報告が並ぶ）。
+      */
+      setApplied(null);
       setPrompt("");
     } else {
-      // 失敗しても sessionId は捨てない。会話は Runtime 側に残っているので、
-      // 書き直して送れば続きとして届く。
-      setTurns((current) => [
-        ...current,
-        {
-          id,
-          prompt: sent,
-          ok: false,
-          guidance: errorGuidanceFor(outcome.code),
-        },
-      ]);
+      /*
+        失敗しても sessionId は捨てない。会話は Runtime 側に残っているので、
+        書き直して送れば続きとして届く。プレビューも捨てない — 前の結果と見比べながら
+        書き直せることのほうが、消して整えることより役に立つ。
+
+        ただし上限に達すると下で縮めるので、プレビューは展開し直すまで見えなくなる。
+        許容する: 良い結果なら反映しているはずで、そこから3回作り直したということは
+        その結果は職員が採らなかったものである。
+      */
+      setFailure(errorGuidanceFor(outcome.code));
+      failureStreak.current += 1;
+      if (failureStreak.current >= MAX_CONSECUTIVE_FAILURES) {
+        setExhausted(true);
+        setExpanded(false);
+        focusNonAiPath();
+      }
       // 失敗したときは書いたものを残す。INVALID_INPUT のように**書き直して
       // もらう**エラーがあるので、消すと言い直しのために全部打ち直しになる。
     }
@@ -200,20 +287,94 @@ export function AiAssistant<TTaskId extends TaskId>({
     setPending(false);
   }
 
-  function handleReset() {
-    // 番号を進めて、飛んでいるリクエストの結果を無効にする。
+  /**
+   * 待つのをやめる（設計書 8節）。**会話もフォームも触らない。**
+   *
+   * WHY 「最初からやり直す」と分けるか: あちらは会話とフォームを空にする操作で、
+   * 出ているものが1つも無い初回の送信中は出さない（空にするものが無い）。中断が
+   * そこに乗っていると、**初回の推論を止める手が画面のどこにも無い**。止めた後は
+   * 書き直して送り直せる状態に戻したいので、`sessionId` もプレビューも残す。
+   */
+  function handleCancel() {
+    // 番号を進めて、飛んでいるリクエストの結果を無効にしてから止める。
     submitSerial.current++;
+    inFlight.current?.abort();
+    inFlight.current = null;
     setPending(false);
-    setTurns([]);
+  }
+
+  /**
+   * プレビューの内容をフォームへ写す。**ここが唯一フォームを変える経路**（ADR-0006）。
+   *
+   * 写したらプレビューを畳む。残すと、反映済みの結果に反映のボタンが付いたまま並び、
+   * 押すと「更新」の報告がもう一度出る（フォームは変わっていないのに）。
+   */
+  function handleApply() {
+    if (preview === null) return;
+    setApplied(handlers.current.onApply(preview.result));
+    setPreview(null);
+    // 設計書 3.6.4節・5.1節: 反映するとアシスタントが縮む。下のフォームを見せる。
+    setExpanded(false);
+    /*
+      縮めると、いま押したボタンごと `hidden` の内側に入る。フォーカスは行き先を
+      指定しないと `<body>` へ落ちるので、設計書 5.1節が指す先（非AI経路のフォーム）
+      へ明示的に移す。反映した値を確かめる場所もそこである。
+    */
+    focusNonAiPath();
+  }
+
+  /**
+   * 書き直しへ戻る（設計書 3.6.4節）。**プレビューは残す。**
+   *
+   * 前の結果を見ながら書き直せるようにするため。消してから書かせると、何が足りな
+   * かったのかを思い出しながら打つことになる。
+   */
+  function handleRevise() {
+    promptRef.current?.focus();
+  }
+
+  function handleReset() {
+    // 番号を進めて、飛んでいるリクエストの結果を無効にする。実際にも止める。
+    submitSerial.current++;
+    inFlight.current?.abort();
+    inFlight.current = null;
+    setPending(false);
+    setPreview(null);
+    setFailure(null);
+    setApplied(null);
     setSessionId(null);
+    setExchanges(0);
+    failureStreak.current = 0;
+    setExhausted(false);
     setPrompt("");
     handlers.current.onReset();
   }
 
+  /*
+    プレビューの一覧は描画のたびに組み直す。状態として抱えると、応答が届いた時点の
+    画面（フォームの値・候補日程の一覧）で固まり、待っている間の手入力が映らない。
+  */
+  const items = preview === null ? [] : previewItems(preview.result);
+
+  /**
+   * 読み上げだけに出す一文。**画面には出さない**（見れば分かるものを二重に置かない）。
+   *
+   * WHY 要るか: プレビューと反映の報告はどちらも「その場に挿入される」ので、live
+   * region の器を兼ねさせると読み上げられないことがある。器は常設にして、中身が
+   * 変わったことだけをここで伝える。
+   */
+  const liveStatus =
+    preview !== null
+      ? "AI の結果が届きました。プレビューを確認してください。"
+      : applied !== null
+        ? "プレビューの内容をフォームへ反映しました。"
+        : "";
+
   const continuing = sessionId !== null;
-  // 初回が失敗するとセッションは始まらないが、失敗した往復はログに残る。
-  // やり直したいのはまさにその場面なので、ログがあれば操作を出す。
-  const resettable = continuing || turns.length > 0;
+  // 初回が失敗するとセッションは始まらないが、赤い枠は残る。やり直したいのはまさに
+  // その場面なので、出ているものが1つでもあれば操作を出す。
+  const resettable =
+    continuing || preview !== null || failure !== null || applied !== null;
 
   return (
     <section
@@ -248,12 +409,13 @@ export function AiAssistant<TTaskId extends TaskId>({
           {description}
         </p>
         {/*
-          セッションが続いていること自体を画面に出す（#38）。会話ログだけだと、
-          前の往復が Runtime に残っているのか毎回初回として送っているのかが読めない。
+          セッションが続いていること自体を画面に出す（#38）。会話ログを持たなく
+          なった（ADR-0006）ので、往復数だけが「前の指示が Runtime に残っている」
+          ことの手がかりになる。
         */}
         {continuing && (
           <p className="mt-1 text-dns-12N-130 text-solid-gray-600">
-            会話を継続中（{turns.length}往復）
+            会話を継続中（{exchanges}往復）
           </p>
         )}
 
@@ -263,6 +425,7 @@ export function AiAssistant<TTaskId extends TaskId>({
           </label>
           <textarea
             id={promptId}
+            ref={promptRef}
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
             rows={4}
@@ -291,18 +454,35 @@ export function AiAssistant<TTaskId extends TaskId>({
           </div>
         </form>
 
-        {turns.length > 0 && (
-          <ol className="mt-4 grid gap-4">
-            {turns.map((turn) => (
-              <li key={turn.id}>
-                <TurnView
-                  turn={turn}
-                  taskId={taskId}
-                  nonAiPathHint={nonAiPathHint}
-                />
-              </li>
-            ))}
-          </ol>
+        {/*
+          プレビューは送信ボタンの下、非AI経路のフォームの上に置く。Tab の順路が
+          「テキストエリア → 生成ボタン → プレビュー内のボタン → フォーム」に
+          なるのは、この並びが DOM の並びと一致しているから（設計書 7.1節）。
+        */}
+        {preview !== null && (
+          <>
+            {/* 送った指示。成功すると入力欄は空になるので、ここが唯一の控え。 */}
+            <p className="mt-4 rounded-md bg-solid-gray-100 p-3 text-dns-14N-130 text-solid-gray-900">
+              <span className="mr-2 text-dns-12N-130 text-solid-gray-600">
+                指示
+              </span>
+              {/* 自然文が任意のタブでは、指示なしで送った往復もある。空欄のまま
+                  置くと送信そのものが無かったように見えるので、そう書く。 */}
+              {preview.prompt === "" ? (
+                <span className="text-solid-gray-600">（指示なし）</span>
+              ) : (
+                preview.prompt
+              )}
+            </p>
+            <AiPreview
+              items={items}
+              message={preview.result.message}
+              emptyItemText={emptyItemText}
+              applyLabel={applyLabel}
+              onApply={handleApply}
+              onRevise={handleRevise}
+            />
+          </>
         )}
 
         {resettable && (
@@ -321,47 +501,41 @@ export function AiAssistant<TTaskId extends TaskId>({
         )}
       </div>
 
-      {pending && <AiPendingNotice message={generatingMessage} />}
-    </section>
-  );
-}
-
-function TurnView({
-  turn,
-  taskId,
-  nonAiPathHint,
-}: {
-  turn: Turn;
-  taskId: TaskId;
-  nonAiPathHint: string;
-}) {
-  return (
-    <div className="grid gap-2">
-      <p className="rounded-md bg-solid-gray-100 p-3 text-dns-14N-130 text-solid-gray-900">
-        <span className="mr-2 text-dns-12N-130 text-solid-gray-600">指示</span>
-        {/* 自然文が任意のタブでは、指示なしで送った往復もログに残る。空欄のまま
-            並べると送信そのものが無かったように見えるので、そう書く。 */}
-        {turn.prompt === "" ? (
-          <span className="text-solid-gray-600">（指示なし）</span>
-        ) : (
-          turn.prompt
-        )}
-      </p>
-      {turn.ok ? (
-        <div className="rounded-lg border border-solid-blue-500 bg-white p-4">
-          {/* 設計書 3.6.2節。AI が書いた文であることが分かるよう青で囲う。 */}
-          <p className="border-l-4 border-solid-blue-700 bg-solid-blue-50 p-3 text-dns-14N-130 text-solid-gray-900">
-            {turn.message}
-          </p>
-          <ApplyReportView report={turn.report} />
-        </div>
-      ) : (
-        <AiErrorNotice
-          guidance={turn.guidance}
-          taskId={taskId}
-          nonAiPathHint={nonAiPathHint}
-        />
+      {/*
+        生成中・失敗・反映の報告は**折りたたみの内側に置かない。** 3つとも縮んだ状態で
+        起きうる（反映は自分で縮め、3回続けて失敗すると縮む）ので、内側に置くと結果が
+        出た瞬間に隠れる。生成中の live region については、職員が待っている最中に
+        自分で畳んだ場合も同じ。
+      */}
+      {pending && (
+        <AiPendingNotice message={generatingMessage} onCancel={handleCancel} />
       )}
-    </div>
+      {failure !== null && (
+        <div className="mt-4">
+          <AiErrorNotice
+            guidance={failure}
+            taskId={taskId}
+            nonAiPathHint={nonAiPathHint}
+            exhausted={exhausted}
+          />
+        </div>
+      )}
+      {applied !== null && (
+        <div className="mt-4">
+          <ApplyReportView report={applied} />
+        </div>
+      )}
+
+      {/*
+        読み上げ用の live region。**常に DOM に置く。** 中身入りで挿入された live
+        region を読み上げない支援技術があるので、器を先に置いて中身だけを差し替える。
+        画面には出さない — プレビューも報告も目で見れば分かるところに既にあり、
+        ここが要るのは「応答が届いた」「反映した」という**変化の瞬間**だけである。
+        生成中は `AiPendingNotice` が自前の live region で言うので重ねない。
+      */}
+      <p role="status" aria-live="polite" className="sr-only">
+        {pending ? "" : liveStatus}
+      </p>
+    </section>
   );
 }

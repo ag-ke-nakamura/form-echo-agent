@@ -16,6 +16,10 @@ import {
 import { FormSection } from "./form-section";
 import { CANDIDATES_TASK_ID } from "./lib/api";
 import { candidateLimitReason } from "./lib/candidate-limit";
+import {
+  describeChange,
+  newCandidatePreviewItems,
+} from "./lib/candidates-form";
 import { candidateRangeText, type MeetingInfo } from "./lib/meeting-info";
 import { type MeetingInfoApi, MeetingInfoFields } from "./meeting-info";
 import { ManualInputDivider, TabHeading } from "./screen-layout";
@@ -40,7 +44,7 @@ type CandidateField = keyof ParseCandidatesOutput["candidates"][number];
  * 発番するのはこの画面で、**AI は自分では作らない** — AI が選べる識別子は渡した
  * 一覧の中にしか無い。
  */
-type CandidateRow = {
+export type CandidateRow = {
   id: string;
   fields: Record<CandidateField, { value: string; source: FieldSource }>;
 };
@@ -124,47 +128,6 @@ export function selectedCandidates(rows: CandidateRow[]): SelectedCandidate[] {
     }));
 }
 
-/**
- * 作り直しで何が入れ替わったかを言う。
- *
- * WHY: 件数だけだと「水曜は避けたい」で何が外れたのかが分からず、10件が10件に
- * 変わったときは**変わっていないのと見分けが付かない**。他のタブは項目名を挙げる
- * ので、ここも日付を挙げて揃える。写像そのものは素直な代入のままで、これは報告の
- * ためだけの計算（#23: 写像に条件分岐を育てない）。
- *
- * 時刻だけが動いた場合も拾うため、変化の有無は日付ではなく日付と開始時刻の組で見る。
- */
-function describeChange(
-  replaced: CandidateRow[],
-  candidates: ParseCandidatesOutput["candidates"],
-): string[] {
-  const before = replaced.map(
-    (row) => `${row.fields.date.value} ${row.fields.start_time.value}`,
-  );
-  const after = candidates.map(
-    (candidate) => `${candidate.date} ${candidate.start_time}`,
-  );
-  if (
-    before.length === after.length &&
-    before.every((s, i) => s === after[i])
-  ) {
-    return [];
-  }
-
-  const beforeDates = replaced.map((row) => row.fields.date.value);
-  const afterDates = candidates.map((candidate) => candidate.date);
-  const added = afterDates.filter((date) => !beforeDates.includes(date));
-  const removed = beforeDates.filter((date) => !afterDates.includes(date));
-
-  const changes: string[] = [];
-  if (added.length > 0) changes.push(`追加 ${added.join("・")}`);
-  if (removed.length > 0) changes.push(`削除 ${removed.join("・")}`);
-  // 日付の出入りが無く時刻だけ動いた場合。上の突き合わせは通っているので何かは変わっている。
-  if (changes.length === 0) changes.push("時刻を変更");
-
-  return [`候補日程 ${afterDates.length}件（${changes.join("、")}）`];
-}
-
 export function useCandidateRows(): CandidateRowsApi {
   const [rows, setRows] = useState<CandidateRow[]>(INITIAL_ROWS);
   // 初期行の id と衝突しない位置から始める。
@@ -238,7 +201,17 @@ export function useCandidateRows(): CandidateRowsApi {
     ]);
 
     return {
-      updated: describeChange(replaced, result.candidates),
+      /*
+        行そのものではなく日付と開始時刻に落として渡す。行の形はこのタブの状態モデル
+        なので、`app/lib` から掘りに行かせない（`lib/candidates-form.ts`）。
+      */
+      updated: describeChange(
+        replaced.map((row) => ({
+          date: row.fields.date.value,
+          start_time: row.fields.start_time.value,
+        })),
+        result.candidates,
+      ),
       preserved: kept.length > 0 ? [`手を入れた候補日程 ${kept.length}件`] : [],
     };
   }
@@ -293,7 +266,20 @@ export function CandidatesPanel({
         submitLabel="AIで候補日程を生成"
         pendingLabel="生成中..."
         generatingMessage="AIが候補日程を生成しています..."
-        onResult={applyResult}
+        /*
+          設計書 3.6.5節は「カレンダーに反映」だが、そのカレンダーはまだ無い（#69）。
+          区切り線の文言と同じ扱いにする — **その非AI経路が設計書の形になったタブだけが
+          設計書の文言を名乗る**（`screen-layout.tsx`）。
+        */
+        applyLabel="この内容で候補日程に入力"
+        emptyItemText="（生成できませんでした）"
+        previewItems={(result) =>
+          newCandidatePreviewItems(
+            result.candidates,
+            meetingInfo.info.durationMinutes,
+          )
+        }
+        onApply={applyResult}
         onReset={reset}
       />
 

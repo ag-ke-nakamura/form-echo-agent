@@ -15,6 +15,7 @@ import {
   type AvailabilityChoice,
   applyAvailabilityResult,
   availabilityChoicesFor,
+  availabilityPreviewItems,
   candidateLabel,
   dateHeadingText,
   groupCandidatesByDate,
@@ -199,7 +200,16 @@ export function AvailabilityPanel({
         submitLabel="AIで参加可否を判定"
         pendingLabel="判定中..."
         generatingMessage="AIが参加可否を判定しています..."
-        onResult={applyResult}
+        applyLabel="回答フォームに反映"
+        emptyItemText="（判定できませんでした）"
+        previewItems={(result) =>
+          availabilityPreviewItems(answers, result, {
+            candidates,
+            format: meetingInfo.format,
+            durationMinutes: meetingInfo.durationMinutes,
+          })
+        }
+        onApply={applyResult}
         onReset={reset}
       />
 

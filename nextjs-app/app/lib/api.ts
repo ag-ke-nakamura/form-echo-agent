@@ -16,6 +16,18 @@ const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8787";
 
 /**
+ * 応答を待つ上限（設計書 8節「実装時の注意事項」）。
+ *
+ * WHY 画面が持つか: BFF と Runtime にもそれぞれの上限があるが、それが効かない経路が
+ * ある（BFF ごと落ちた・経路の途中で握られた）。待つのをやめる判断は待っている側に
+ * しか下せないので、画面が自分の上限を持つ。
+ *
+ * 打ち切りは TIMEOUT として返す。Runtime は生きていて遅いだけかもしれないので、
+ * 案内は非AI経路ではなく再送へ寄る（`error-guidance.ts`）。
+ */
+export const REQUEST_TIMEOUT_MS = 60_000;
+
+/**
  * 出力契約の taskId 許可リストに対して型で照合される。
  *
  * 注釈ではなく `satisfies` を使う。`: TaskId` と書くとリテラル型が許可リスト全体の
@@ -75,6 +87,14 @@ export type AiTaskRequestArgs<TTaskId extends TaskId> = {
    * なる（ADR-0004）。
    */
   input: TaskInputs[TTaskId];
+  /**
+   * 呼び出し側から打ち切るための signal。省略すると60秒の上限だけが効く。
+   *
+   * WHY 要るか: 「最初からやり直す」は連番（`submitSerial`）で結果を捨てているが、
+   * 捨てるだけでは飛んでいるリクエストは走り続け、Runtime は最後まで推論する。
+   * 職員が捨てると決めた往復に課金と時間を使わないよう、実際に止める手を渡す。
+   */
+  signal?: AbortSignal;
 };
 
 /**
@@ -86,39 +106,76 @@ export type AiTaskRequestArgs<TTaskId extends TaskId> = {
  * `sessionId` は初回 null、2回目以降は前回の応答が返したものを渡す。これが
  * 追加の指示を同じ会話の続きとして届ける唯一の手立てになる — `input` が運ぶのは
  * 画面の**今の**状態だけで、前に何を指示したかは Runtime 側の会話履歴にしかない。
+ *
+ * 待つのは `REQUEST_TIMEOUT_MS` まで。呼び出し側から止めたいときは `signal` を渡す。
  */
 export async function requestAiTask<TTaskId extends TaskId>({
   taskId,
   prompt,
   sessionId,
   input,
+  signal,
 }: AiTaskRequestArgs<TTaskId>): Promise<AiTaskOutcome<TTaskId>> {
-  let response: Response;
+  /*
+    60秒の上限と呼び出し側の signal を1つの AbortController に束ねる。`AbortSignal.any`
+    でも書けるが、こちらは打ち切られたことを `controller.signal.aborted` で見分けられる
+    （通信の失敗と区別が付く。上限で切れたのか職員が止めたのかは区別しない — どちらも
+    「待つのをやめた」で、職員が止めた分は呼び出し側が連番で捨てる）。
+  */
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  const timer = setTimeout(abort, REQUEST_TIMEOUT_MS);
+  signal?.addEventListener("abort", abort);
+
+  /*
+    後片付けは**本文を読み終えるまで**掛ける。`fetch` が解決した時点で解除すると、
+    ヘッダだけ届いて本文が来ない経路（BFF が握ったまま切らない）で上限が効かず、
+    職員の「中断」も届かない。
+  */
   try {
-    response = await fetch(`${API_BASE_URL}/api/ai/tasks`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskId, prompt, sessionId, input }),
-    });
-  } catch {
-    // BFF ごと落ちている場合。Runtime 障害と同じ案内で構わない（どちらも
-    // 職員にできることは手動入力へ移ることだけ）。
-    return { ok: false, code: "RUNTIME_UNAVAILABLE" };
-  }
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE_URL}/api/ai/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId, prompt, sessionId, input }),
+        signal: controller.signal,
+      });
+    } catch {
+      // 打ち切りも通信の失敗も fetch の reject として同じ形で来るので、どちらだったかは
+      // controller を見て決める。打ち切りでなければ BFF ごと落ちている場合で、Runtime
+      // 障害と同じ案内で構わない（どちらも職員にできることは手動入力へ移ることだけ）。
+      return {
+        ok: false,
+        code: controller.signal.aborted ? "TIMEOUT" : "RUNTIME_UNAVAILABLE",
+      };
+    }
 
-  const body: unknown = await response.json().catch(() => null);
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      // 本文の途中で打ち切られた場合と、JSON でない応答が返った場合を分ける。
+      // 前者を PARSE_FAILED にすると「書き方を変えて送り直せ」と案内してしまう。
+      if (controller.signal.aborted) return { ok: false, code: "TIMEOUT" };
+      body = null;
+    }
 
-  if (!response.ok) {
-    const code = (body as AiErrorResponse | null)?.error?.code;
-    return { ok: false, code: code ?? "INTERNAL_ERROR" };
-  }
+    if (!response.ok) {
+      const code = (body as AiErrorResponse | null)?.error?.code;
+      return { ok: false, code: code ?? "INTERNAL_ERROR" };
+    }
 
-  const success = body as AiTaskSuccessResponse<TaskOutputs[TTaskId]> | null;
-  // sessionId まで見る。無いまま成功にすると次の指示が sessionId 未指定で飛び、
-  // BFF が新しいセッションを発行する。呼び出しは通るので画面はエラーを出さず、
-  // 追加の指示が**黙って初回として扱われる**（会話が続いていないことに気づけない）。
-  if (!success?.result || typeof success.sessionId !== "string") {
-    return { ok: false, code: "PARSE_FAILED" };
+    const success = body as AiTaskSuccessResponse<TaskOutputs[TTaskId]> | null;
+    // sessionId まで見る。無いまま成功にすると次の指示が sessionId 未指定で飛び、
+    // BFF が新しいセッションを発行する。呼び出しは通るので画面はエラーを出さず、
+    // 追加の指示が**黙って初回として扱われる**（会話が続いていないことに気づけない）。
+    if (!success?.result || typeof success.sessionId !== "string") {
+      return { ok: false, code: "PARSE_FAILED" };
+    }
+    return { ok: true, sessionId: success.sessionId, result: success.result };
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", abort);
   }
-  return { ok: true, sessionId: success.sessionId, result: success.result };
 }

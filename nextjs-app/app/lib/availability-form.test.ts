@@ -5,6 +5,7 @@ import {
   applyAvailabilityResult,
   type AvailabilityAnswers,
   availabilityChoicesFor,
+  availabilityPreviewItems,
   candidateLabel,
   dateHeadingText,
   groupCandidatesByDate,
@@ -408,5 +409,162 @@ describe("applyAvailabilityResult", () => {
     );
 
     expect(applied.answers["candidate-2"].availability).toBe("attend_remote");
+  });
+});
+
+/**
+ * プレビューの一覧（ADR-0006、設計書 4.6.1節）。
+ *
+ * WHY テストを持つか: 並べるのは応答ではなく画面の候補日程で、判定できなかった分は
+ * 出力契約では要素の不在でしか表れない。応答だけを並べると「答えなかった」が一覧から
+ * 消え、聞き返しの判断も全部埋まったと読む。参加形式への寄せがラジオの文言と食い違うと、
+ * 押す前に見た語と押した後にラジオへ入る値が違って見える。
+ */
+describe("availabilityPreviewItems", () => {
+  function output(
+    availability: ParseAvailabilityOutput["availability"],
+  ): ParseAvailabilityOutput {
+    return { availability, message: "", sources: [] };
+  }
+
+  it("画面の候補日程を全部並べ、判定できなかった分は値を持たない", () => {
+    const items = availabilityPreviewItems(
+      {},
+      output([
+        {
+          candidate_id: "candidate-1",
+          availability: "attend_onsite",
+          note: null,
+        },
+        { candidate_id: "candidate-3", availability: "absent", note: null },
+      ]),
+      { candidates: CANDIDATES, format: "hybrid", durationMinutes: 60 },
+    );
+    expect(items).toEqual([
+      {
+        key: "candidate-1",
+        label: "10月15日(木) 14:00–15:00",
+        value: "現地で出席",
+      },
+      { key: "candidate-2", label: "10月15日(木) 16:00–17:00", value: null },
+      {
+        key: "candidate-3",
+        label: "10月17日(土) 10:00–11:00",
+        value: "欠席",
+      },
+    ]);
+  });
+
+  it("参加形式で畳まれる文言はラジオと同じ語を出す", () => {
+    const items = availabilityPreviewItems(
+      {},
+      output([
+        {
+          candidate_id: "candidate-1",
+          availability: "attend_remote",
+          note: null,
+        },
+      ]),
+      { candidates: CANDIDATES, format: "onsite", durationMinutes: 60 },
+    );
+    // 現地のみの会議なので `attend_onsite` へ寄り、文言も「出席」に畳まれる。
+    expect(items[0].value).toBe("出席");
+  });
+
+  it("備考も一緒に出す（反映すると備考欄まで書き換わるため）", () => {
+    const items = availabilityPreviewItems(
+      {},
+      output([
+        {
+          candidate_id: "candidate-1",
+          availability: "attend_remote",
+          note: "午前中は別の予定があります",
+        },
+      ]),
+      { candidates: CANDIDATES, format: "hybrid", durationMinutes: 60 },
+    );
+    expect(items[0].value).toBe(
+      "リモートで出席（備考: 午前中は別の予定があります）",
+    );
+  });
+
+  /*
+    プレビューが「押したら入る」と偽らないことの検査（ADR-0006）。判定は
+    `applyAvailabilityResult` と同じ条件（手で選んだ可否は守る）を見ている。
+  */
+  it("手で選んだ候補日程は、判定されていても変わらない印を付ける", () => {
+    const answers: AvailabilityAnswers = {
+      "candidate-1": {
+        availability: "absent",
+        source: "manual",
+        note: "",
+        noteSource: "manual",
+      },
+    };
+    const result = output([
+      {
+        candidate_id: "candidate-1",
+        availability: "attend_onsite",
+        note: null,
+      },
+    ]);
+    const items = availabilityPreviewItems(answers, result, {
+      candidates: CANDIDATES,
+      format: "hybrid",
+      durationMinutes: 60,
+    });
+    expect(items[0]).toEqual({
+      key: "candidate-1",
+      label: "10月15日(木) 14:00–15:00",
+      value: "現地で出席",
+      preserved: true,
+    });
+    // 実際に反映しても変わらない。
+    const applied = applyAvailabilityResult(answers, result, {
+      candidates: CANDIDATES,
+      format: "hybrid",
+      durationMinutes: 60,
+    });
+    expect(applied.answers["candidate-1"].availability).toBe("absent");
+  });
+
+  it("手で書いた備考は守られるので、AI の備考を見せない", () => {
+    const answers: AvailabilityAnswers = {
+      "candidate-1": {
+        availability: "undecided",
+        source: "ai",
+        note: "本人が書いた事情",
+        noteSource: "manual",
+      },
+    };
+    const items = availabilityPreviewItems(
+      answers,
+      output([
+        {
+          candidate_id: "candidate-1",
+          availability: "attend_onsite",
+          note: "AI が書いた備考",
+        },
+      ]),
+      { candidates: CANDIDATES, format: "hybrid", durationMinutes: 60 },
+    );
+    expect(items[0].value).toBe("現地で出席（備考は保持）");
+  });
+
+  /* 応答に載っていても画面から消えている候補日程は行を起こす先が無い。 */
+  it("画面に無い候補日程は一覧に出さない", () => {
+    const items = availabilityPreviewItems(
+      {},
+      output([
+        { candidate_id: "candidate-9", availability: "absent", note: null },
+      ]),
+      { candidates: CANDIDATES, format: "hybrid", durationMinutes: 60 },
+    );
+    expect(items.map((item) => item.key)).toEqual([
+      "candidate-1",
+      "candidate-2",
+      "candidate-3",
+    ]);
+    expect(items.every((item) => item.value === null)).toBe(true);
   });
 });
