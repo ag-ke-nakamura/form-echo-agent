@@ -25,6 +25,7 @@ const STATUS_BY_CODE: Record<AiErrorCode, ContentfulStatusCode> = {
   PARSE_FAILED: 502,
   TIMEOUT: 504,
   RUNTIME_UNAVAILABLE: 503,
+  GUARDRAIL_BLOCKED: 400,
   INTERNAL_ERROR: 500,
 }
 

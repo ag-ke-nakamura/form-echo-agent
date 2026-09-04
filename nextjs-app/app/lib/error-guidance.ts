@@ -76,6 +76,14 @@ const GUIDANCE: Record<AiErrorCode, ErrorGuidance> = {
     nextStep: FILL_FORM_DIRECTLY,
     offersNonAiPath: true,
   },
+  GUARDRAIL_BLOCKED: {
+    // 参照ドキュメント 9.3節の文言そのまま。どのチェックが反応したかは出さない
+    // （10.4節。詳細を出すとブロックの回避方法を教えることになる）。
+    summary:
+      "入力内容に問題があります。個人情報（マイナンバー等）が含まれていないか確認してください。",
+    nextStep: `${PROMPT_KEPT}書き直して送り直してください。`,
+    offersNonAiPath: false,
+  },
   INTERNAL_ERROR: {
     // Runtime 障害と同じ案内にする。原因は違うが、職員にできることは同じ。
     // 分けて持つのは、原因が分かって片方の案内だけ変わったときに動かせるようにするため。

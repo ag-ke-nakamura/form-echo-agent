@@ -5,8 +5,19 @@ import {
   type WebSearchCitation,
 } from '../contracts/index.js';
 import type { WebSearchHit } from '../tools/web-search.js';
-import { invokeTask, StructuredOutputError } from './invoke-task.js';
+import {
+  GuardrailBlockedError,
+  invokeTask,
+  StructuredOutputError,
+} from './invoke-task.js';
 import type { InvocationLogger } from './logger.js';
+
+/**
+ * 画面へ出す文言（参照ドキュメント 9.3節）。どのチェックが反応したかは出さない
+ * （10.4節、`docs/adr/0009-guardrail-block-message-wording.md`）。
+ */
+const GUARDRAIL_BLOCKED_MESSAGE =
+  '入力内容に問題があります。個人情報（マイナンバー等）が含まれていないか確認してください。';
 
 /**
  * 取得した Search Result を、職員に見せる出典に落とす（#46）。
@@ -99,6 +110,14 @@ export async function handleInvocation(
     };
   } catch (error) {
     context.log.error({ err: error }, 'invocation に失敗しました');
+    if (error instanceof GuardrailBlockedError) {
+      return {
+        error: {
+          code: 'GUARDRAIL_BLOCKED',
+          message: GUARDRAIL_BLOCKED_MESSAGE,
+        },
+      };
+    }
     if (error instanceof StructuredOutputError) {
       return {
         error: { code: 'PARSE_FAILED', message: error.message },

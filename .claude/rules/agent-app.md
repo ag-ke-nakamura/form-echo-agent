@@ -41,6 +41,53 @@ paths:
   （`FST_ERR_REP_INVALID_PAYLOAD_TYPE`）。結果、**本文の無い 500** になって原因が伝わらない。
   `invocation/handler.ts` の中で `aiTaskRequestSchema` を回すこと
 
+## Guardrail（#43）
+
+`guardrail/` に案A（`InvokeGuardrailChecks`）・案B（`ApplyGuardrail`）・日本固有 PII の
+正規表現の3つがあり、`guardrail/load.ts` の `checkGuardrail` がまとめる。
+`invoke-task.ts` がモデル呼び出しの**前**（自然文 `prompt`）と**後**（Structured Output の
+パース結果）の両方でこれを呼ぶ。ADR-0001（Runtime に置く）・ADR-0009（ブロック時の文言の
+詳細度）を参照。
+
+- **設定の切り替えは `FORMECHO_GUARDRAIL_STRATEGY`**（`invoke-checks` / `apply-guardrail` /
+  テスト専用の `fake`）。しきい値は `FORMECHO_GUARDRAIL_THRESHOLD_{PROMPT_ATTACK,
+  SENSITIVE_INFO,CONTENT_FILTER}`（離散値 `{0,0.2,0.4,0.6,0.8,1}` または `off`。F-02）
+- **日本固有 PII の正規表現（マイナンバー、`guardrail/pii.ts`）は方式によらず常に走る。**
+  `InvokeGuardrailChecks` の `sensitiveInformation` に日本固有の型が無く（F-03）、
+  `ApplyGuardrail` の `regexesConfig` も `toolUse.input`（Structured Output の出力）を
+  評価しない（F-16）ため
+- **ブロックすると `discardSession`（`domain-agent.ts`）でそのセッションの Agent を全て
+  破棄する。** ブロック対象が会話履歴に残ると以降のメッセージまで連鎖ブロックする
+  （F-14）。同じ `sessionId` を送り直しても、次回は空の履歴から再開する
+- **案Bの Guardrail リソースはスクリプトで作る。** `agentcore.json` に Guardrail を宣言する
+  枠が無いため（F-11）。`scripts/create-guardrail.ts`（`npx tsx scripts/create-guardrail.ts`）
+  が Classic Tier・新規名前（`FormEchoGuardrail`）で作成する。**このスクリプトは自動実行
+  されない** — 実行すると共用アカウントに実際のリソースを作る。作成後、出力される
+  `guardrailId` / `version` を `FORMECHO_GUARDRAIL_ID` / `FORMECHO_GUARDRAIL_VERSION` に
+  設定する
+- **Runtime 実行ロールに必要な IAM 権限**（Runtime は F-26 によりまだデプロイできないため
+  未適用。デプロイが解けたら `agentcore/cdk` 側で付与する。cdk は生成物のため手で編集しない
+  — 付与の経路は別途検討する）:
+  ```json
+  [
+    { "Effect": "Allow", "Action": "bedrock:InvokeGuardrailChecks", "Resource": "*" },
+    { "Effect": "Allow", "Action": "bedrock:ApplyGuardrail",
+      "Resource": "arn:aws:bedrock:ap-northeast-1:<account>:guardrail/<作成した guardrailId>" }
+  ]
+  ```
+  `InvokeGuardrailChecks` はリソースレスの API なので `Resource: "*"` になる（F-08）
+- **アカウントレベル適用（`PutEnforcedGuardrailConfiguration`）は有効化しない。** 有効化すると
+  同一アカウント・同一リージョンの**全ての** Bedrock 呼び出し（`InvokeModel` /
+  `Converse` 系）にガードレールが強制され、`bedrock:ApplyGuardrail` 権限を持たない他の
+  呼び出し元が軒並み `AccessDenied` になる（F-17。共用アカウントのため影響範囲が読めない）。
+  手順自体は次の通りだが、**このリポジトリでは実行しない**:
+  1. 対象リージョンの Guardrail を DRAFT ではなく数値バージョンで用意する
+  2. そのバージョンに対する `bedrock:ApplyGuardrail` を、影響を受けうる全ての実行ロール
+     （他プロジェクトのものも含む）に事前に付与する
+  3. `PutEnforcedGuardrailConfiguration` で1アカウント1リージョンにつき1つ設定する
+     （Automated Reasoning のみ非対応、含めると実行時に失敗する）
+  4. 解除する場合は `DeleteEnforcedGuardrailConfiguration`
+
 ## CLI の既知の穴
 
 - **`agentcore deploy` は通る**（#46 で Gateway を張った）。`aws-targets.json` は CLI が自分で

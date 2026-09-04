@@ -464,6 +464,7 @@ describe('Runtime の失敗の写像', () => {
     { code: 'PARSE_FAILED', status: 502 },
     { code: 'TIMEOUT', status: 504 },
     { code: 'RUNTIME_UNAVAILABLE', status: 503 },
+    { code: 'GUARDRAIL_BLOCKED', status: 400 },
     { code: 'INTERNAL_ERROR', status: 500 },
   ]
 
@@ -487,13 +488,13 @@ describe('Runtime の失敗の写像', () => {
   )
 
   it('契約に無いエラーコードは成功として通さない', async () => {
-    // 契約に無いコード（Guardrail のチケットで足される GUARDRAIL_BLOCKED や、
-    // Runtime と BFF の版がずれた場合）が素通りすると、ブラウザにはエラー本文の
+    // 契約に無いコード（Runtime と BFF の版がずれ、まだ契約に無い新しいコードを
+    // Runtime だけが返すようになった場合）が素通りすると、ブラウザにはエラー本文の
     // 入った 200 が届く。
     fakeRuntimeScript.write({
       kind: 'respond',
       body: {
-        error: { code: 'GUARDRAIL_BLOCKED', message: 'ブロックしました' },
+        error: { code: 'NOT_YET_A_CONTRACT_CODE', message: 'ブロックしました' },
       },
     })
 

@@ -1,5 +1,6 @@
 import { beforeEach } from 'vitest';
-import { FAKE_MODEL_NAME } from '../config.js';
+import { FAKE_GUARDRAIL_STRATEGY_NAME, FAKE_MODEL_NAME } from '../config.js';
+import { fakeGuardrailScript } from '../guardrail/fake.js';
 import { fakeModelScript } from '../model/fake.js';
 
 /**
@@ -11,7 +12,14 @@ import { fakeModelScript } from '../model/fake.js';
  */
 process.env.FORMECHO_MODEL = FAKE_MODEL_NAME;
 
+/**
+ * Guardrail も同じ理由で fake に固定する（#43）。案A・案Bそのものは
+ * invoke-checks.test.ts / apply-guardrail.test.ts が個別に見る。
+ */
+process.env.FORMECHO_GUARDRAIL_STRATEGY = FAKE_GUARDRAIL_STRATEGY_NAME;
+
 // 台本と記録はモジュール変数なので、テストを跨いで持ち越さない。
 beforeEach(() => {
   fakeModelScript.reset();
+  fakeGuardrailScript.reset();
 });

@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1069.0",
     "@aws-sdk/credential-provider-node": "^3.972.82",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@opentelemetry/api": "^1.9.0",
@@ -29,6 +30,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@aws-sdk/client-bedrock": "^3.1069.0",
     "@biomejs/biome": "2.5.11",
     "@types/node": "^22.0.0",
     "typescript": "^5.6.0",

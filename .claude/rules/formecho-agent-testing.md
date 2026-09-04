@@ -27,6 +27,25 @@ paths:
 
 `taskId` のドメイン部 → ドメインエージェントの解決は `invocation/domain-agent.test.ts` で見る。ドメインエージェントの違いは `Agent` の名前と（第3段の）ツールにしか出ず、モデルへ届く system prompt はタスク部で決まる Skill だから、境界越しの検証は `domainOf` が壊れても通る。
 
+## Guardrail のしきい値・スコアの解釈も境界の外から言えない（#43）
+
+`guardrail/invoke-checks.test.ts` と `guardrail/apply-guardrail.test.ts` は、SDK のレスポンス
+から判定への写像だけを行う純関数（`verdictFromChecksResults` / `verdictFromApplyGuardrailResponse`）
+を直接叩く。**境界越しに見ると、しきい値が正しく効いているかを言えない** — invocation 境界の
+出力に現れるのは `GUARDRAIL_BLOCKED` かどうかの1ビットだけで、案A・案Bのどちらの解釈が
+正しいかを区別できない。SDK クライアントそのもの（`invokeGuardrailChecks` / `applyGuardrail`）は
+Bedrock を実際に呼ぶ薄い配線で、`tools/gateway.ts` と同じくテストを持たない。
+
+同じ理由で `guardrail/pii.test.ts`（正規表現がマイナンバー形式を検知するか）と
+`guardrail/load.test.ts`（正規表現と戦略の判定をどう合成するか）も `checkJapanesePii` /
+`checkGuardrail` を直接叩く。合成した後の1ビット（`blocked`）だけでは、正規表現が効いたのか
+戦略が効いたのかを境界越しに区別できない。
+
+境界越しの配線テスト（ブロックが `GUARDRAIL_BLOCKED` になる・セッションを破棄する・入力側と
+出力側の両方で効く）は `invocation/guardrail.test.ts` が見る。`FORMECHO_GUARDRAIL_STRATEGY=fake`
+（`guardrail/fake.ts` の `fakeGuardrailScript`）で判定を差し替える — `FORMECHO_MODEL=fake` と
+同じ考え方で、新しい境界を増やしていない。
+
 ## Web 検索の上限・切り詰め・失敗の切り離しも境界の外から言えない
 
 `tools/web-search.test.ts` は `createWebSearchTool` を直接組んで叩く（#46）。**この3つは

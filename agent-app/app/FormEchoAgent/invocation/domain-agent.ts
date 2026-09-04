@@ -67,3 +67,19 @@ export function getOrCreateDomainAgent(
   agentCache.set(key, agent);
   return agent;
 }
+
+/**
+ * このセッションの Agent をすべて破棄する（#43）。
+ *
+ * Guardrail がブロックした対象のテキストが会話履歴に残ったまま次のメッセージを
+ * 送ると、以降の正常なメッセージまで連鎖的にブロックし続ける（F-14）。
+ * `sessionId::taskId` がキーなので、同じセッションの全タブ分をまとめて消す —
+ * taskId ごとに残すと、ブロックされた入力を送ったタブ以外の会話が汚染されない
+ * 代わりに、同じタブへ戻ったときだけ連鎖が再現する状態になる。
+ */
+export function discardSession(sessionId: string): void {
+  const prefix = `${sessionId}::`;
+  for (const key of agentCache.keys()) {
+    if (key.startsWith(prefix)) agentCache.delete(key);
+  }
+}

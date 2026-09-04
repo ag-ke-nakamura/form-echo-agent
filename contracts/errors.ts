@@ -4,9 +4,6 @@
  * ここに置くのはコードだけで、画面に出す文言は置かない（ADR-002:
  * 表示メタデータは UI 側の関心事）。文言は参照ドキュメント 9.3節の表に従って
  * フロントエンドがコードから引く。
- *
- * WHY: Guardrail チェックのブロック（GUARDRAIL_BLOCKED）は MVP では発生しない
- * ため、まだ載せない。Guardrail を実装するチケットで追加する。
  */
 export const AI_ERROR_CODES = [
   /** 入力が長すぎる、prompt が空、リクエストの形が違う */
@@ -19,6 +16,14 @@ export const AI_ERROR_CODES = [
   'TIMEOUT',
   /** Runtime に到達できない、または 5xx を返した */
   'RUNTIME_UNAVAILABLE',
+  /**
+   * Guardrail が入力または出力をブロックした（#43）。
+   *
+   * どのチェック種別が反応したか（プロンプトインジェクション・個人情報等）は
+   * 画面に出さない。詳細を出すとブロックの回避方法を教えることになる
+   * （参照ドキュメント 10.4節、`docs/adr/0009-guardrail-block-message-wording.md`）。
+   */
+  'GUARDRAIL_BLOCKED',
   /** 上のどれにも当てはまらない失敗 */
   'INTERNAL_ERROR',
 ] as const;

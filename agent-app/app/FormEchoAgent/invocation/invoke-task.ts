@@ -3,17 +3,20 @@ import {
   type TaskId,
   type Usage,
 } from '../contracts/index.js';
+import { checkGuardrail } from '../guardrail/load.js';
+import { GuardrailBlockedError } from '../guardrail/types.js';
 import type { WebSearchHit } from '../tools/web-search.js';
 import {
   webSearchesUsed,
   webSearchHits,
   withWebSearchBudget,
 } from '../tools/web-search.js';
-import { getOrCreateDomainAgent } from './domain-agent.js';
+import { discardSession, getOrCreateDomainAgent } from './domain-agent.js';
 import type { InvocationLogger } from './logger.js';
 import { invokeWithSchemaRetry } from './structured-output.js';
 import { buildUserMessage } from './user-message.js';
 
+export { GuardrailBlockedError } from '../guardrail/types.js';
 // 失敗の型もシーム越しに見せる。ハンドラが境界の内側を直接掴まないため。
 export { StructuredOutputError } from './structured-output.js';
 
@@ -87,6 +90,18 @@ export async function invokeTask(
     Web 検索を持たないドメインでは誰も引かないので、ここに分岐は要らない。
   */
   return withWebSearchBudget(async () => {
+    /*
+      Guardrail は自然文（prompt）だけを見る。`input`（構造化入力）はサニタイズも
+      Guardrail チェックも通さない契約（.claude/rules/contracts.md）なので、
+      ここでは検査対象に含めない。
+
+      モデル呼び出しの前に検査する（ADR-0001）。ブロック時にモデルのトークンを
+      消費しない。
+    */
+    if (prompt !== undefined && prompt !== null) {
+      await blockOrPass(prompt, 'INPUT', sessionId, log);
+    }
+
     // 履歴の巻き戻しは invokeWithSchemaRetry が試行ごとに行うので、ここでは持たない。
     const invoked = await invokeWithSchemaRetry(
       agent,
@@ -96,6 +111,15 @@ export async function invokeTask(
       outputSchemaFor(taskId, input),
       log,
     );
+
+    /*
+      出力側の検査（F-16）。Strands の Structured Output はスキーマをツール仕様に
+      変換して実装されているため、Guardrail の sensitive information filter は
+      toolUse.input を評価せず、抽出結果に載ったマイナンバー等を見ない。パース
+      直後にアプリケーション層でここへ通す。
+    */
+    await blockOrPass(JSON.stringify(invoked.result), 'OUTPUT', sessionId, log);
+
     // 予算の内側で読む。外へ出ると `AsyncLocalStorage` の文脈が切れて空になる。
     return {
       ...invoked,
@@ -103,4 +127,28 @@ export async function invokeTask(
       webSearchHits: webSearchHits(),
     };
   });
+}
+
+/**
+ * Guardrail に通し、ブロックならセッションを破棄して投げる。
+ *
+ * WHY セッションを破棄するか: ブロック対象のテキストが会話履歴に残ると、以降の
+ * 正常なメッセージまで連鎖的にブロックし続ける（F-14）。ここで断つことで、
+ * 参照ドキュメント 11.2節の「3回連続ブロック」が真の再ブロックだけを数えるように
+ * なる。
+ */
+async function blockOrPass(
+  text: string,
+  direction: 'INPUT' | 'OUTPUT',
+  sessionId: string,
+  log: InvocationLogger,
+): Promise<void> {
+  const verdict = await checkGuardrail(text, direction);
+  if (!verdict.blocked) return;
+  log.warn(
+    { direction, findings: verdict.findings },
+    'Guardrail がブロックしました',
+  );
+  discardSession(sessionId);
+  throw new GuardrailBlockedError(verdict);
 }
