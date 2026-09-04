@@ -2,12 +2,13 @@
 
 ## Repository layout
 
-3つの独立したプロジェクトを並べたリポジトリ。共有しているのはハーネス（`.github/`, `lefthook.yml`, `mise.toml`, `.claude/`）と出力契約（`contracts/`）だけで、ルートに `package.json` やワークスペース定義は無い。
+`agent-app/`（AgentCore Runtime）・`hono-app/`（BFF）・`nextjs-app/`（SSG フロントエンド）の3プロジェクトを並べたリポジトリ。共有しているのはハーネス（`.github/`, `lefthook.yml`, `mise.toml`, `.claude/`）と入出力契約（`contracts/`, ADR-0002）だけで、**ルートに `package.json` やワークスペース定義は無い**。
 
-- `agent-app/` — AWS Bedrock AgentCore プロジェクト（`FormEcho`）。**`agentcore` CLI の生成物一式がこのフォルダに収まっている**（`AGENTS.md`, `README.md`, `agentcore/`, `app/`）。CLI は「自分のいるフォルダがプロジェクトルート」として振る舞うため、**`agentcore` コマンドは必ず `agent-app/` 内で実行する**（リポジトリルートからは "No agentcore project found" になる）
-- `hono-app/` — BFF。`POST /api/ai/tasks` で入力サニタイズ・`taskId` 照合・Runtime 呼び出し・出力の再検査を行う。**依存管理は pnpm、`dev` スクリプトのみ Bun**
-- `nextjs-app/` — フロントエンド（SSG）。AI 機能ごとのタブを持つ。`nextjs-app/AGENTS.md` は `next dev` が自動生成するため手編集不可
-- `contracts/` — 3プロジェクトが共有する出力契約（ADR-002）
+構成から読み取れない落とし穴。
+
+- **`agentcore` コマンドは必ず `agent-app/` 内で実行する。** CLI は「自分のいるフォルダがプロジェクトルート」として振る舞うので、リポジトリルートからは "No agentcore project found" になる
+- **`hono-app` の依存管理は pnpm、`dev` スクリプトのみ Bun**
+- **`nextjs-app/AGENTS.md` は手編集不可**（`next dev` が自動生成する）
 
 ## 3プロセスの起動
 
@@ -23,58 +24,33 @@ BFF が Runtime を叩く宛先は `FORMECHO_RUNTIME_URL`、フロントエン�
 
 ## contracts（入出力の契約）
 
-出力スキーマ（Zod）・リクエスト型・エラーコード・`taskId` 許可リストの正典。パッケージ化せず素の `.ts` で置き、各プロジェクトが自前の解決経路で参照する（ADR-002）。**Zod は3プロジェクトとも v4 に揃える。**
+3プロジェクトが共有する入出力契約の正典。パッケージ化せず素の `.ts` で置き、各プロジェクトが
+自前の解決経路で参照する（ADR-0002）。**Zod は3プロジェクトとも v4 に揃える。**
 
-**抽出系3タスクのリクエストは `{taskId, prompt, sessionId}` だけで、画面が持っているフォームの状態を Runtime へ渡さない。`prompt` にシステムが組み立てた文脈を埋め込むこともしない**（ADR-003）。突き合わせはフロントエンドが行う。
+判断（何を受け付けるか・何で検査するか）は契約側の関数に置き、**同じ判断を2箇所に書かない。**
 
-**推薦系 `meeting.recommend-schedule` だけは構造化入力 `input` を渡す**（ADR-0004）。`input` はサニタイズも Guardrail チェックも通さないので**自由文字列を置かない**。入力契約は `INPUT_SCHEMAS`、自然文の必須性は `PROMPT_REQUIREMENT`（`prompt-requirement.ts`）が taskId ごとに持つ（`OUTPUT_SCHEMAS` と対称。自然文だけのタスクは `null` を明示）。参加者の形と「毎回送り直す」理由は ADR-0004 にある。
-
-判断は契約側の関数に置く。`checkTaskInput(taskId, {prompt, input})` が「このリクエストが入力契約を満たすか」を、`outputSchemaFor(taskId, input)` が「この応答を何で検査するか」を決める。前者は Runtime の `aiTaskRequestSchema` と BFF の門の両方が、後者は Runtime の Structured Output 再試行と BFF の再検査の両方が引く。**同じ判断を2箇所に書かない** — 片方だけが契約の変更に追随すると、BFF は通すのに Runtime が弾く（またはその逆の）状態になる。
-
-`candidate-key.ts` と `prompt-requirement.ts` は zod を import しない。フロントエンドがこの2つだけを**値として**引くので、スキーマと同じモジュールに置くと SSG のバンドルに zod が丸ごと乗る。
-
-参照のしかたはプロジェクトごとに違う。
-
-- `hono-app` / `nextjs-app` — tsconfig の `paths` で `@contracts/*` を張る。どちらも emit しない（`tsc --noEmit` / bundler）ので `rootDir` の制約を受けない
-- `agent-app/app/FormEchoAgent` — **`contracts` という symlink がパッケージ内にあり、`./contracts/index.js` として相対 import する。** ここだけ `paths` を使わない
-
-**この symlink を消さないこと。** `tsc` は emit するので `rootDir` の外のファイルを取り込めず（TS6059）、`paths` エイリアスは emit 後の import 文にそのまま残るため Node が実行時に解決できない（`tsc` はエイリアスを書き換えない）。symlink なら `rootDir` 配下として扱われ、`dist/contracts/*.js` が実体として出力される。将来 CodeZip で固めるときも同じ理由で必要になる。
-
-あわせて各プロジェクトの tsconfig には `"zod": ["./node_modules/zod"]` の `paths` がある。`contracts/` 自身の位置からは `node_modules` を辿れないため。`contracts/package.json` は `{"type": "module"}` だけを宣言するモジュール種別のマーカーで、依存もスクリプトも持たない。
+詳細（リクエストに何が載るか、zod を import してはいけないファイル、symlink と tsconfig の
+`paths`）は `.claude/rules/contracts.md`。`contracts/`・各 `tsconfig`・BFF・Runtime の invocation・
+`nextjs-app/app/lib` のいずれかを触った時に自動で載る。
 
 ## agent-app（AgentCore）
 
-- `agent-app/agentcore/agentcore.json` がデプロイ対象のソース・オブ・トゥルース
-- **`agent-app/AGENTS.md` にスキーマと CLI リファレンスがある。`agentcore.json` や AgentCore リソースを触る前に読むこと**
-- `agent-app/AGENTS.md` と `agent-app/README.md` は CLI の生成物。`render()` が `copyFile` で上書きするため、我々の内容を書かない
-- `agent-app/app/FormEchoAgent/` — デプロイされるエージェント本体（Strands SDK + `bedrock-agentcore`、エントリ `main.ts`）。**`main.ts` は `BedrockAgentCoreApp` への配線と起動だけを持ち、invocation のロジックは `invocation/` にある**（シームは `invocation/invoke-task.ts` の `invokeTask`）。**`npm run dev` / `npm start` を直接使わず `agentcore dev` / `agentcore deploy` 経由で操作する**（プロセス単体をデバッグする場合を除く）
-- **相対的な日付・時刻は system prompt の「基準時刻」で解決する。時刻取得のツールを渡さない。** `invocation/system-prompt.ts` が JST の現在時刻を毎回埋め、`domain-agent.ts` がキャッシュ済み Agent にも貼り直す（system prompt は生成時に固定されるため、貼り直さないと追加の指示が初回の時刻から数える）。ツールでも解けるが、モデルが呼ばずに「現在時刻が分かりません」と答える失敗の余地が残る上、会議ロジにツールを1つも渡していないこと（#36）を崩す
-- `agent-app/agentcore/aws-targets.json` は現在空。デプロイ先が未設定なので `agentcore deploy` と `cdk synth` は実行できない
-- `agentcore package` は CLI 0.28.1 のバグで失敗する（esbuild が自身のバンドルに含まれておりバイナリを見つけられない）。`deploy` も同じ経路を通る可能性がある
-- **`agentcore dev` の備え付けチャット UI と `agentcore dev "<prompt>"` からはこの Runtime を動かせない。** どちらもスキャフォールド由来の `{"prompt": "…"}` しか送らず、`taskId` を付けられないため。プロンプトを試すときはフロントエンド（localhost:3000）か curl を使う。UI には `INVALID_INPUT` と理由が表示される
-- リクエストの検査を `BedrockAgentCoreApp` の `requestSchema` に任せない。bedrock-agentcore 0.3.0 は検査に落ちたとき 400 の本文を Content-Type 指定なしで送るが、呼び出し側が `Accept: text/event-stream` だと `@fastify/sse` が応答を握っており fastify が object を拒否する（`FST_ERR_REP_INVALID_PAYLOAD_TYPE`）。結果、**本文の無い 500** になって原因が伝わらない。`invocation/handler.ts` の中で `aiTaskRequestSchema` を回すこと
+`agent-app/` は AgentCore CLI の生成物一式（`AGENTS.md`, `README.md`, `agentcore/`）と、
+デプロイされる Runtime 本体（`app/FormEchoAgent/`）が同居している。**生成物には我々の内容を
+書かない。**
 
-### テスト
+`agentcore.json` や AgentCore リソースを触る前に `agent-app/AGENTS.md`（CLI が置くスキーマと
+リファレンス）を読むこと。
 
-テストは invocation 境界（#23 のシームその1）だけを叩き、モデルは `FORMECHO_MODEL=fake` で差し替える。**書き方の作法は `.claude/rules/formecho-agent-testing.md`** — `paths` で絞ってあるので、テストや `model/fake.ts` を触った時に自動で載る。ここへ写さないこと。
+**デプロイ先が未設定（`agentcore/aws-targets.json` が空）なので `agentcore deploy` と `cdk synth`
+は実行できない。** `agentcore/cdk` も生成物で編集不可。
 
-- **vitest は 3 系に留める。** node 22.22 同梱の npm 10.9.4 は vitest 4 の peer 依存で `Cannot read properties of null (reading 'edgesOut')` を出して install できない（空のパッケージでも再現するので、npm 側のバグ）。`hono-app` と `nextjs-app` は pnpm なので 4 系が入っており、**このバージョン差は許容する** — 揃えるには node/npm を上げることになり、AgentCore Runtime の実行環境に触る
+Runtime の構造・CLI の既知の穴・テスト方針は `.claude/rules/agent-app.md`。`agent-app/` 配下を
+触った時に自動で載る。
 
 ## 言語方針
 
 **日本語を基本言語**とする。コミットメッセージ、コードコメント（WHY を書く。WHAT は不要）、Markdown ドキュメント、ADR・仕様書すべて。スキルがテンプレートを提供する場合はそのフォーマットに従いつつ日本語で書く。外部ライブラリの API 名・定数は英語のまま。
-
-## 作業の締め方
-
-**完了報告で終わらせない。必ず「次に何をするか」の候補を添える。** 実装が終わった、レビューが通った、PR を出した — どれも節目であって終点ではない。ここで止めると、次の一手を毎回こちらから聞き出すことになる。
-
-添えるのは次の3つ。
-
-- **こちらが今すぐ実行できること**（PR を出す、マージする、次のチケットに入る）。選択肢が1つならそう言い切る
-- **判断を仰ぎたいこと**。何を決めれば先に進めるのかを、選択肢と各々の帰結つきで書く
-- **人間にしかできないこと**（ブラウザでの目視、AWS コンソールでの操作、外部への連絡）。何を見てほしいのかを具体的に書く
-
-未決事項を並べるだけでは足りない。それが「次に何をするか」に変換されていること。
 
 ## Harness guardrails
 
@@ -97,22 +73,15 @@ CI（`.github/workflows/ci.yml`）と同じものを手元で回す。
 | `nextjs-app` | `pnpm run format:check && pnpm run lint && pnpm run test && pnpm run build` |
 | `agent-app/agentcore/cdk` | `npx prettier --check . && npm run build` |
 
-`nextjs-app` に `typecheck` スクリプトは無い（型検証は `build` が兼ねる）。`test` があるのは
-`agent-app/app/FormEchoAgent`（invocation 境界。#40）、`hono-app`（HTTP 境界。#41）、
-`nextjs-app`（参加可否表のモック生成器1つ。#58 のシーム3）。`contracts/` はどのプロジェクトにも属さないので、整形は `agent-app/app/FormEchoAgent` の biome で見る（`./node_modules/.bin/biome check ../../../contracts`）。
-
-Runtime だけ `build` と `typecheck` の両方を回す。`build` は emit するので `dist/` にテストを
-混ぜないようテストを除いており、`typecheck`（`tsconfig.test.json`）がテストまで含めて見る。
+`nextjs-app` に `typecheck` は無い（`build` が兼ねる）。Runtime だけ `build` と `typecheck` の
+両方を回す（`build` は `dist/` にテストを混ぜないよう除くので、`typecheck` がテストまで見る）。
+`contracts/` はどのプロジェクトにも属さないので整形の経路が違う — `.claude/rules/contracts.md`。
 
 ## フォーマッター・リンター・型チェッカーの入手経路
 
 **各プロジェクトの devDependency として持ち、`mise.toml` には置かない。** 呼び出しは `npm exec` / `pnpm exec` 経由で `node_modules/.bin` から引く。素の `biome` / `prettier` を PATH から叩くと、開発機に別途入っているものを拾う。
 
 `mise.toml` に置くのはプロジェクト依存として表現できないものだけ（`node`, `python`, `pnpm`, `bun`, `lefthook`, `betterleaks`, `gh`, `jq`, `aws-cli`, `uv`）。
-
-## agent-app/agentcore/cdk
-
-**生成物のため編集不可。** 依存の固定と dependabot の扱いは `.claude/rules/agentcore-cdk.md`（`paths` で絞ってあるので、そのディレクトリを触った時に自動で載る）。
 
 ## スキル・プラグインの追加前スキャン
 
@@ -167,18 +136,14 @@ grill-with-docs ──┤
 
 **外から来た仕事は main flow の頭から入らない。**
 
-- **バグ報告・要望が溜まっている** → `triage`。`ready-for-agent` ラベルと brief が付いた時点で `implement` に合流する。**`to-tickets` が作ったチケットは triage しない**（既に agent-ready）
-- **何かが壊れている** → `diagnosing-bugs`。**そのバグで既に red になる1コマンド**を作るまで仮説を立てない。締めの post-mortem で「バグを閉じ込める良いシームが無い」と分かったら `improve-codebase-architecture` に渡す
-- **1セッションに収まらない霧のかかった塊**（greenfield、巨大機能）→ `wayfinder`。map の決定チケットを1つずつ解き、**決定を produce する（成果物ではない）**。霧が晴れたら `to-spec` で合流する — **`implement` へ直行しない**（map の linked detail を捨てることになる）
+| 入口 | スキル | 合流点と注意 |
+| --- | --- | --- |
+| バグ報告・要望が溜まっている | `triage` | `ready-for-agent` と brief が付いたら `implement` へ。**`to-tickets` が作ったチケットは triage しない**（既に agent-ready） |
+| 何かが壊れている | `diagnosing-bugs` | **そのバグで既に red になる1コマンド**を作るまで仮説を立てない。post-mortem で「良いシームが無い」と分かったら `improve-codebase-architecture` へ |
+| 1セッションに収まらない霧の塊（greenfield、巨大機能） | `wayfinder` | 決定を produce する（成果物ではない）。霧が晴れたら `to-spec` で合流 — **`implement` へ直行しない**（map の linked detail を捨てる） |
 
-### Issue tracker
+### スキルが参照する設定
 
-issue は GitHub Issues（`ag-ke-nakamura/form-echo-agent`）で管理し、`gh` CLI 経由で操作する。詳細は `docs/agents/issue-tracker.md`。
-
-### Triage labels
-
-triage ラベルは5つの正規ロール（`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`）をそのまま使う。詳細は `docs/agents/triage-labels.md`。
-
-### Domain docs
-
-single-context レイアウト（ルートの `CONTEXT.md` + `docs/adr/`）。詳細は `docs/agents/domain.md`。
+- **Issue tracker** — GitHub Issues（`ag-ke-nakamura/form-echo-agent`）を `gh` CLI で操作する。`docs/agents/issue-tracker.md`
+- **Triage labels** — 5つの正規ロール（`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`）をそのまま使う。`docs/agents/triage-labels.md`
+- **Domain docs** — single-context レイアウト（ルートの `CONTEXT.md` + `docs/adr/`）。`docs/agents/domain.md`
