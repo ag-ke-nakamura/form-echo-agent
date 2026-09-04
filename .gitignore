@@ -32,3 +32,6 @@ coverage/
 temp/
 # Python (Claude Code フックスクリプト)
 __pycache__/
+
+# 個人用のプロジェクト限定メモリ
+CLAUDE.local.md
