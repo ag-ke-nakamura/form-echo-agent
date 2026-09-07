@@ -7,7 +7,7 @@ paths:
 
 **`agentcore` CLI の生成物のため編集不可。** コマンドは `npm run build` / `npm run format`。
 
-CI は format と build のみ（`npm test` は生成されたテストが空 spec の synth しか見ておらず build と重複するため意図的に外している）。意味のある検証は「実際の `agentcore.json` が synth できるか」= `cdk synth` で、**`aws-targets.json` が埋まった今は実行できる**（#46）。ただし `runtimes` を含むと CodeZip の esbuild が `contracts/` 越しに `zod` を解決できずに落ちる（`docs/reference-doc-fixes.md` F-26）。
+CI は format と build のみ（`npm test` は生成されたテストが空 spec の synth しか見ておらず build と重複するため意図的に外している）。意味のある検証は「実際の `agentcore.json` が synth できるか」= `cdk synth` で、**`aws-targets.json` が埋まった今は実行できる**（#46）。`runtimes` を含むと CodeZip の esbuild が `zod` を解決できずに落ちる問題（`docs/reference-doc-fixes.md` F-26）は、Runtime のスキーマ定義を `contracts/` の symlink から自己完結の複製へ変えたことで構造的には解消した（ADR-0011）。ただし実際に synth が通ることの確認は未実施（#45）。
 
 ## `@aws/agentcore-cdk` はキャレットを付けずに固定する
 

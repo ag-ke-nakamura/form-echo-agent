@@ -33,7 +33,8 @@ _Avoid_: API、バックエンド、プロキシ
 ### 入出力
 
 **出力契約**:
-Runtime が返す構造化データのスキーマ。`contracts/` に置く Zod スキーマが正典。
+Runtime が返す構造化データのスキーマ。`agent-app` / `hono-app` / `nextjs-app` がそれぞれ
+自己完結の Zod スキーマとして持つ（共有ディレクトリは無い。ADR-0011）。
 _Avoid_: レスポンス型、スキーマ（単独）、Structured Output（機能名であって契約ではない）
 
 **Guardrail チェック**:

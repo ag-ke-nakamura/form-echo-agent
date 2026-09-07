@@ -106,8 +106,8 @@ paths:
   **`npx cdk deploy` は自動実行されない** — 実行すると共用アカウントに実際のリソースを作る。
   作成後、CFN 出力の `GuardrailIdOutput` / `GuardrailVersionOutput` を
   `FORMECHO_GUARDRAIL_ID` / `FORMECHO_GUARDRAIL_VERSION` に設定する
-- **Runtime 実行ロールに必要な IAM 権限**（Runtime は F-26 によりまだデプロイできないため
-  未適用。デプロイが解けたら付与する。cdk は生成物のため手で編集しない — `agent-app/infra`
+- **Runtime 実行ロールに必要な IAM 権限**（Runtime はまだデプロイ未確認のため未適用。
+  デプロイが確認できたら付与する。cdk は生成物のため手で編集しない — `agent-app/infra`
   スタックから agentcore 管理のロールをどう参照するか〔cross-stack export か
   `agentcore status` 等での動的解決か〕は ADR-0010 の Consequences に未解決のまま残っている）:
   ```json
@@ -134,11 +134,14 @@ paths:
 
 - **`agentcore deploy` は通る**（#46 で Gateway を張った）。`aws-targets.json` は CLI が自分で
   埋める（`default` / 122664578519 / ap-northeast-1）ので、「デプロイ先が未設定」ではない
-- **ただし `runtimes` を含む synth は失敗する。** CodeZip の esbuild が `contracts/` の symlink
-  越しに `zod` を解決できない（`docs/reference-doc-fixes.md` F-26。`agentcore package` が
-  失敗する理由も現在はこれで、esbuild のバイナリの件ではない）。**Runtime を伴わない
-  リソースだけなら deploy できる** — #46 は `runtimes` を一時的に空にして Gateway だけを
-  張り、`agentcore.json` は元に戻してある（**Runtime は未デプロイのまま**）
+- **`runtimes` を含む synth が CodeZip の esbuild で `zod` を解決できず失敗する問題
+  （`docs/reference-doc-fixes.md` F-26）は、Runtime のスキーマ定義を `contracts/` の symlink
+  から `agent-app/app/FormEchoAgent/contracts/` の自己完結の複製へ変えたことで構造的には
+  解消した**（ADR-0011。symlink を経由しなくなったため、`agent-app` 自身の `node_modules`
+  から通常どおり `zod` を解決できる）。ただし実際に synth・deploy が通ることの確認は
+  実クラウドリソースを作る操作のため未実施（#45）。#46 は移行前に `runtimes` を一時的に
+  空にして Gateway だけを張った経緯があり、`agentcore.json` は元に戻してある
+  （**Runtime は未デプロイのまま**）
 - **CLI と `agentcore/cdk` の `@aws/agentcore-cdk` はバージョンが噛み合っていないと
   `deploy` だけが落ちる**（`validate` と `cdk synth` は通る）。F-25 と
   `.claude/rules/agentcore-cdk.md`

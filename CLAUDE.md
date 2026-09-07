@@ -2,7 +2,7 @@
 
 ## Repository layout
 
-`agent-app/`（AgentCore Runtime）・`hono-app/`（BFF）・`nextjs-app/`（SSG フロントエンド）の3プロジェクトを並べたリポジトリ。共有しているのはハーネス（`.github/`, `lefthook.yml`, `mise.toml`, `.claude/`）と入出力契約（`contracts/`, ADR-0002）だけで、**ルートに `package.json` やワークスペース定義は無い**。
+`agent-app/`（AgentCore Runtime）・`hono-app/`（BFF）・`nextjs-app/`（SSG フロントエンド）の3プロジェクトを並べたリポジトリ。共有しているのはハーネス（`.github/`, `lefthook.yml`, `mise.toml`, `.claude/`）だけで、**ルートに `package.json` やワークスペース定義は無い**。入出力スキーマは3プロジェクトがそれぞれ自己完結の複製として持つ（ADR-0011）。
 
 構成から読み取れない落とし穴。
 
@@ -24,16 +24,20 @@ BFF が Runtime を叩く宛先は `FORMECHO_RUNTIME_URL`、フロントエン�
 
 交通ICの Web 検索は `FORMECHO_WEB_SEARCH_GATEWAY_URL` の有無で決まる（#46）。**未設定なら Web 検索を持たない**ので、実測の「無効」側はこの環境変数を外すだけで作れる。`mise run dev` は `mise.toml` の `[tasks."dev:runtime".env]` で有効側にしてある。
 
-## contracts（入出力の契約）
+## 入出力契約
 
-3プロジェクトが共有する入出力契約の正典。パッケージ化せず素の `.ts` で置き、各プロジェクトが
-自前の解決経路で参照する（ADR-0002）。**Zod は3プロジェクトとも v4 に揃える。**
+`agent-app` / `hono-app` / `nextjs-app` はそれぞれ自分に必要な入出力スキーマ・値域定義を自分の
+コードベース内に独立して持つ（ADR-0011。リポジトリルートの共有 `contracts/` はもう無い）。
+**Zod は3プロジェクトとも v4 に揃える。** 3者間でスキーマが将来食い違う（ドリフトする）リスクは
+意図的に許容し、実運用（BFF の再検査が `PARSE_FAILED` を返す等）で検知する。
 
-判断（何を受け付けるか・何で検査するか）は契約側の関数に置き、**同じ判断を2箇所に書かない。**
+判断（何を受け付けるか・何で検査するか）は各プロジェクト内の契約側の関数に置き、**同じ判断を
+プロジェクト内の2箇所に書かない。** ただし入出力の形を変える変更は、複製先すべて（最大3箇所）に
+手で反映する必要がある。
 
-詳細（リクエストに何が載るか、zod を import してはいけないファイル、symlink と tsconfig の
-`paths`）は `.claude/rules/contracts.md`。`contracts/`・各 `tsconfig`・BFF・Runtime の invocation・
-`nextjs-app/app/lib` のいずれかを触った時に自動で載る。
+詳細（リクエストに何が載るか、zod を import してはいけないファイル）は `.claude/rules/contracts.md`。
+各プロジェクトのスキーマ定義・BFF・Runtime の invocation・`nextjs-app/app/lib` のいずれかを
+触った時に自動で載る。
 
 ## agent-app（AgentCore）
 
@@ -48,9 +52,11 @@ BFF が Runtime を叩く宛先は `FORMECHO_RUNTIME_URL`、フロントエン�
 `agentcore.json` や AgentCore リソースを触る前に `agent-app/AGENTS.md`（CLI が置くスキーマと
 リファレンス）を読むこと。
 
-**`agentcore deploy` は通る**（#46 で Web 検索の Gateway を張った）。ただし **`runtimes` を含む
-synth は落ちる** — CodeZip の esbuild が `contracts/` の symlink 越しに `zod` を解決できない
-ため、**Runtime はまだデプロイできない。** `agentcore/cdk` は生成物で編集不可。
+**`agentcore deploy` は通る**（#46 で Web 検索の Gateway を張った）。**`runtimes` を含む synth が
+CodeZip の esbuild で `zod` を解決できず落ちる問題（F-26）は、Runtime のスキーマ定義を
+`contracts/` の symlink から自己完結の複製へ変えたことで構造的には解消した**（ADR-0011）が、
+実際に synth・deploy が通るかの確認は実クラウドリソースを作る操作のため人が別途行う（#45）。
+`agentcore/cdk` は生成物で編集不可。
 
 Runtime の構造・CLI の既知の穴・テスト方針は `.claude/rules/agent-app.md`。`agent-app/` 配下を
 触った時に自動で載る。
@@ -83,7 +89,6 @@ CI（`.github/workflows/ci.yml`）と同じものを手元で回す。
 
 `nextjs-app` に `typecheck` は無い（`build` が兼ねる）。Runtime だけ `build` と `typecheck` の
 両方を回す（`build` は `dist/` にテストを混ぜないよう除くので、`typecheck` がテストまで見る）。
-`contracts/` はどのプロジェクトにも属さないので整形の経路が違う — `.claude/rules/contracts.md`。
 
 ## フォーマッター・リンター・型チェッカーの入手経路
 
