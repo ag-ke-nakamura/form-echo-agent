@@ -41,6 +41,19 @@ jobs:
       # （"No deployment targets configured" で失敗する）。
       # ターゲットが設定されたら cdk synth をここに追加すること。
 
+  agent-infra:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent-app/infra
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+      - run: npm ci
+      - run: npx prettier --check .
+      - run: npm run build
+      - run: npm run test
+
   formecho-agent:
     runs-on: ubuntu-latest
     defaults:

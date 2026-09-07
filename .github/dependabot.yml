@@ -34,6 +34,13 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 0
 
+  # agent-app/infra は我々が所有する独立 CDK スタック（ADR-0010）。生成物でも
+  # alpha 依存に結合してもいないので通常どおり更新する。
+  - package-ecosystem: "npm"
+    directory: "/agent-app/infra"
+    schedule:
+      interval: "weekly"
+
   # agent-app/app/FormEchoAgent は我々が書くコードなので通常どおり更新する。
   # ただし bedrock-agentcore と @strands-agents/sdk は agentcore CLI と同じ
   # AWS ツールチェーンで、package.json の overrides で結ばれている

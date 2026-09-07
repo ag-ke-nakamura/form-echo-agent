@@ -13,7 +13,7 @@ import type {
 /**
  * 案B（`ApplyGuardrail`）。新規作成した Guardrail リソース（Classic Tier）を参照し、
  * AWS 側が判定する（ADR-032「実装方式の比較」B）。しきい値は呼び出し側の引数では
- * なくリソースの設定（`scripts/create-guardrail.ts`）が持つ。
+ * なくリソースの設定（`agent-app/infra` の CDK スタック、ADR-0010）が持つ。
  */
 
 export const applyGuardrail: GuardrailBackend = async (text, direction) => {

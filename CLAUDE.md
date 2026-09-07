@@ -41,6 +41,10 @@ BFF が Runtime を叩く宛先は `FORMECHO_RUNTIME_URL`、フロントエン�
 デプロイされる Runtime 本体（`app/FormEchoAgent/`）が同居している。**生成物には我々の内容を
 書かない。**
 
+`agentcore.json` のスキーマに乗らないリソース（Guardrail 等）は `agent-app/infra` に
+我々が所有する独立の CDK スタックとして書く（ADR-0010）。`agentcore/cdk` とは別物 —
+そちらは生成物で `agentcore deploy` のたびに作り直される。
+
 `agentcore.json` や AgentCore リソースを触る前に `agent-app/AGENTS.md`（CLI が置くスキーマと
 リファレンス）を読むこと。
 
@@ -75,6 +79,7 @@ CI（`.github/workflows/ci.yml`）と同じものを手元で回す。
 | `hono-app` | `pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test` |
 | `nextjs-app` | `pnpm run format:check && pnpm run lint && pnpm run test && pnpm run build` |
 | `agent-app/agentcore/cdk` | `npx prettier --check . && npm run build` |
+| `agent-app/infra` | `npx prettier --check . && npm run build && npm run test` |
 
 `nextjs-app` に `typecheck` は無い（`build` が兼ねる）。Runtime だけ `build` と `typecheck` の
 両方を回す（`build` は `dist/` にテストを混ぜないよう除くので、`typecheck` がテストまで見る）。

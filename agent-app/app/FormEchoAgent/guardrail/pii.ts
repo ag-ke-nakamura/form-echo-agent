@@ -11,8 +11,8 @@ import type { GuardrailBackend, GuardrailVerdict } from './types.js';
  * になる。
  *
  * ハイフン区切り（1234-5678-9012）と連続表記の両方を拾う。Guardrail リソースの
- * `regexesConfig` にも同じパターン文字列を登録する（`scripts/create-guardrail.ts`）
- * — lookaround（`(?=)` / `(?<=)`）は向こうでは使えないので、ここでも使わない。
+ * `regexesConfig` にも同じパターン文字列を登録する（`agent-app/infra/lib/guardrail-config.ts`、
+ * ADR-0010）— lookaround（`(?=)` / `(?<=)`）は向こうでは使えないので、ここでも使わない。
  */
 export const MY_NUMBER_PATTERN = String.raw`\d{4}-?\d{4}-?\d{4}`;
 

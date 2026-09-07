@@ -20,7 +20,6 @@ CLI コマンドは `agent-app/` で実行する。この Runtime 自体のコ�
 | `model/` | モデルの選択（Bedrock / テスト用 fake） |
 | `skills/` | taskId ごとの `SKILL.md`（Strands の `AgentSkills`） |
 | `contracts` | リポジトリ直下 `contracts/` への symlink。入出力契約の正典 |
-| `scripts/` | 手動実行の管理スクリプト（`create-guardrail.ts` 等）。ビルド成果物には含めない |
 | `tests/` | vitest のテストとテスト用の足場 |
 
 ## 開発
@@ -51,7 +50,7 @@ CLI コマンドは `agent-app/` で実行する。この Runtime 自体のコ�
 | `FORMECHO_GUARDRAIL_INVOKE_CHECKS` | `true` | 案A（`InvokeGuardrailChecks`）を有効にするか |
 | `FORMECHO_GUARDRAIL_APPLY_GUARDRAIL` | `false` | 案B（`ApplyGuardrail`）を有効にするか。`true` にする場合は `FORMECHO_GUARDRAIL_ID` / `FORMECHO_GUARDRAIL_VERSION` も必須 |
 | `FORMECHO_GUARDRAIL_CUSTOM_REGEX` | `true` | 日本固有 PII（マイナンバー）の正規表現チェックを有効にするか。案A・案Bのどちらにもマイナンバー検知の手段が無いため、既定で常時有効にしてある |
-| `FORMECHO_GUARDRAIL_ID` | — | 案B が参照する Guardrail リソースの ID。`scripts/create-guardrail.ts` で作成する |
+| `FORMECHO_GUARDRAIL_ID` | — | 案B が参照する Guardrail リソースの ID。`agent-app/infra` の CDK スタック（ADR-0010）が作成する |
 | `FORMECHO_GUARDRAIL_VERSION` | — | 案B が参照する Guardrail リソースのバージョン |
 | `FORMECHO_GUARDRAIL_THRESHOLD_PROMPT_ATTACK` | `0.8` | 案Aの promptAttack ブロックしきい値。離散値 `{0, 0.2, 0.4, 0.6, 0.8, 1}` のいずれか、またはブロックしない `off` |
 | `FORMECHO_GUARDRAIL_THRESHOLD_SENSITIVE_INFO` | `0.6` | 案Aの sensitiveInformation ブロックしきい値。同上 |

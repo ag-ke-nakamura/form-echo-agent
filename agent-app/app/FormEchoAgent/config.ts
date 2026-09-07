@@ -219,7 +219,7 @@ export function resolveGuardrailResource(): GuardrailResource {
   const version = process.env.FORMECHO_GUARDRAIL_VERSION;
   if (identifier === undefined || version === undefined) {
     throw new Error(
-      '案B（FORMECHO_GUARDRAIL_APPLY_GUARDRAIL=true）には FORMECHO_GUARDRAIL_ID と FORMECHO_GUARDRAIL_VERSION の両方が必要です（agent-app/scripts/create-guardrail.ts で作成する）。',
+      '案B（FORMECHO_GUARDRAIL_APPLY_GUARDRAIL=true）には FORMECHO_GUARDRAIL_ID と FORMECHO_GUARDRAIL_VERSION の両方が必要です（agent-app/infra の CDK スタックがデプロイ出力として返す）。',
     );
   }
   return { identifier, version };

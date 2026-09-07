@@ -79,15 +79,17 @@ paths:
 - **ブロックすると `discardSession`（`domain-agent.ts`）でそのセッションの Agent を全て
   破棄する。** ブロック対象が会話履歴に残ると以降のメッセージまで連鎖ブロックする
   （F-14）。同じ `sessionId` を送り直しても、次回は空の履歴から再開する
-- **案Bの Guardrail リソースはスクリプトで作る。** `agentcore.json` に Guardrail を宣言する
-  枠が無いため（F-11）。`scripts/create-guardrail.ts`（`npx tsx scripts/create-guardrail.ts`）
-  が Classic Tier・新規名前（`FormEchoGuardrail`）で作成する。**このスクリプトは自動実行
-  されない** — 実行すると共用アカウントに実際のリソースを作る。作成後、出力される
-  `guardrailId` / `version` を `FORMECHO_GUARDRAIL_ID` / `FORMECHO_GUARDRAIL_VERSION` に
-  設定する
+- **案Bの Guardrail リソースは `agent-app/infra` の独立 CDK スタックで作る**
+  （`FormEchoAgentInfra`、ADR-0010）。`agentcore.json` に Guardrail を宣言する枠が無く
+  （F-11）、`agentcore/cdk` は生成物で手書きのリソースを混在させられないため。
+  Classic Tier・新規名前（`FormEchoGuardrail`）で作成する（`agent-app/infra/lib/guardrail-config.ts`）。
+  **`npx cdk deploy` は自動実行されない** — 実行すると共用アカウントに実際のリソースを作る。
+  作成後、CFN 出力の `GuardrailIdOutput` / `GuardrailVersionOutput` を
+  `FORMECHO_GUARDRAIL_ID` / `FORMECHO_GUARDRAIL_VERSION` に設定する
 - **Runtime 実行ロールに必要な IAM 権限**（Runtime は F-26 によりまだデプロイできないため
-  未適用。デプロイが解けたら `agentcore/cdk` 側で付与する。cdk は生成物のため手で編集しない
-  — 付与の経路は別途検討する）:
+  未適用。デプロイが解けたら付与する。cdk は生成物のため手で編集しない — `agent-app/infra`
+  スタックから agentcore 管理のロールをどう参照するか〔cross-stack export か
+  `agentcore status` 等での動的解決か〕は ADR-0010 の Consequences に未解決のまま残っている）:
   ```json
   [
     { "Effect": "Allow", "Action": "bedrock:InvokeGuardrailChecks", "Resource": "*" },
