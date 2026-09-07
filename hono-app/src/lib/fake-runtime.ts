@@ -1,4 +1,4 @@
-import type { Usage, WebSearchCitation } from '@contracts/index.js'
+import type { Usage, WebSearchCitation } from '../schemas/index.js'
 import type {
   RuntimeInvocation,
   RuntimeTransport,

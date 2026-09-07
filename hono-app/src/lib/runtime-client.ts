@@ -1,11 +1,11 @@
-import type { AiErrorCode, AiTaskSuccessResponse } from '@contracts/index.js'
+import { z } from 'zod'
+import type { AiErrorCode, AiTaskSuccessResponse } from '../schemas/index.js'
 import {
   isAiErrorCode,
   outputSchemaFor,
   usageSchema,
   webSearchCitationSchema,
-} from '@contracts/index.js'
-import { z } from 'zod'
+} from '../schemas/index.js'
 import type { RuntimeInvocation } from './runtime-transport.js'
 import { loadRuntimeTransport } from './runtime-transport.js'
 

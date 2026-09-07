@@ -1,12 +1,3 @@
-import type {
-  AiErrorCode,
-  OUTPUT_SCHEMAS,
-  ParseAvailabilityInput,
-  ParseCandidatesInput,
-  RecommendScheduleInput,
-  TaskId,
-} from '@contracts/index.js'
-import { ALLOWED_TASK_IDS, MAX_PROMPT_LENGTH } from '@contracts/index.js'
 import { describe, expect, it } from 'vitest'
 import type { z } from 'zod'
 import {
@@ -21,6 +12,15 @@ import {
 } from '../tests/harness.js'
 import { resolveRuntimeClientName } from './config.js'
 import { fakeRuntimeScript } from './lib/fake-runtime.js'
+import type {
+  AiErrorCode,
+  OUTPUT_SCHEMAS,
+  ParseAvailabilityInput,
+  ParseCandidatesInput,
+  RecommendScheduleInput,
+  TaskId,
+} from './schemas/index.js'
+import { ALLOWED_TASK_IDS, MAX_PROMPT_LENGTH } from './schemas/index.js'
 
 /**
  * BFF の HTTP 境界（#23 のシームその2、#41）。

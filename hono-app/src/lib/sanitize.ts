@@ -1,4 +1,4 @@
-import { MAX_PROMPT_LENGTH } from '@contracts/index.js'
+import { MAX_PROMPT_LENGTH } from '../schemas/index.js'
 
 /**
  * 入力サニタイズ（参照ドキュメント 10.1節）。長さの上限と、XSS 対策の

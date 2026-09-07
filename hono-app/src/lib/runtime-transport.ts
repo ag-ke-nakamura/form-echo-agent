@@ -1,10 +1,10 @@
-import type { TaskId } from '@contracts/index.js'
 import {
   FAKE_RUNTIME_CLIENT_NAME,
   RUNTIME_TIMEOUT_MS,
   RUNTIME_URL,
   resolveRuntimeClientName,
 } from '../config.js'
+import type { TaskId } from '../schemas/index.js'
 import { fakeRuntimeTransport } from './fake-runtime.js'
 
 /**
