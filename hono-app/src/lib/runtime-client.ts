@@ -38,13 +38,21 @@ export async function invokeRuntime(
     // TimeoutError 以外を型で絞らない。undici は接続失敗を `TypeError: fetch failed`
     // で投げるが Bun は別の形で投げるので、型で分岐すると `dev`（Bun）でだけ
     // 判定が変わる。この try に残るのは通信だけなので、既定を寄せて構わない。
-    if (error instanceof DOMException && error.name === 'TimeoutError') {
+    //
+    // `.name` だけで見る（`instanceof DOMException` に絞らない）。ローカル経路は
+    // `AbortSignal.timeout` の DOMException だが、デプロイ済み経路（SigV4）の
+    // `@smithy/node-http-handler` は同じ意味のタイムアウトを普通の Error で投げる。
+    if (isTimeoutError(error)) {
       return {
         ok: false,
         code: 'TIMEOUT',
         message: 'Runtime が時間内に応答しませんでした。',
       }
     }
+    // デプロイ済み経路（SigV4）では AWS SDK の型付き例外（権限不足・リクエスト形式
+    // 不正・スロットリング等）もここを通り、すべて RUNTIME_UNAVAILABLE に潰れる。
+    // 記録しないと、設定ミスと実際の障害の区別が運用時に一切付かなくなる。
+    console.error('Runtime の呼び出しに失敗しました。', error)
     return {
       ok: false,
       code: 'RUNTIME_UNAVAILABLE',
@@ -110,6 +118,14 @@ export async function invokeRuntime(
       citations: parsed.citations,
     },
   }
+}
+
+function isTimeoutError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { name?: unknown }).name === 'TimeoutError'
+  )
 }
 
 /**

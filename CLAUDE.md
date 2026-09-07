@@ -84,7 +84,7 @@ CI（`.github/workflows/ci.yml`）と同じものを手元で回す。
 | `agent-app/app/FormEchoAgent` | `npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build` |
 | `hono-app` | `pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test` |
 | `nextjs-app` | `pnpm run format:check && pnpm run lint && pnpm run test && pnpm run build` |
-| `agent-app/agentcore/cdk` | `npx prettier --check . && npm run build` |
+| `agent-app/agentcore/cdk` | `npx prettier --check . && npm run build && npx cdk synth` |
 | `agent-app/infra` | `npx prettier --check . && npm run build && npm run test` |
 
 `nextjs-app` に `typecheck` は無い（`build` が兼ねる）。Runtime だけ `build` と `typecheck` の

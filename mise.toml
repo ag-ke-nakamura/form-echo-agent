@@ -49,6 +49,22 @@ description = "BFF を起動する (http://localhost:8787)"
 dir = "hono-app"
 run = "pnpm run dev"
 
+# hono-app・nextjs-app はローカル起動のまま、BFF だけデプロイ済み Runtime を向ける（#45）。
+# `dev:runtime` を含めないのはそのため。env はこのタスクのシェルに立ち、
+# `mise run dev:bff` の子プロセスへ普通の環境変数として伝わる。
+[tasks."dev:deployed"]
+description = "BFF だけデプロイ済み Runtime を向ける。フロントエンドはローカル起動のまま (http://localhost:3000)"
+run = "mise run dev:bff ::: dev:web"
+
+[tasks."dev:deployed".env]
+FORMECHO_RUNTIME_CLIENT = "deployed"
+# 値は `agentcore/.cli/deployed-state.json` の `runtimeArn`（デプロイの結果として
+# コミットされている）。`FORMECHO_WEB_SEARCH_GATEWAY_URL` と同じ運用 — デプロイ先を
+# 張り替えたらここも手で更新する。region はこの ARN 文字列から実装側がパースするので
+# 専用の env は増やさない。AWS 認証はローカルの ambient credential provider chain に
+# 任せる（`aws sso login` 等を事前に済ませている前提）— ここで AWS_PROFILE 等は固定しない。
+FORMECHO_RUNTIME_ARN = "arn:aws:bedrock-agentcore:ap-northeast-1:122664578519:runtime/FormEcho_FormEchoAgent-b7lxcgCRfb"
+
 [tasks."dev:web"]
 description = "フロントエンドを起動する (http://localhost:3000)"
 dir = "nextjs-app"

@@ -172,13 +172,28 @@ describe('fake の Runtime クライアントの差し替え', () => {
     // `src/index.ts` が読み込み時にこれを呼ぶ。リクエストが来るまで気付けないと、
     // 綴りの間違いが RUNTIME_UNAVAILABLE として出て Runtime 障害と区別が付かない。
     const configured = process.env.FORMECHO_RUNTIME_CLIENT
-    process.env.FORMECHO_RUNTIME_CLIENT = 'deployed'
+    process.env.FORMECHO_RUNTIME_CLIENT = 'depolyed'
     try {
       expect(() => resolveRuntimeClientName()).toThrow(
         'FORMECHO_RUNTIME_CLIENT',
       )
     } finally {
       process.env.FORMECHO_RUNTIME_CLIENT = configured
+    }
+  })
+
+  it('deployed には ARN が要る（無いまま指すと起動時に落ちる）', () => {
+    const configuredClient = process.env.FORMECHO_RUNTIME_CLIENT
+    const configuredArn = process.env.FORMECHO_RUNTIME_ARN
+    process.env.FORMECHO_RUNTIME_CLIENT = 'deployed'
+    delete process.env.FORMECHO_RUNTIME_ARN
+    try {
+      expect(() => resolveRuntimeClientName()).toThrow('FORMECHO_RUNTIME_ARN')
+    } finally {
+      process.env.FORMECHO_RUNTIME_CLIENT = configuredClient
+      if (configuredArn !== undefined) {
+        process.env.FORMECHO_RUNTIME_ARN = configuredArn
+      }
     }
   })
 
