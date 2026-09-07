@@ -54,57 +54,92 @@ const PURPOSE_VALUES = [
   'other',
 ] as const;
 
-export const parseReservationOutputSchema = z.object({
-  /*
-    借りる日はカードを受け取る**日**であって時点ではない（#86。#68 が付けた
-    時刻を撤回した）。返す日時は引き続き時点なので `isoDateTimeSchema` のまま。
-  */
-  borrow_at: isoDateSchema
-    .nullable()
-    .describe('ICカードを借りる日。YYYY-MM-DD 形式。読み取れない場合は null'),
-  return_at: isoDateTimeSchema
-    .nullable()
-    .describe(
-      'ICカードを返す日時。YYYY-MM-DDTHH:mm 形式。読み取れない場合は null',
-    ),
-  origin: z.string().nullable().describe('出発地。読み取れない場合は null'),
-  destination: z
-    .string()
-    .nullable()
-    .describe('目的地。読み取れない場合は null'),
-  /**
-   * 移動経路（`CONTEXT.md`「移動経路」、#86）。出発地から目的地までの区間を
-   * 利用交通機関つきで1本の文字列にしたもの
-   * （例:「新宿(東京メトロ丸ノ内線) => 霞ケ関(東京メトロ日比谷線) => 虎ノ門ヒルズ」）。
-   *
-   * 交通手段の選択欄（`train`/`flight`/`other`）を置き換える。区間ごとに実際の
-   * 交通機関を書けるので、単一の選択肢より詳細で、`transport` は不要になった。
-   */
+/** 1回の応答で返せる経路候補の上限（#100）。`SKILL.md` の制約と同じ数を置く。 */
+export const MAX_ROUTE_CANDIDATES = 5;
+
+/**
+ * 移動経路の候補ひとつ（#100、`CONTEXT.md`「移動経路」）。
+ *
+ * WHY 単一の `route`/`transport_cost` から配列へ変えたか: 最安の経路を選ぶには
+ * 比較対象が要る。単一のフィールドのままでは、AI が内部で比較したかどうかを
+ * 契約からは確かめられない。
+ *
+ * `is_selected` はちょうど1件（経路候補が0件のときは0件）という不変条件を
+ * `parseReservationOutputSchema` の `.refine()` が見る。単体のフィールドでは
+ * 表せない条件なので、ここでは真偽値のまま持つ。
+ */
+const routeCandidateSchema = z.object({
   route: z
     .string()
-    .nullable()
     .describe(
-      '出発地から目的地までの移動経路。区間ごとに利用交通機関を添えた1本の文字列（例:「新宿(東京メトロ丸ノ内線) => 霞ケ関(東京メトロ日比谷線) => 虎ノ門ヒルズ」）。Web検索で裏取りできない場合は null',
+      '出発地から目的地までの移動経路。区間ごとに利用交通機関を添えた1本の文字列（例:「新宿(東京メトロ丸ノ内線) => 霞ケ関(東京メトロ日比谷線) => 虎ノ門ヒルズ」）',
     ),
-  /** 移動経路にかかる交通費（#86）。`route` と同じくWeb検索で裏取りする。 */
-  transport_cost: z
+  /** IC運賃前提の運賃（#100）。グリーン車・特急料金は含まない。 */
+  fare: z.string().describe('IC運賃（例:「1980円」）。往復なら往復分の合計'),
+  duration: z.string().describe('所要時間（例:「2時間30分」）'),
+  transfer_count: z.number().int().min(0).describe('乗換回数。乗り換えなしは0'),
+  is_selected: z
+    .boolean()
+    .describe('比較検討した結果、この経路候補を採用したかどうか'),
+  reason: z
     .string()
-    .nullable()
     .describe(
-      '移動経路にかかる交通費（例:「178円」）。Web検索で裏取りできない場合は null',
+      '採用した理由、または他の候補と比べて採用しなかった理由（例:「運賃が最安」「所要時間が最短の1.5倍を超える」）',
     ),
-  purpose: z
-    .enum(PURPOSE_VALUES)
-    .nullable()
-    .describe(
-      '利用目的。discussion=打ち合わせ / training=研修 / inspection=視察 / business_trip=出張 / other=その他。読み取れない場合は null',
-    ),
-  ...commonOutputFields,
 });
+
+export const parseReservationOutputSchema = z
+  .object({
+    /*
+      借りる日はカードを受け取る**日**であって時点ではない（#86。#68 が付けた
+      時刻を撤回した）。返す日時は引き続き時点なので `isoDateTimeSchema` のまま。
+    */
+    borrow_at: isoDateSchema
+      .nullable()
+      .describe('ICカードを借りる日。YYYY-MM-DD 形式。読み取れない場合は null'),
+    return_at: isoDateTimeSchema
+      .nullable()
+      .describe(
+        'ICカードを返す日時。YYYY-MM-DDTHH:mm 形式。読み取れない場合は null',
+      ),
+    origin: z.string().nullable().describe('出発地。読み取れない場合は null'),
+    destination: z
+      .string()
+      .nullable()
+      .describe('目的地。読み取れない場合は null'),
+    purpose: z
+      .enum(PURPOSE_VALUES)
+      .nullable()
+      .describe(
+        '利用目的。discussion=打ち合わせ / training=研修 / inspection=視察 / business_trip=出張 / other=その他。読み取れない場合は null',
+      ),
+    route_candidates: z
+      .array(routeCandidateSchema)
+      .max(MAX_ROUTE_CANDIDATES)
+      .describe(
+        `出発地から目的地までの経路候補。比較検討した上での最安経路を \`is_selected\` で示す。多くとも${MAX_ROUTE_CANDIDATES}件。Web検索で裏取りできない場合は空配列`,
+      ),
+    ...commonOutputFields,
+  })
+  .refine(
+    (output) => {
+      const selected = output.route_candidates.filter(
+        (candidate) => candidate.is_selected,
+      ).length;
+      return selected === (output.route_candidates.length === 0 ? 0 : 1);
+    },
+    {
+      error:
+        '採用フラグ（is_selected）は、経路候補があるときはちょうど1件、無いときは0件にする必要があります',
+      path: ['route_candidates'],
+    },
+  );
 
 export type ParseReservationOutput = z.infer<
   typeof parseReservationOutputSchema
 >;
+
+export type RouteCandidate = z.infer<typeof routeCandidateSchema>;
 
 /**
  * 新しく作られた候補日程ひとつ。**識別子を持たない。**
