@@ -44,30 +44,21 @@ paths:
 ## Skill 選択の2モード（#42）
 
 `config.ts` の `resolveSkillSelectionMode()`（`FORMECHO_SKILL_SELECTION_MODE`、既定
-`explicit`）で切り替える。両モードとも同じ `skills/{domain}/{task}/SKILL.md` の中身を
-プロンプトの実体として使う。
-
-**`SKILL.md` をファイルパスとして直接読まない。** デプロイ済み Runtime（CodeZip）は
-esbuild が `main.ts` から辿れる import グラフだけをバンドルし、fs 経由で読む非コードの
-アセットは zip に含まれない（#45。`agentcore dev` のローカル実行は `skills/` が
-そのまま残っているため気付けなかった）。代わりに `skills/embedded.ts`（生成物 —
-`SKILL.md` から `npm run generate:skills` で作り直す。両者の一致は `skills/embedded.test.ts`
-が見る）が `SKILL.md` の中身を文字列として import グラフに乗せ、`Skill.fromContent()`
-でパースする。**`SKILL.md` を編集したら `npm run generate:skills` を忘れないこと**
-（忘れるとテストが落ちる）。
+`explicit`）で切り替える。両モードとも同じ `skills/{domain}/{task}/SKILL.md` を読み、
+プロンプトの実体は1つ。
 
 - **`explicit`**（既定）— `taskId` が Skill を一意に決める。`invocation/system-prompt.ts`
-  の `loadSkill` が `EMBEDDED_SKILLS[domain][task]` を `Skill.fromContent` に渡し、
-  instructions を system prompt に埋め込む
+  の `loadSkill` が `Skill.fromFile` で該当 Skill の instructions を直接読み、system
+  prompt に埋め込む
 - **`auto`** — ドメインエージェントが `AgentSkills` プラグイン（`@strands-agents/sdk/vended-plugins/skills`）
   の progressive disclosure で選ぶ（ADR-032 論点4）。`invocation/domain-agent.ts` の
-  `DOMAIN_SKILLS_PLUGINS` がドメインごとに1つ持ち、`EMBEDDED_SKILLS[domain]` の値を
-  `Skill.fromContent` した Skill インスタンスの配列だけを渡す — **ドメインエージェントは
-  自分のドメインの `SKILL.md` しか読まない。** この場合 `buildSystemPrompt` は Skill の
-  本文を注入せず（メタデータの注入と活性化はプラグイン側が持つ）、モデルは `skills`
-  ツールを呼んで activate する
+  `DOMAIN_SKILLS_PLUGINS` がドメインごとに1つ持ち、`skillsDomainDir(domain)`
+  （`skills/{domain}`）だけを指す — **ドメインエージェントは自分のドメインの
+  `SKILL.md` しか読まない。** この場合 `buildSystemPrompt` は Skill の本文を注入せず
+  （メタデータの注入と活性化はプラグイン側が持つ）、モデルは `skills` ツールを呼んで
+  activate する
 - **Skill 選択の的中率の実測は #44 の範囲。** ここで押さえるのは配線（モードの切り替え・
-  ドメインの隔離・両モードが同じ `SKILL.md` の中身を使うこと）で、`invocation/handler.test.ts`
+  ドメインの隔離・両モードが同じ SKILL.md を読むこと）で、`invocation/handler.test.ts`
   の「Skill 選択の2モード（#42）」が見る
 
 ## Guardrail（#43）
@@ -147,14 +138,10 @@ esbuild が `main.ts` から辿れる import グラフだけをバンドルし�
   （`docs/reference-doc-fixes.md` F-26）は、Runtime のスキーマ定義を `contracts/` の symlink
   から `agent-app/app/FormEchoAgent/contracts/` の自己完結の複製へ変えたことで構造的には
   解消した**（ADR-0011。symlink を経由しなくなったため、`agent-app` 自身の `node_modules`
-  から通常どおり `zod` を解決できる）。**実際に synth・deploy が通ることは #45 で確認済み**
-  （Runtime ARN が `agent-app/agentcore/.cli/deployed-state.json` にある）
-- **Node の `CodeZip` は esbuild が import グラフだけをバンドルし、非コードのアセットは
-  zip に含まれない（#45）。** `skills/**/SKILL.md` を fs 経由で読む実装で実際にこれを踏み、
-  デプロイ済み Runtime だけが起動時に落ちた（`skill path does not exist or is not a valid
-  skill directory`）。対処は上の「Skill 選択の2モード（#42）」の `skills/embedded.ts` を
-  参照。**この境界（import グラフに乗るものだけがデプロイ先に届く）は他の非コードアセットを
-  足すときにも効く。**
+  から通常どおり `zod` を解決できる）。ただし実際に synth・deploy が通ることの確認は
+  実クラウドリソースを作る操作のため未実施（#45）。#46 は移行前に `runtimes` を一時的に
+  空にして Gateway だけを張った経緯があり、`agentcore.json` は元に戻してある
+  （**Runtime は未デプロイのまま**）
 - **CLI と `agentcore/cdk` の `@aws/agentcore-cdk` はバージョンが噛み合っていないと
   `deploy` だけが落ちる**（`validate` と `cdk synth` は通る）。F-25 と
   `.claude/rules/agentcore-cdk.md`

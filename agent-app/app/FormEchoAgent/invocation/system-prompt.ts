@@ -1,19 +1,46 @@
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Skill } from '@strands-agents/sdk/vended-plugins/skills';
 import { resolveSkillSelectionMode } from '../config.js';
-import type { TaskId } from '../contracts/index.js';
-import { EMBEDDED_SKILLS } from '../skills/embedded.js';
+import type { Domain, TaskId } from '../contracts/index.js';
+
+/**
+ * skills/ を指す基準になるパッケージルート。
+ *
+ * WHY: このモジュールは tsx で実行される `.ts` としても `dist/` 配下の `.js`
+ * としても動く。import.meta.url からの相対位置が両者で1階層ずれるので、
+ * package.json のあるところまで遡ってパッケージルートを決める。
+ */
+function findPackageRoot(): string {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  while (!existsSync(join(dir, 'package.json'))) {
+    const parent = dirname(dir);
+    if (parent === dir) {
+      throw new Error(
+        'package.json が見つからず skills/ の位置を決められません',
+      );
+    }
+    dir = parent;
+  }
+  return dir;
+}
+
+const PACKAGE_ROOT = findPackageRoot();
+
+/** ドメインの Skill が並ぶ親ディレクトリ。自動モードの `AgentSkills` が指す先。 */
+export function skillsDomainDir(domain: Domain): string {
+  return join(PACKAGE_ROOT, 'skills', domain);
+}
 
 /**
  * 明示モードの Skill 読み込み。taskId が Skill を一意に決め、`SKILL.md` の本文
  * （frontmatter を除いた instructions）を system prompt に注入する。
- *
- * ファイルを直接読まず埋め込みデータ（`skills/embedded.ts`）を使う。デプロイ済み
- * Runtime（CodeZip）は esbuild が import グラフだけを束ねるため、fs 経由で
- * `SKILL.md` を読む実装は zip に含まれず起動時に落ちる（#45）。
  */
 function loadSkill(taskId: TaskId): string {
   const [domain, task] = taskId.split('.');
-  return Skill.fromContent(EMBEDDED_SKILLS[domain][task]).instructions;
+  return Skill.fromFile(join(skillsDomainDir(domain as Domain), task))
+    .instructions;
 }
 
 /**
