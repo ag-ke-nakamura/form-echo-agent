@@ -10,8 +10,8 @@
   "runtimes": [
     {
       "name": "FormEchoAgent",
-      "build": "Container",
-      "entrypoint": "main.ts",
+      "build": "CodeZip",
+      "entrypoint": "main.js",
       "codeLocation": "app/FormEchoAgent/",
       "runtimeVersion": "NODE_22",
       "networkMode": "PUBLIC",
