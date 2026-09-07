@@ -1,4 +1,4 @@
-import type { ParseReservationOutput } from "@contracts/index.js";
+import type { ParseReservationOutput } from "./contracts/types";
 import type { ApplyReport, FieldSource } from "../field-source";
 import type { PreviewItem } from "./ai-preview";
 

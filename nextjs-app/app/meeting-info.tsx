@@ -4,7 +4,7 @@ import {
   DURATION_OPTIONS,
   type MeetingFormat,
   MEETING_FORMAT_ORDER,
-} from "@contracts/meeting";
+} from "./lib/contracts/meeting";
 import { useId, useState } from "react";
 import {
   INITIAL_MEETING_INFO,
@@ -97,7 +97,7 @@ export function MeetingInfoFields({
             id={durationId}
             value={info.durationMinutes}
             /*
-              値域は契約が持つ（`contracts/meeting.ts`）。`Number()` の結果を
+              値域は契約が持つ（`app/lib/contracts/meeting.ts`）。`Number()` の結果を
               そのまま渡さないのは、`<select>` の値が文字列で来る一方、所要時間が
               Runtime へ渡す与件になった（ADR-0005）ため — 選択肢の外の値を
               入れられると BFF の門で弾かれる。選択肢そのものから引き直す。

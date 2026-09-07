@@ -1,5 +1,5 @@
-import type { ParseCandidatesOutput } from "@contracts/index.js";
-import { candidateIdOf } from "@contracts/meeting";
+import type { ParseCandidatesOutput } from "./contracts/types";
+import { candidateIdOf } from "./contracts/meeting";
 import type { ApplyReport } from "../field-source";
 import type { PreviewItem } from "./ai-preview";
 import {

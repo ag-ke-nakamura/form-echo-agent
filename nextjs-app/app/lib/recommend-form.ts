@@ -6,11 +6,11 @@ import type { ApplyReport, FieldSource } from "../field-source";
 import type {
   CandidateAssessment,
   CandidateEvaluation,
-  RecommendScheduleInput,
   ScheduleSelection,
   TableCandidate,
-} from "@contracts/index.js";
-import { initialSelection } from "@contracts/recommendation";
+} from "./contracts/recommendation";
+import { initialSelection } from "./contracts/recommendation";
+import type { RecommendScheduleInput } from "./contracts/types";
 import { candidateRangeText, type MeetingInfo } from "./meeting-info";
 
 /**
@@ -21,7 +21,7 @@ import { candidateRangeText, type MeetingInfo } from "./meeting-info";
  * 埋め込むと、手で選んでから提案が届く往復を人が繰り返さない限り確かめられない
  * （`availability-form.ts` の `applyAvailabilityResult` と同じ理由）。
  *
- * 評点からラベル・初期選択を導くのは契約側（`contracts/recommendation.ts`）で、ここが
+ * 評点からラベル・初期選択を導くのは契約側（`app/lib/contracts/recommendation.ts`）で、ここが
  * 持つのは画面の都合だけ — 表示文字列、遅れて届いた応答の捨て方、そして職員の選択の
  * 遷移である。
  */

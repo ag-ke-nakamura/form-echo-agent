@@ -1,4 +1,4 @@
-import { MAX_INPUT_CANDIDATES } from "@contracts/meeting";
+import { MAX_INPUT_CANDIDATES } from "./contracts/meeting";
 import { describe, expect, it } from "vitest";
 import {
   addCandidateAt,
@@ -195,7 +195,7 @@ describe("addCandidateAt", () => {
     ).toBe("9:00から18:00の30分刻みに載らない開始時刻です");
   });
 
-  /* 上限は入力契約が持つ（`contracts/meeting.ts`）。文言は `candidate-limit.ts` に1箇所。 */
+  /* 上限は入力契約が持つ（`app/lib/contracts/meeting.ts`）。文言は `candidate-limit.ts` に1箇所。 */
   it("入力契約の上限を超えるクリックを受け付けない", () => {
     const full: CalendarCandidate[] = Array.from(
       { length: MAX_INPUT_CANDIDATES },

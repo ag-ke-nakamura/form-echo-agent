@@ -1,12 +1,7 @@
-// 値として引くのは `meeting.ts` だけ（zod を持たないので SSG のバンドルに乗らない）。
-// 入出力契約の型は `import type` で引く（型は emit 時に消える）。
-import type {
-  DurationMinutes,
-  MeetingFormat,
-  RecommendScheduleInput,
-  TableCandidate,
-} from "@contracts/index.js";
-import { type Availability, candidateIdOf } from "@contracts/meeting";
+import type { DurationMinutes, MeetingFormat } from "./contracts/meeting";
+import { type Availability, candidateIdOf } from "./contracts/meeting";
+import type { TableCandidate } from "./contracts/recommendation";
+import type { RecommendScheduleInput } from "./contracts/types";
 
 /**
  * 候補日提案タブが与件として使う参加可否表のモック。

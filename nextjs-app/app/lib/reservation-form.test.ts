@@ -1,7 +1,4 @@
-import type {
-  ParseReservationOutput,
-  RouteCandidate,
-} from "@contracts/index.js";
+import type { ParseReservationOutput, RouteCandidate } from "./contracts/types";
 import { describe, expect, it } from "vitest";
 import {
   applyToForm,

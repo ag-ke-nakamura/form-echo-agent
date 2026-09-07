@@ -2,12 +2,11 @@ import type {
   AiErrorCode,
   AiErrorResponse,
   AiTaskSuccessResponse,
-  INPUT_SCHEMAS,
-  OUTPUT_SCHEMAS,
   TaskId,
+  TaskInputMap,
+  TaskOutputMap,
   WebSearchCitation,
-} from "@contracts/index.js";
-import type { z } from "zod";
+} from "./contracts/types";
 
 /**
  * SSG なのでビルド時に埋め込まれる。本番は CloudFront で配信した静的ファイルから
@@ -43,33 +42,18 @@ export const RECOMMEND_TASK_ID = "meeting.recommend-schedule" satisfies TaskId;
 /**
  * taskId から出力の型を引く表。AI入力アシスタントはこの表を通してタブに紐づく。
  *
- * 出力契約の `OUTPUT_SCHEMAS` から導く。同じ対応を手で書き写すと、taskId を
- * 足すときの編集箇所が `ALLOWED_TASK_IDS` / `OUTPUT_SCHEMAS` / ここの3つになり、
- * 「3者が同一の契約を見る」（ADR-002）が画面側だけで崩れる。
- * `import type` なので zod のスキーマ本体はバンドルに乗らない。
+ * `./contracts/types` の `TaskOutputMap` から導く。`import type` なので実行時には
+ * 消える。
  */
-export type TaskOutputs = {
-  [K in TaskId]: z.infer<(typeof OUTPUT_SCHEMAS)[K]>;
-};
+export type TaskOutputs = TaskOutputMap;
 
 /**
  * taskId から構造化入力の型を引く表（ADR-0005）。`TaskOutputs` と対称に置く。
  *
- * 契約の `INPUT_SCHEMAS` から導く。画面側で「このタブはこれを送る」と書き写すと、
- * 契約が入力の形を変えたときにフロントエンドだけが古い形を送り続け、失敗するのは
- * BFF の門（INVALID_INPUT）になる — 画面のコードは型検査を通ったままなので、
- * どこが古いのかが分からない。
- *
  * 構造化入力を持たない taskId（交通IC）は `undefined` になり、**送らないことが
- * 型で決まる。** `import type` なので zod のスキーマ本体はバンドルに乗らない。
+ * 型で決まる。**
  */
-export type TaskInputs = {
-  [K in TaskId]: (typeof INPUT_SCHEMAS)[K] extends infer TSchema
-    ? TSchema extends z.ZodType
-      ? z.infer<TSchema>
-      : undefined
-    : never;
-};
+export type TaskInputs = TaskInputMap;
 
 export type AiTaskOutcome<TTaskId extends TaskId> =
   | {

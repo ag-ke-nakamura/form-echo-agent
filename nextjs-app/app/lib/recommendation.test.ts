@@ -1,9 +1,8 @@
+import type { Availability } from "./contracts/meeting";
 import type {
   AiEvaluationLabel,
-  Availability,
   CandidateEvaluation,
-  RecommendScheduleInput,
-} from "@contracts/index.js";
+} from "./contracts/recommendation";
 import {
   assessCandidates,
   initialSelection,
@@ -15,7 +14,8 @@ import {
   summarizeTable,
   tableResponseRate,
   UNANSWERED_RESPONSE_RATE,
-} from "@contracts/recommendation";
+} from "./contracts/recommendation";
+import type { RecommendScheduleInput } from "./contracts/types";
 import { describe, expect, it } from "vitest";
 
 /**

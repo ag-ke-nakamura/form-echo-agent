@@ -29,7 +29,7 @@ SSG なので BFF の宛先 `NEXT_PUBLIC_API_BASE_URL` はビルド時に埋め�
   職員が触るのは**開催日のラジオ（ちょうど1つ）と予備日のチェックボックス（0個以上）**、
   根拠のアコーディオン、参加可否表サンプルの切り替え、確定だけ（#72）。
   **AI が返すのは候補日程ごとの評点と根拠**で、AI評価ラベル・集計値・初期選択は
-  `contracts/recommendation.ts` が導く（#71 / ADR-0007）。
+  `app/lib/contracts/recommendation.ts` が導く（#71 / ADR-0007 / #109）。
   **推論はタブが開かれた時に1回だけ走り、選択を変えても再推論しない**（設計書 10.1節）。
   合図は `active` prop — タブは全部描かれたまま `hidden` で隠れているので、マウントを
   合図にするとページを読み込んだだけで Runtime を叩く
@@ -45,7 +45,8 @@ SSG なので BFF の宛先 `NEXT_PUBLIC_API_BASE_URL` はビルド時に埋め�
   **候補日程と日付の表示文字列**（`weekdayOf` / `dateHeadingText` / `candidateLabel`。#69 で
   タブ3のモジュールからここへ移した — 3タブの `app/lib` が引くので、タブ3の中に置くと
   他タブが掘りに行くことになる）。
-  **値域（参加形式・参加可否・所要時間の選択肢・候補日程の識別子）は `contracts/meeting.ts`**
+  **値域（参加形式・参加可否・所要時間の選択肢・候補日程の識別子）は
+  `app/lib/contracts/meeting.ts`**（#109）
 - `app/lib/candidate-limit.ts` — 候補日程の件数が入力契約の上限に収まるか。足す側（タブ2）と
   送る側（タブ3）の両方が引く
 - `app/lib/ai-preview.ts` — プレビューの語彙（ADR-0006）。1行の形（`PreviewItem`。
@@ -173,8 +174,8 @@ SSG なので BFF の宛先 `NEXT_PUBLIC_API_BASE_URL` はビルド時に埋め�
 区別が付かない）。分けるには `FieldSource` に3つ目の状態が必要で、3タブすべての印の意味が
 変わるため第1段では踏み込まない。
 
-出力契約は tsconfig の `paths` で `@contracts/*` として引く（emit しないので `rootDir` の
-制約を受けない）。詳細はリポジトリルートの `CLAUDE.md` と `docs/adr/0002-contracts-as-plain-ts.md`。
+出力契約は `app/lib/contracts/` に自己完結で持つ（#109。リポジトリルートの `contracts/`
+への依存は無い）。経緯はリポジトリルートの `CLAUDE.md`「contracts（入出力の契約）」節。
 
 ## デザイントークン（#73）
 
@@ -214,18 +215,16 @@ JSX の中に埋めたままだと、区切りを変えても終わる時刻の�
 コンポーネントを書かないのは #23 の方針のまま。出力契約からフォーム状態への写像を素直な代入に
 留め、デモは手動で確認する。写像に条件分岐が育った時点で見直す。
 
-vitest は tsconfig の `paths` を見ないので、`@contracts/*` の別名は `vitest.config.mts` にも
-書いてある。`next.config.ts` の `turbopack.root` も同じ事情で、**`contracts/` がプロジェクトの
-外にある**ためリポジトリルートを root として渡している。型としてしか使わない import
-（`import type`）は実行時に消えるので今まで露見しなかったが、`meeting.ts` /
-`recommendation.ts` / `prompt-requirement.ts` を値として引いた時点でバンドラの解決が要る。
-この3つを `index.js` ではなくモジュール直指しで、しかも拡張子なしで引いているのはそのため
-（`.js` を付けるとバンドラが `.ts` の実体を見つけられない。値として zod を持つモジュールを
-巻き込まないためでもある）。
+`@contracts/*` の tsconfig エイリアス・`vitest.config.mts` の別名・`next.config.ts` の
+`turbopack.root`（すべて `contracts/` がプロジェクトの外にあったための回避策）は不要になり
+削除した（#109）。
 
-**同じ理由で、値として引く契約モジュールは `contracts/` の他のモジュールを値として import
-できない**（相対 import の `.js` をバンドラが `.ts` に読み替えないため）。`next.config.ts` から
-効かせる手も無い。詳細は `../.claude/rules/contracts.md`。
+`app/lib/contracts/meeting.ts` / `recommendation.ts` / `prompt-requirement.ts` は、画面が
+値として実行時に要る値域・導出ロジックを持つので**zod を import しない**（同じ理由で
+`app/lib/contracts/types.ts` は zod を持たない素の TypeScript 型として置く）。
+`app/lib/contracts/schemas.ts` だけが例外で zod を値として持つが、これを値として引くのは
+`availability-table.test.ts` だけ（`.tsx` からは引かれない）なので SSG のバンドルには
+乗らない。
 
 ### lint と format で別ツールを使っている理由
 
