@@ -229,6 +229,60 @@ describe('taskId の解決', () => {
 });
 
 /**
+ * 曖昧表現の解釈ルールと出席方法デフォルトの転換（#102）。
+ *
+ * 抽出結果が正しいかどうか（AI の賢さ）は assert しない。ここで見るのは、
+ * `SKILL.md` に書いたルールが system prompt に実際に載っているかどうかであり、
+ * それは境界の外向きの側（Runtime が Bedrock へ何を投げたか）にしか現れない。
+ */
+describe('meeting.parse-availability の曖昧表現ルール（#102）', () => {
+  it('曖昧表現の解釈ルールが system prompt に載る', async () => {
+    fakeModelScript.write({
+      kind: 'structuredOutput',
+      output: VALID_OUTPUTS['meeting.parse-availability'],
+    });
+
+    expectSuccess(await invokeBoundary(REQUESTS['meeting.parse-availability']));
+
+    const systemPrompt = systemPromptOf(lastCall());
+    // 午前/午後
+    expect(systemPrompt).toContain(
+      '「午前」は 09:00〜12:00、「午後」は 13:00〜18:00',
+    );
+    // 「〜時頃」の「頃」を無視する
+    expect(systemPrompt).toContain('「〜時頃」の「頃」は無視する');
+    // 終日表現（大丈夫/欠席等）が該当日の全候補に適用される
+    expect(systemPrompt).toContain(
+      '日付だけが書かれていて時刻が書かれていない場合は、その日付の候補日程すべてに同じ可否を付ける',
+    );
+    // 「XX時以降/まで」の展開
+    expect(systemPrompt).toContain('14時以降なら大丈夫');
+    expect(systemPrompt).toContain('17時までなら大丈夫');
+    // ポジティブ/ネガティブのみの回答が言及外に展開される
+    expect(systemPrompt).toContain('候補日程に一切触れない全面的な肯定は');
+    // 相対期間表現（今週/来週/今月）
+    expect(systemPrompt).toContain(
+      '「今週」「来週」「今月」は基準時刻から期間として解決する',
+    );
+    // 曜日のみの指定
+    expect(systemPrompt).toContain(
+      '曜日だけの指定は候補内の該当曜日すべてに適用する',
+    );
+    // ハイブリッドで出席方法未指定→対面出席で仮登録、オンライン明記の案内
+    expect(systemPrompt).toContain(
+      '出席とだけ書かれていて形が読み取れない場合は `attend_onsite` として仮登録します',
+    );
+    expect(systemPrompt).toContain(
+      'オンライン参加を希望する場合は明記するよう案内する文を `message` に必ず書きます',
+    );
+    // 現地時間→日本時間の変換
+    expect(systemPrompt).toContain(
+      '現地時間で回答された場合は日本時間に変換する',
+    );
+  });
+});
+
+/**
  * Skill 選択の2モード（#42）。
  *
  * 明示モード（既定）は上の「taskId の解決」がすでに見ている — `# ${taskId}` の
