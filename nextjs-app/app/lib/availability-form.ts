@@ -7,9 +7,9 @@
 import type { SelectedCandidate } from "../candidates-panel";
 import type { ApplyReport, FieldSource } from "../field-source";
 import type { PreviewItem } from "./ai-preview";
-import type { ParseAvailabilityOutput } from "@contracts/index.js";
-import type { Availability, MeetingFormat } from "@contracts/meeting";
-import { AVAILABILITY_ORDER, isAttending } from "@contracts/meeting";
+import type { ParseAvailabilityOutput } from "./contracts/types";
+import type { Availability, MeetingFormat } from "./contracts/meeting";
+import { AVAILABILITY_ORDER, isAttending } from "./contracts/meeting";
 import { candidateLabel } from "./meeting-info";
 
 /**
@@ -19,7 +19,7 @@ import { candidateLabel } from "./meeting-info";
  * 取り決めと、候補日程の並べ方である。JSX の中に埋め込むと、参加形式を切り替えて
  * 画面を描かない限り確かめられない（`meeting-info.ts` の表示文字列と同じ理由）。
  *
- * 値域そのものは `contracts/meeting.ts` にある。ここに残るのは画面だけが要るもの —
+ * 値域そのものは `app/lib/contracts/meeting.ts` にある。ここに残るのは画面だけが要るもの —
  * ラジオの文言、畳んだときの寄せ先、日付でのグループ化である。
  */
 

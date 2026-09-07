@@ -1,8 +1,6 @@
-import type {
-  CandidateEvaluation,
-  RecommendScheduleInput,
-} from "@contracts/index.js";
-import { assessCandidates } from "@contracts/recommendation";
+import type { CandidateEvaluation } from "./contracts/recommendation";
+import { assessCandidates } from "./contracts/recommendation";
+import type { RecommendScheduleInput } from "./contracts/types";
 import { describe, expect, it } from "vitest";
 import type { MeetingInfo } from "./meeting-info";
 import {

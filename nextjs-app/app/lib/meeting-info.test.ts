@@ -2,7 +2,7 @@ import {
   AVAILABILITY_ORDER,
   DURATION_OPTIONS,
   MEETING_FORMAT_ORDER,
-} from "@contracts/meeting";
+} from "./contracts/meeting";
 import { describe, expect, it } from "vitest";
 import {
   AVAILABILITY_LABELS,

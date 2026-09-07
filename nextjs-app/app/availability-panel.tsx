@@ -1,7 +1,7 @@
 "use client";
 
-import type { ParseAvailabilityOutput } from "@contracts/index.js";
-import type { Availability } from "@contracts/meeting";
+import type { ParseAvailabilityOutput } from "./lib/contracts/types";
+import type { Availability } from "./lib/contracts/meeting";
 import { AlertCircle } from "lucide-react";
 import { useId, useState } from "react";
 import { AiAssistant } from "./ai-assistant";

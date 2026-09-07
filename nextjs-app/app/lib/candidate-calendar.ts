@@ -34,7 +34,7 @@ export function calendarDays(anchorDate: string): string[] {
   });
 }
 
-/** 升目の刻み（分）。`DURATION_OPTIONS` が30分刻みなのと同じ約束（`contracts/meeting.ts`）。 */
+/** 升目の刻み（分）。`DURATION_OPTIONS` が30分刻みなのと同じ約束（`app/lib/contracts/meeting.ts`）。 */
 const SLOT_MINUTES = 30;
 
 /** 業務時間の始まりと終わり（設計書 2.1節。早朝表示／夜間表示は #64 Out of Scope）。 */

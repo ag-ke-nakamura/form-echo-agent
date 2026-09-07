@@ -1,6 +1,6 @@
 "use client";
 
-import type { ParseReservationOutput } from "@contracts/index.js";
+import type { ParseReservationOutput } from "./lib/contracts/types";
 import { Plus, Trash2 } from "lucide-react";
 import { type ChangeEvent, useId, useRef, useState } from "react";
 import { AiAssistant } from "./ai-assistant";

@@ -1,8 +1,6 @@
-// 値として引くので `index.js` ではなくモジュール直指し（理由は `ai-assistant.tsx` の
-// 同じ import）。`meeting.ts` は zod を持たないので、バンドルにスキーマが乗らない。
-import type { AiEvaluationLabel } from "@contracts/recommendation";
-import type { Availability, MeetingFormat } from "@contracts/meeting";
-import { DURATION_OPTIONS } from "@contracts/meeting";
+import type { AiEvaluationLabel } from "./contracts/recommendation";
+import type { Availability, MeetingFormat } from "./contracts/meeting";
+import { DURATION_OPTIONS } from "./contracts/meeting";
 
 /**
  * 会議情報（会議名・所要時間・参加形式）の表示文字列と、そこから導かれる時刻。
@@ -11,7 +9,7 @@ import { DURATION_OPTIONS } from "@contracts/meeting";
  * 取り決め**で、書式は設計書 3節が決めている。JSX の中に埋め込むと画面を描かない
  * 限り確かめられない（`error-guidance.ts` の文言と同じ理由でここにある）。
  *
- * **値域そのものは `contracts/meeting.ts` にある**（#67 / ADR-0005）。参加形式と
+ * **値域そのものは `app/lib/contracts/meeting.ts` にある**（#67 / ADR-0005）。参加形式と
  * 所要時間は Runtime へ渡す構造化入力に載るようになったので、3プロジェクトの共有語彙に
  * なった。ここに残るのは画面だけが要るもの — 表示名と、終わる時刻の導出である。
  */

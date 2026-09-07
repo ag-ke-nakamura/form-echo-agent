@@ -1,4 +1,4 @@
-import type { TaskId, WebSearchCitation } from "@contracts/index.js";
+import type { TaskId, WebSearchCitation } from "./lib/contracts/types";
 import {
   AlertCircle,
   Check,

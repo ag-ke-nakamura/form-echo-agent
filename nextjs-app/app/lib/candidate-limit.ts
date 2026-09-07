@@ -1,5 +1,4 @@
-// 値として引くのは `meeting.ts` だけ（zod を持たないので SSG のバンドルに乗らない）。
-import { MAX_INPUT_CANDIDATES } from "@contracts/meeting";
+import { MAX_INPUT_CANDIDATES } from "./contracts/meeting";
 
 export { MAX_INPUT_CANDIDATES };
 

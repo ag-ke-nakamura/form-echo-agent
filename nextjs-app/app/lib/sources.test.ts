@@ -1,4 +1,4 @@
-import type { WebSearchCitation } from "@contracts/index.js";
+import type { WebSearchCitation } from "./contracts/types";
 import { describe, expect, it } from "vitest";
 import { linkableSources } from "./sources";
 

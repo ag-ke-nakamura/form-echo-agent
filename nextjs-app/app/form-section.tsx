@@ -1,4 +1,4 @@
-import type { TaskId } from "@contracts/index.js";
+import type { TaskId } from "./lib/contracts/types";
 import type { ReactNode } from "react";
 
 /**

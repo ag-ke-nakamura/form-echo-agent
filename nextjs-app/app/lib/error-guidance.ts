@@ -1,4 +1,4 @@
-import type { AiErrorCode } from "@contracts/index.js";
+import type { AiErrorCode } from "./contracts/types";
 
 /**
  * 失敗したときに画面へ出す案内（参照ドキュメント 9.3節）。

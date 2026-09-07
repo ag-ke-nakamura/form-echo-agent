@@ -1,13 +1,7 @@
 "use client";
 
-import type { TaskId, WebSearchCitation } from "@contracts/index.js";
-/*
-  値として引くのはこの1モジュールだけ。`index.js` から引くと zod がバンドルに乗る
-  （他の import はすべて `import type` なので実行時には消える）。拡張子を付けないのは、
-  型としてしか使わない import と違ってバンドラが実際に解決するため — `.js` を付けると
-  `.ts` の実体を見つけられない。
-*/
-import { isPromptRequired } from "@contracts/prompt-requirement";
+import type { TaskId, WebSearchCitation } from "./lib/contracts/types";
+import { isPromptRequired } from "./lib/contracts/prompt-requirement";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import {

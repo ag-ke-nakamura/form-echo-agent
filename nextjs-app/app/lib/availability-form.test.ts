@@ -1,6 +1,6 @@
-import { AVAILABILITY_ORDER, MEETING_FORMAT_ORDER } from "@contracts/meeting";
+import { AVAILABILITY_ORDER, MEETING_FORMAT_ORDER } from "./contracts/meeting";
 import { describe, expect, it } from "vitest";
-import type { ParseAvailabilityOutput } from "@contracts/index.js";
+import type { ParseAvailabilityOutput } from "./contracts/types";
 import {
   applyAvailabilityResult,
   type AvailabilityAnswers,

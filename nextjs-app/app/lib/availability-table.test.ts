@@ -1,11 +1,11 @@
-import { recommendScheduleInputSchema } from "@contracts/index.js";
+import { recommendScheduleInputSchema } from "./contracts/schemas";
 import {
   RECOMMENDATION_RESPONSE_RATE,
   shouldRequestRecommendation,
   summarizeCandidate,
   tableResponseRate,
   UNANSWERED_RESPONSE_RATE,
-} from "@contracts/recommendation";
+} from "./contracts/recommendation";
 import { describe, expect, it } from "vitest";
 import {
   type AvailabilityTable,

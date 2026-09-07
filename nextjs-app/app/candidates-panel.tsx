@@ -3,8 +3,8 @@
 import type {
   ParseAvailabilityInput,
   ParseCandidatesOutput,
-} from "@contracts/index.js";
-import { candidateIdOf } from "@contracts/meeting";
+} from "./lib/contracts/types";
+import { candidateIdOf } from "./lib/contracts/meeting";
 import { AlertCircle, Info } from "lucide-react";
 import { useRef, useState, useSyncExternalStore } from "react";
 import { AiAssistant } from "./ai-assistant";
@@ -253,7 +253,7 @@ export function CandidatesPanel({
     days === null ? [] : offGridCandidates(candidates.candidates, days);
   const conflicted = candidateConflicts(candidates.candidates, durationMinutes);
   /*
-    上限は入力契約が持つ（`contracts/meeting.ts`）。選べてしまうと、超えた瞬間に
+    上限は入力契約が持つ（`app/lib/contracts/meeting.ts`）。選べてしまうと、超えた瞬間に
     タブ3・タブ4の AI だけが INVALID_INPUT で使えなくなり、画面のどこにも
     「多すぎる」と出ない。
   */

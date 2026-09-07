@@ -2,17 +2,16 @@
 
 import type {
   CandidateAssessment,
-  RecommendScheduleOutput,
   ScheduleSelection,
   TableCandidate,
-} from "@contracts/index.js";
-// 値として引くのはこの2つのモジュールだけ（理由は `ai-assistant.tsx` の同じ import）。
-import { isAttending } from "@contracts/meeting";
+} from "./lib/contracts/recommendation";
+import type { RecommendScheduleOutput } from "./lib/contracts/types";
+import { isAttending } from "./lib/contracts/meeting";
 import {
   type AiEvaluationLabel,
   assessCandidates,
   shouldRequestRecommendation,
-} from "@contracts/recommendation";
+} from "./lib/contracts/recommendation";
 import {
   AlertTriangle,
   ChevronDown,
