@@ -41,6 +41,26 @@ paths:
   （`FST_ERR_REP_INVALID_PAYLOAD_TYPE`）。結果、**本文の無い 500** になって原因が伝わらない。
   `invocation/handler.ts` の中で `aiTaskRequestSchema` を回すこと
 
+## Skill 選択の2モード（#42）
+
+`config.ts` の `resolveSkillSelectionMode()`（`FORMECHO_SKILL_SELECTION_MODE`、既定
+`explicit`）で切り替える。両モードとも同じ `skills/{domain}/{task}/SKILL.md` を読み、
+プロンプトの実体は1つ。
+
+- **`explicit`**（既定）— `taskId` が Skill を一意に決める。`invocation/system-prompt.ts`
+  の `loadSkill` が `Skill.fromFile` で該当 Skill の instructions を直接読み、system
+  prompt に埋め込む
+- **`auto`** — ドメインエージェントが `AgentSkills` プラグイン（`@strands-agents/sdk/vended-plugins/skills`）
+  の progressive disclosure で選ぶ（ADR-032 論点4）。`invocation/domain-agent.ts` の
+  `DOMAIN_SKILLS_PLUGINS` がドメインごとに1つ持ち、`skillsDomainDir(domain)`
+  （`skills/{domain}`）だけを指す — **ドメインエージェントは自分のドメインの
+  `SKILL.md` しか読まない。** この場合 `buildSystemPrompt` は Skill の本文を注入せず
+  （メタデータの注入と活性化はプラグイン側が持つ）、モデルは `skills` ツールを呼んで
+  activate する
+- **Skill 選択の的中率の実測は #44 の範囲。** ここで押さえるのは配線（モードの切り替え・
+  ドメインの隔離・両モードが同じ SKILL.md を読むこと）で、`invocation/handler.test.ts`
+  の「Skill 選択の2モード（#42）」が見る
+
 ## Guardrail（#43）
 
 `guardrail/` に案A（`InvokeGuardrailChecks`）・案B（`ApplyGuardrail`）・日本固有 PII の
