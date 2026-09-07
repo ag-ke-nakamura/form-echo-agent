@@ -23,13 +23,14 @@ const REQUEST: AiTaskRequest = {
 };
 
 const VALID_OUTPUT = {
-  borrow_at: '2026-10-15T09:00',
+  borrow_at: '2026-10-15',
   return_at: '2026-10-18T18:00',
   origin: '東京',
   destination: '大阪',
-  transport: 'train',
+  route: '東京(東海道新幹線) => 大阪',
+  transport_cost: '14720円',
   purpose: 'business_trip',
-  message: '借りる日時・返す日時・目的地・利用目的を読み取りました。',
+  message: '借りる日・返す日時・目的地・利用目的を読み取りました。',
   sources: [],
 };
 

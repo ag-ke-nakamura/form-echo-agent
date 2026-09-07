@@ -105,13 +105,14 @@ const REQUESTS = {
  */
 const VALID_RESULTS = {
   'ic-card.parse-reservation': {
-    borrow_at: '2026-10-15T09:00',
+    borrow_at: '2026-10-15',
     return_at: '2026-10-18T18:00',
     origin: '東京',
     destination: '大阪',
-    transport: 'train',
+    route: '東京(東海道新幹線) => 大阪',
+    transport_cost: '14720円',
     purpose: 'business_trip',
-    message: '借りる日時・返す日時・目的地・利用目的を読み取りました。',
+    message: '借りる日・返す日時・目的地・利用目的を読み取りました。',
     sources: [],
   },
   'meeting.parse-candidates': {
@@ -655,11 +656,28 @@ describe('出力契約の再検査', () => {
     expect((await expectError(response)).code).toBe('PARSE_FAILED')
   })
 
-  it('日時が YYYY-MM-DDTHH:mm でない出力を通さない', async () => {
+  it('返す日時が YYYY-MM-DDTHH:mm でない出力を通さない', async () => {
     fakeRuntimeScript.write(
       runtimeReturns({
         ...VALID_RESULTS['ic-card.parse-reservation'],
-        borrow_at: '2026-10-15',
+        return_at: '2026-10-18',
+      }),
+    )
+
+    const response = await postTask({
+      ...REQUESTS['ic-card.parse-reservation'],
+      sessionId: SESSION_ID,
+    })
+
+    expect(response.status).toBe(502)
+    expect((await expectError(response)).code).toBe('PARSE_FAILED')
+  })
+
+  it('借りる日が YYYY-MM-DD でない出力を通さない', async () => {
+    fakeRuntimeScript.write(
+      runtimeReturns({
+        ...VALID_RESULTS['ic-card.parse-reservation'],
+        borrow_at: '2026-10-15T09:00',
       }),
     )
 

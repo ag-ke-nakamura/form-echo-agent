@@ -23,7 +23,8 @@ export type FieldName =
   | "return_at"
   | "origin"
   | "destination"
-  | "transport"
+  | "route"
+  | "transport_cost"
   | "purpose";
 
 /**
@@ -40,7 +41,8 @@ export const EMPTY_FORM: FormState = {
   return_at: { value: "", source: "manual" },
   origin: { value: "", source: "manual" },
   destination: { value: "", source: "manual" },
-  transport: { value: "", source: "manual" },
+  route: { value: "", source: "manual" },
+  transport_cost: { value: "", source: "manual" },
   purpose: { value: "", source: "manual" },
 };
 
@@ -51,11 +53,14 @@ export const EMPTY_FORM: FormState = {
  * 画面のラベルと「更新: 出発日」の言い方が食い違う。
  */
 export const FIELD_LABELS: Record<FieldName, string> = {
-  borrow_at: "借りる日時",
+  // 日付のみになった（#86）ので「日時」ではなく「日」と呼ぶ。返す日時と区別が付く。
+  borrow_at: "借りる日",
   return_at: "返す日時",
   origin: "出発地",
   destination: "目的地",
-  transport: "交通手段",
+  // 交通手段の選択欄を置き換える（#86。CONTEXT.md「移動経路」）。
+  route: "移動経路",
+  transport_cost: "交通費",
   /*
     「目的」ではなく「利用目的」と呼ぶ。目的地が同じ画面に並んでいるので、
     「目的」だと職員がどちらの欄を読んでいるのか一瞬で分からない。
@@ -71,14 +76,7 @@ export const FIELD_NAMES = Object.keys(FIELD_LABELS) as FieldName[];
  * `Record<...>` で受けるのは網羅を型に見てもらうため。契約に選択肢が増えたときに
  * ここが漏れると、`<select>` にその選択肢が出ないまま AI だけが返せる値になる。
  */
-type Transport = NonNullable<ParseReservationOutput["transport"]>;
 type Purpose = NonNullable<ParseReservationOutput["purpose"]>;
-
-const TRANSPORT_LABELS: Record<Transport, string> = {
-  train: "鉄道",
-  flight: "航空機",
-  other: "その他",
-};
 
 const PURPOSE_LABELS: Record<Purpose, string> = {
   discussion: "打ち合わせ",
@@ -89,17 +87,16 @@ const PURPOSE_LABELS: Record<Purpose, string> = {
 };
 
 /** 選択肢を持つ欄。`<select>` で描く欄と、表示名に写す欄はいつも同じ。 */
-export type SelectFieldName = "transport" | "purpose";
+export type SelectFieldName = "purpose";
 
 /**
  * 選択肢の欄の表示名の表。**プレビューと `<select>` が同じ表を引く。**
  *
- * WHY 欄名で引けるようにするか: 欄ごとに表を渡していると、`<select>` に交通手段の
+ * WHY 欄名で引けるようにするか: 欄ごとに表を渡していると、`<select>` に別の欄の
  * 表を渡しながらラベルは利用目的、という組を型が通してしまう。欄が増えても
  * `previewValue` の分岐は増えない。
  */
 export const SELECT_LABELS: Record<SelectFieldName, Record<string, string>> = {
-  transport: TRANSPORT_LABELS,
   purpose: PURPOSE_LABELS,
 };
 
@@ -192,8 +189,8 @@ export function applyToForm(
     // 同じ値なら「更新」に数えない。読み取り直した項目を毎回並べると、実際に
     // 変わった項目が埋もれる（追加の指示は普通1〜2項目しか動かさない）。
     if (field.value === raw) continue;
-    // 日時は出力契約が YYYY-MM-DDTHH:mm を保証するので、
-    // `<input type="datetime-local">` へそのまま渡せる。整形は要らない。
+    // 日付・日時は出力契約が YYYY-MM-DD / YYYY-MM-DDTHH:mm を保証するので、
+    // `<input type="date">` / `<input type="datetime-local">` へそのまま渡せる。整形は要らない。
     next[name] = { value: raw, source: "ai" };
     updated.push(FIELD_LABELS[name]);
   }

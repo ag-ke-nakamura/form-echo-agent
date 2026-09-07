@@ -2,7 +2,7 @@
 
 import type { ParseReservationOutput } from "@contracts/index.js";
 import { Plus, Trash2 } from "lucide-react";
-import { useId, useRef, useState } from "react";
+import { type ChangeEvent, useId, useRef, useState } from "react";
 import { AiAssistant } from "./ai-assistant";
 import { AiBadge, type ApplyReport, type FieldSource } from "./field-source";
 import { FormSection } from "./form-section";
@@ -93,7 +93,7 @@ export function ReservationPanel() {
           "同行者とICカード利用枚数は対象外です。手で入力してください。"
         }
         placeholder="予約内容を自然な言葉で入力してください..."
-        followUpPlaceholder="借りるのは9時、返すのは18時です"
+        followUpPlaceholder="返すのは18時です"
         submitLabel="AIで入力内容を生成"
         pendingLabel="生成中..."
         generatingMessage="AIが内容を生成しています..."
@@ -113,13 +113,10 @@ export function ReservationPanel() {
 
       <FormSection taskId={RESERVATION_TASK_ID}>
         <div className="grid gap-5 sm:grid-cols-2">
-          {/*
-            借りる日時・返す日時は日付ではなく時点なので `datetime-local`（#68）。
-            出力契約が `YYYY-MM-DDTHH:mm` を保証するので、この欄の値の形と一致する。
-          */}
+          {/* 借りる日は #86 で時点から日付に戻した。返す日時は引き続き時点なので `datetime-local`（#68）。 */}
           <Field
             name="borrow_at"
-            type="datetime-local"
+            type="date"
             state={form.borrow_at}
             onChange={setField}
           />
@@ -141,9 +138,19 @@ export function ReservationPanel() {
             state={form.destination}
             onChange={setField}
           />
-          <SelectField
-            name="transport"
-            state={form.transport}
+          {/* 移動経路は区間をまたぐ長い文字列になりうるので、2列ぶん使う（#86）。 */}
+          <div className="sm:col-span-2">
+            <Field
+              name="route"
+              type="textarea"
+              state={form.route}
+              onChange={setField}
+            />
+          </div>
+          <Field
+            name="transport_cost"
+            type="text"
+            state={form.transport_cost}
             onChange={setField}
           />
           <SelectField
@@ -237,8 +244,15 @@ function Field({
   type,
   state,
   onChange,
-}: FieldProps & { type: "datetime-local" | "text" }) {
+}: FieldProps & { type: "date" | "datetime-local" | "text" | "textarea" }) {
   const id = useId();
+  const shared = {
+    id,
+    value: state.value,
+    onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      onChange(name, event.target.value),
+    className: `mt-1.5 ${INPUT_CLASS}`,
+  };
   return (
     <div>
       <FieldHeader
@@ -247,19 +261,17 @@ function Field({
         source={state.source}
         onClear={state.value === "" ? undefined : () => onChange(name, "")}
       />
-      <input
-        id={id}
-        type={type}
-        value={state.value}
-        onChange={(event) => onChange(name, event.target.value)}
-        className={`mt-1.5 ${INPUT_CLASS}`}
-      />
+      {type === "textarea" ? (
+        <textarea rows={2} {...shared} />
+      ) : (
+        <input type={type} {...shared} />
+      )}
     </div>
   );
 }
 
 /**
- * 選択肢の欄（交通手段・利用目的）。値は契約のもの、表示は職員が読む語。
+ * 選択肢の欄（利用目的）。値は契約のもの、表示は職員が読む語。
  *
  * 表示名の対応は `lib/reservation-form.ts` が持つ（プレビューが同じ表を引く）。
  */

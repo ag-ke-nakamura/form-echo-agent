@@ -56,14 +56,12 @@ const PURPOSE_VALUES = [
 
 export const parseReservationOutputSchema = z.object({
   /*
-    借りる日時・返す日時は**日時**（#68）。ICカードの貸出・返却は時点であって
-    日付ではないので、`isoDateSchema` ではなく `isoDateTimeSchema` を引く。
+    借りる日はカードを受け取る**日**であって時点ではない（#86。#68 が付けた
+    時刻を撤回した）。返す日時は引き続き時点なので `isoDateTimeSchema` のまま。
   */
-  borrow_at: isoDateTimeSchema
+  borrow_at: isoDateSchema
     .nullable()
-    .describe(
-      'ICカードを借りる日時。YYYY-MM-DDTHH:mm 形式。読み取れない場合は null',
-    ),
+    .describe('ICカードを借りる日。YYYY-MM-DD 形式。読み取れない場合は null'),
   return_at: isoDateTimeSchema
     .nullable()
     .describe(
@@ -74,10 +72,27 @@ export const parseReservationOutputSchema = z.object({
     .string()
     .nullable()
     .describe('目的地。読み取れない場合は null'),
-  transport: z
-    .enum(['train', 'flight', 'other'])
+  /**
+   * 移動経路（`CONTEXT.md`「移動経路」、#86）。出発地から目的地までの区間を
+   * 利用交通機関つきで1本の文字列にしたもの
+   * （例:「新宿(東京メトロ丸ノ内線) => 霞ケ関(東京メトロ日比谷線) => 虎ノ門ヒルズ」）。
+   *
+   * 交通手段の選択欄（`train`/`flight`/`other`）を置き換える。区間ごとに実際の
+   * 交通機関を書けるので、単一の選択肢より詳細で、`transport` は不要になった。
+   */
+  route: z
+    .string()
     .nullable()
-    .describe('交通手段。読み取れない場合は null'),
+    .describe(
+      '出発地から目的地までの移動経路。区間ごとに利用交通機関を添えた1本の文字列（例:「新宿(東京メトロ丸ノ内線) => 霞ケ関(東京メトロ日比谷線) => 虎ノ門ヒルズ」）。Web検索で裏取りできない場合は null',
+    ),
+  /** 移動経路にかかる交通費（#86）。`route` と同じくWeb検索で裏取りする。 */
+  transport_cost: z
+    .string()
+    .nullable()
+    .describe(
+      '移動経路にかかる交通費（例:「178円」）。Web検索で裏取りできない場合は null',
+    ),
   purpose: z
     .enum(PURPOSE_VALUES)
     .nullable()

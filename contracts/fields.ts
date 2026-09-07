@@ -64,7 +64,7 @@ function isCalendarDate(value: string): boolean {
   );
 }
 
-/** 日付欄の共通スキーマ。交通ICと会議ロジの両方がこれを使う。 */
+/** 日付欄の共通スキーマ。交通ICの借りる日（#86）と会議ロジの両方がこれを使う。 */
 export const isoDateSchema = z
   .string()
   .regex(ISO8601_DATE)
@@ -83,9 +83,11 @@ export const timeOfDaySchema = z.string().regex(HH_MM);
 /**
  * ISO8601 の日時（`YYYY-MM-DDTHH:mm`）。**タイムゾーンも秒も持たない。**
  *
- * WHY 日付ではなく日時か: ICカードの貸出・返却は時点であって日付ではない（#68）。
+ * WHY 日付ではなく日時か: ICカードの返却は時点であって日付ではない（#68）。
  * `isoDateSchema` が時刻を落とした理由（対象自体が日付だから）は、対象が交通ICの
- * 借りる日時・返す日時へ変わった時点で反転する。
+ * 返す日時へ変わった時点で反転する。**借りる日は #86 でこの反転を撤回し、
+ * 再び日付に戻った** — 職員がカードを受け取れる時刻まで読み取らせる必要はなく、
+ * 時刻を尋ねる往復のほうが手間だった。
  *
  * WHY タイムゾーンを持たないか: 消費側は `<input type="datetime-local">` しかなく、
  * この欄はタイムゾーン付きの値を受け取れない。`+09:00` や `Z` を許すと、画面が
@@ -104,7 +106,7 @@ function isCalendarDateTime(value: string): boolean {
   return isCalendarDate(value.split('T')[0]);
 }
 
-/** 日時欄の共通スキーマ。交通ICの借りる日時・返す日時が使う。 */
+/** 日時欄の共通スキーマ。交通ICの返す日時が使う。 */
 export const isoDateTimeSchema = z
   .string()
   .regex(ISO8601_DATE_TIME)

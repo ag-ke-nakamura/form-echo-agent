@@ -124,13 +124,14 @@ const REQUESTS = {
  */
 const VALID_OUTPUTS = {
   'ic-card.parse-reservation': {
-    borrow_at: '2026-10-15T09:00',
+    borrow_at: '2026-10-15',
     return_at: '2026-10-18T18:00',
     origin: '東京',
     destination: '大阪',
-    transport: 'train',
+    route: '東京(東海道新幹線) => 大阪',
+    transport_cost: '14720円',
     purpose: 'business_trip',
-    message: '借りる日時・返す日時・目的地・利用目的を読み取りました。',
+    message: '借りる日・返す日時・目的地・利用目的を読み取りました。',
     sources: [],
   },
   'meeting.parse-candidates': {
@@ -508,29 +509,45 @@ describe('出力契約が弾く形', () => {
 
   it.each([
     {
-      name: '日時が YYYY-MM-DDTHH:mm でない',
+      name: '借りる日が YYYY-MM-DD でない',
       taskId: 'ic-card.parse-reservation',
       output: {
         ...VALID_OUTPUTS['ic-card.parse-reservation'],
-        borrow_at: '2026/10/15 09:00',
+        borrow_at: '2026/10/15',
       },
     },
     {
-      // ICカードの貸出・返却は時点なので、日付だけでは借りる日時にならない（#68）。
+      name: '借りる日が暦に存在しない',
+      taskId: 'ic-card.parse-reservation',
+      output: {
+        ...VALID_OUTPUTS['ic-card.parse-reservation'],
+        borrow_at: '2026-02-31',
+      },
+    },
+    {
+      name: '返す日時が YYYY-MM-DDTHH:mm でない',
+      taskId: 'ic-card.parse-reservation',
+      output: {
+        ...VALID_OUTPUTS['ic-card.parse-reservation'],
+        return_at: '2026/10/18 18:00',
+      },
+    },
+    {
+      // ICカードの返却は時点なので、日付だけでは返す日時にならない（#68）。
       // 契約が受け取ると `<input type="datetime-local">` が黙って空欄を表示する。
-      name: '日時のはずが日付だけ',
+      name: '返す日時のはずが日付だけ',
       taskId: 'ic-card.parse-reservation',
       output: {
         ...VALID_OUTPUTS['ic-card.parse-reservation'],
-        borrow_at: '2026-10-15',
+        return_at: '2026-10-18',
       },
     },
     {
-      name: '暦に存在しない日付の日時',
+      name: '返す日時が暦に存在しない日付',
       taskId: 'ic-card.parse-reservation',
       output: {
         ...VALID_OUTPUTS['ic-card.parse-reservation'],
-        borrow_at: '2026-02-31T09:00',
+        return_at: '2026-02-31T18:00',
       },
     },
     {
@@ -714,7 +731,7 @@ describe('セッションと会話履歴', () => {
         kind: 'structuredOutput',
         output: {
           ...VALID_OUTPUTS['ic-card.parse-reservation'],
-          borrow_at: '2026-10-16T09:00',
+          borrow_at: '2026-10-16',
         },
       },
     );
