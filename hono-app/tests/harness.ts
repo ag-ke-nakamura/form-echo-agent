@@ -1,11 +1,11 @@
-import type {
-  AiErrorResponse,
-  AiTaskSuccessResponse,
-} from '@contracts/index.js'
 import { app } from '../src/index.js'
 import type { FakeRuntimeTurn } from '../src/lib/fake-runtime.js'
 import { fakeRuntimeScript } from '../src/lib/fake-runtime.js'
 import type { RuntimeInvocation } from '../src/lib/runtime-transport.js'
+import type {
+  AiErrorResponse,
+  AiTaskSuccessResponse,
+} from '../src/schemas/index.js'
 
 /** 台本が既定で返す usage。応答にそのまま出るので、テストが期待値として引く。 */
 export { NO_USAGE } from '../src/lib/fake-runtime.js'

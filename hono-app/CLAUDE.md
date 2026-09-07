@@ -55,11 +55,15 @@ Lint/format は [Biome](https://biomejs.dev)（`biome.json`）。biome 本体は
   代わりに `checkTaskInput` の適合だけがこの値に対する関門になるので、`src/index.ts` で
   Runtime へ渡す前に必ず弾く。
 - `src/middleware/auth.ts` — 認証の差し込み口。実装は本検証環境の範囲外で、口だけ空けてある。
-- 出力契約は tsconfig の `paths` で `@contracts/*` として引く（emit しないので `rootDir` の
-  制約を受けない）。**`taskId` の許可リストも、自然文と構造化入力の必須性・適合も、
-  出力スキーマも、すべて契約から引くので AI 機能が増えてもこの層は変更しない。** 判断は
-  `checkTaskInput` と `outputSchemaFor` が持ち、この層に残るのは失敗をエラーコードと
-  文言に写すところだけ（`INPUT_PROBLEM_MESSAGES`）。
+- `src/schemas/` — 入出力スキーマ（Zod）・`taskId` 許可リスト・エラーコード・
+  `sessionId` 検証・usage/citations の型を自分のコードベース内だけで持つ（#108。
+  以前はリポジトリルートの `contracts/` を tsconfig の `paths` で参照していたが、
+  3プロジェクトが独立稼働する構成へ移行した（#106・#108）。`agent-app` の同種の
+  スキーマとは独立した複製で、意図的にドリフトを許容する。**`taskId` の許可リストも、
+  自然文と構造化入力の必須性・適合も、出力スキーマも、すべてここから引くので AI
+  機能が増えてもそれ以外の層は変更しない。** 判断は `checkTaskInput` と
+  `outputSchemaFor` が持ち、`src/index.ts` に残るのは失敗をエラーコードと文言に
+  写すところだけ（`INPUT_PROBLEM_MESSAGES`）。
 - `tsconfig.json` の `jsxImportSource` は `hono/jsx`。JSX を追加した場合 React ではなく Hono 独自の
   JSX ランタイムにコンパイルされる。`types: ["bun"]` により Bun のグローバル型を参照する。
 

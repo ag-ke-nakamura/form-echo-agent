@@ -9,11 +9,7 @@
     "skipLibCheck": true,
     "types": ["bun"],
     "jsx": "react-jsx",
-    "jsxImportSource": "hono/jsx",
-    "paths": {
-      "@contracts/*": ["../contracts/*"],
-      "zod": ["./node_modules/zod"]
-    }
+    "jsxImportSource": "hono/jsx"
   },
   "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.mts"]
 }

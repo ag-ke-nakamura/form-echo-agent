@@ -1,10 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import type {
-  AiErrorCode,
-  AiErrorResponse,
-  TaskInputProblem,
-} from '@contracts/index.js'
-import { checkTaskInput, isTaskId, sessionIdSchema } from '@contracts/index.js'
 import { type Context, Hono } from 'hono'
 import { cors } from 'hono/cors'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
@@ -12,6 +6,12 @@ import { ALLOWED_ORIGINS, PORT, resolveRuntimeClientName } from './config.js'
 import { invokeRuntime } from './lib/runtime-client.js'
 import { PromptTooLongError, sanitizePrompt } from './lib/sanitize.js'
 import { authenticate } from './middleware/auth.js'
+import type {
+  AiErrorCode,
+  AiErrorResponse,
+  TaskInputProblem,
+} from './schemas/index.js'
+import { checkTaskInput, isTaskId, sessionIdSchema } from './schemas/index.js'
 
 // 設定が指す Runtime クライアントが存在することを起動時に確かめる。ここで確かめないと、
 // 綴りを間違えた `FORMECHO_RUNTIME_CLIENT` に気付けるのが最初のリクエストの時で、
