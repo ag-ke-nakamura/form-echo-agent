@@ -138,10 +138,17 @@ paths:
   （`docs/reference-doc-fixes.md` F-26）は、Runtime のスキーマ定義を `contracts/` の symlink
   から `agent-app/app/FormEchoAgent/contracts/` の自己完結の複製へ変えたことで構造的には
   解消した**（ADR-0011。symlink を経由しなくなったため、`agent-app` 自身の `node_modules`
-  から通常どおり `zod` を解決できる）。ただし実際に synth・deploy が通ることの確認は
-  実クラウドリソースを作る操作のため未実施（#45）。#46 は移行前に `runtimes` を一時的に
-  空にして Gateway だけを張った経緯があり、`agentcore.json` は元に戻してある
-  （**Runtime は未デプロイのまま**）
+  から通常どおり `zod` を解決できる）。**実際に synth・deploy が通ることは #45 で確認済み**
+  （Runtime ARN が `agent-app/agentcore/.cli/deployed-state.json` にある）
+- **Node の `CodeZip` は使わない（#45）。** esbuild が `main.ts` から辿れる import グラフだけを
+  バンドルするため、`skills/**/SKILL.md` のような fs 経由で読む非コードのアセットが zip に
+  含まれず、デプロイ済み Runtime だけが起動時に `skill path does not exist or is not a valid
+  skill directory` で落ちた（`agentcore dev` のローカル実行は `skills/` がそのまま残っているため
+  気付けなかった）。`agentcore.json` の `build` は **`Container`**（Dockerfile は
+  `agent-app/app/FormEchoAgent/Dockerfile`）。CodeBuild が `docker build` した結果をそのまま
+  ECR へ積むので `skills/` は加工されずに届く。**`Dockerfile` / `.dockerignore` は CLI の
+  生成物ではなく我々が持つ**（`agentcore create` の Node/Container テンプレートを土台にした。
+  `agentcore/cdk`（生成物）とは別に手で保守する）
 - **CLI と `agentcore/cdk` の `@aws/agentcore-cdk` はバージョンが噛み合っていないと
   `deploy` だけが落ちる**（`validate` と `cdk synth` は通る）。F-25 と
   `.claude/rules/agentcore-cdk.md`
