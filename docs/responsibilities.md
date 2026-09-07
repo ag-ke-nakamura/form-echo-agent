@@ -34,7 +34,7 @@ graph TB
     subgraph ai["AI agent チーム"]
         A1["agent-app/app/FormEchoAgent/invocation/**"]
         A2["agent-app/app/FormEchoAgent/model/**"]
-        A3["agent-app/app/FormEchoAgent/skills/**/SKILL.md"]
+        A3["agent-app/app/FormEchoAgent/skills/**/*.ts"]
         A4["agent-app/agentcore/agentcore.json"]
     end
 

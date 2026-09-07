@@ -44,30 +44,30 @@ paths:
 ## Skill 選択の2モード（#42）
 
 `config.ts` の `resolveSkillSelectionMode()`（`FORMECHO_SKILL_SELECTION_MODE`、既定
-`explicit`）で切り替える。両モードとも同じ `skills/{domain}/{task}/SKILL.md` の中身を
-プロンプトの実体として使う。
+`explicit`）で切り替える。両モードとも `skills/registry.ts`（`SKILLS`）が束ねる同じ
+Skill データを使う。
 
-**`SKILL.md` をファイルパスとして直接読まない。** デプロイ済み Runtime（CodeZip）は
-esbuild が `main.ts` から辿れる import グラフだけをバンドルし、fs 経由で読む非コードの
-アセットは zip に含まれない（#45。`agentcore dev` のローカル実行は `skills/` が
-そのまま残っているため気付けなかった）。代わりに `skills/embedded.ts`（生成物 —
-`SKILL.md` から `npm run generate:skills` で作り直す。両者の一致は `skills/embedded.test.ts`
-が見る）が `SKILL.md` の中身を文字列として import グラフに乗せ、`Skill.fromContent()`
-でパースする。**`SKILL.md` を編集したら `npm run generate:skills` を忘れないこと**
-（忘れるとテストが落ちる）。
+**Skill の本文は `SKILL.md` ではなく `skills/{domain}/{task}.ts` に TypeScript のデータ
+（`{ name, description, instructions }`）として直接書く**（ADR-0012）。デプロイ済み
+Runtime（CodeZip）は esbuild が `main.ts` から辿れる import グラフだけをバンドルし、
+fs 経由で読む非コードのアセットは zip に含まれない（#45。`agentcore dev` のローカル
+実行は `skills/` がそのまま残っているため気付けなかった）。一度は `SKILL.md` → 生成
+スクリプト → `skills/embedded.ts` という形にしたが、一次情報と生成物が並存する構造
+自体が受け入れられず却下した。**`skills/{domain}/{task}.ts` が唯一の実体** — 生成も
+drift-guard テストも無い。
 
 - **`explicit`**（既定）— `taskId` が Skill を一意に決める。`invocation/system-prompt.ts`
-  の `loadSkill` が `EMBEDDED_SKILLS[domain][task]` を `Skill.fromContent` に渡し、
-  instructions を system prompt に埋め込む
+  の `loadSkill` が `SKILLS[domain][task].instructions` を直接 system prompt に埋め込む
+  （`Skill` インスタンス化は経由しない）
 - **`auto`** — ドメインエージェントが `AgentSkills` プラグイン（`@strands-agents/sdk/vended-plugins/skills`）
   の progressive disclosure で選ぶ（ADR-032 論点4）。`invocation/domain-agent.ts` の
-  `DOMAIN_SKILLS_PLUGINS` がドメインごとに1つ持ち、`EMBEDDED_SKILLS[domain]` の値を
-  `Skill.fromContent` した Skill インスタンスの配列だけを渡す — **ドメインエージェントは
-  自分のドメインの `SKILL.md` しか読まない。** この場合 `buildSystemPrompt` は Skill の
+  `DOMAIN_SKILLS_PLUGINS` がドメインごとに1つ持ち、`SKILLS[domain]` の値を
+  `new Skill(config)` した Skill インスタンスの配列だけを渡す — **ドメインエージェントは
+  自分のドメインの Skill データしか読まない。** この場合 `buildSystemPrompt` は Skill の
   本文を注入せず（メタデータの注入と活性化はプラグイン側が持つ）、モデルは `skills`
   ツールを呼んで activate する
 - **Skill 選択の的中率の実測は #44 の範囲。** ここで押さえるのは配線（モードの切り替え・
-  ドメインの隔離・両モードが同じ `SKILL.md` の中身を使うこと）で、`invocation/handler.test.ts`
+  ドメインの隔離・両モードが同じ Skill データを使うこと）で、`invocation/handler.test.ts`
   の「Skill 選択の2モード（#42）」が見る
 
 ## Guardrail（#43）
@@ -152,9 +152,9 @@ esbuild が `main.ts` から辿れる import グラフだけをバンドルし�
 - **Node の `CodeZip` は esbuild が import グラフだけをバンドルし、非コードのアセットは
   zip に含まれない（#45）。** `skills/**/SKILL.md` を fs 経由で読む実装で実際にこれを踏み、
   デプロイ済み Runtime だけが起動時に落ちた（`skill path does not exist or is not a valid
-  skill directory`）。対処は上の「Skill 選択の2モード（#42）」の `skills/embedded.ts` を
-  参照。**この境界（import グラフに乗るものだけがデプロイ先に届く）は他の非コードアセットを
-  足すときにも効く。**
+  skill directory`）。対処は上の「Skill 選択の2モード（#42）」の `skills/{domain}/{task}.ts`
+  （ADR-0012）を参照。**この境界（import グラフに乗るものだけがデプロイ先に届く）は他の
+  非コードアセットを足すときにも効く。**
   検討して採らなかった代替案（#45）: **`build: Container`**（`skills/` はそのまま届くが、
   `agentcore dev` がローカルでも `docker build` するため Docker デーモンが常に必要になる —
   実機で確認済み）。**S3 から `SKILL.md` を都度ダウンロードする**（Harness の Skills 機能や

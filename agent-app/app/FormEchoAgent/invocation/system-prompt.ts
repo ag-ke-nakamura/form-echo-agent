@@ -1,19 +1,19 @@
-import { Skill } from '@strands-agents/sdk/vended-plugins/skills';
 import { resolveSkillSelectionMode } from '../config.js';
 import type { TaskId } from '../contracts/index.js';
-import { EMBEDDED_SKILLS } from '../skills/embedded.js';
+import { SKILLS } from '../skills/registry.js';
 
 /**
- * 明示モードの Skill 読み込み。taskId が Skill を一意に決め、`SKILL.md` の本文
- * （frontmatter を除いた instructions）を system prompt に注入する。
+ * 明示モードの Skill 読み込み。taskId が Skill を一意に決め、instructions を
+ * system prompt に注入する。
  *
- * ファイルを直接読まず埋め込みデータ（`skills/embedded.ts`）を使う。デプロイ済み
- * Runtime（CodeZip）は esbuild が import グラフだけを束ねるため、fs 経由で
- * `SKILL.md` を読む実装は zip に含まれず起動時に落ちる（#45）。
+ * `skills/{domain}/{task}.ts` のデータを直接使う（ADR-0012）。以前は `SKILL.md` を
+ * fs 経由で読んでいたが、デプロイ済み Runtime（CodeZip）は esbuild が import
+ * グラフだけを束ねるため非コードのアセットは zip に含まれず起動時に落ちた（#45）。
+ * TypeScript のデータとして直接書けば import グラフに乗るので、この問題は起きない。
  */
 function loadSkill(taskId: TaskId): string {
   const [domain, task] = taskId.split('.');
-  return Skill.fromContent(EMBEDDED_SKILLS[domain][task]).instructions;
+  return SKILLS[domain][task].instructions ?? '';
 }
 
 /**
