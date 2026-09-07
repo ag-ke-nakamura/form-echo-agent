@@ -421,6 +421,20 @@ Standard Tier は `crossRegionConfig.guardrailProfileIdentifier` が必須で、
 
 **修正案**: 「APAC 全域に分散」を具体的な宛先リージョン名で置き換える。ADR-011 違反の判断根拠が明確になる。
 
+### 🟢 F-28. 案Bの `regexesConfig` は単体でマイナンバーを検知できる（実機で確認）
+
+**該当**: Issue #85 の受け入れ条件、F-03（案Aにマイナンバー対応の PII 型が無い）の続き
+
+**事実**: `agent-app/infra`（ADR-0010）でデプロイした Guardrail リソース（`FormEchoGuardrail`、Classic Tier）に対し、`FORMECHO_GUARDRAIL_APPLY_GUARDRAIL=true` / `FORMECHO_GUARDRAIL_INVOKE_CHECKS=false` / `FORMECHO_GUARDRAIL_CUSTOM_REGEX=false`（コード側の正規表現チェックも切り、案Bの `regexesConfig` 単体に絞った状態）で `checkGuardrail` を直接呼び、マイナンバー形式の文字列2種を通した。
+
+| 入力 | 結果 |
+|---|---|
+| ハイフンあり（`1234-5678-9012`） | ブロック。`source: 'strategy'` の finding が1件 |
+| 連続表記（`123456789012`） | ブロック。同上 |
+| 無関係な文（会議室予約の依頼） | ブロックされない（誤検知なし） |
+
+**案Bの `regexesConfig` は単体でマイナンバーを検知できる。** コード側の正規表現チェック（`pii.ts`）を切っても `source: 'strategy'` の finding が独立に立つことで確認した。
+
 ---
 
 ## 出力契約（MVP 実装で追加）
