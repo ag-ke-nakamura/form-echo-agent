@@ -43,7 +43,7 @@ const PURPOSE_VALUES = [
   'other',
 ] as const
 
-/** 1回の応答で返せる経路候補の上限（#100）。`SKILL.md` の制約と同じ数を置く。 */
+/** 1回の応答で返せる経路候補の上限（#100）。Skill の制約と同じ数を置く。 */
 export const MAX_ROUTE_CANDIDATES = 5
 
 /**
@@ -149,7 +149,7 @@ const newCandidateSchema = z.object({
   start_time: timeOfDaySchema.describe('開始時刻。HH:mm 形式（24時間表記）'),
 })
 
-/** 1回の応答で返せる候補日程の上限。`SKILL.md` の制約と同じ数を置く。 */
+/** 1回の応答で返せる候補日程の上限。Skill の制約と同じ数を置く。 */
 export const MAX_CANDIDATES = 10
 
 export const parseCandidatesOutputSchema = z.object({
