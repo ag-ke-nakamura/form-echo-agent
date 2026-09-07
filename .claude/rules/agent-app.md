@@ -155,6 +155,13 @@ esbuild が `main.ts` から辿れる import グラフだけをバンドルし�
   skill directory`）。対処は上の「Skill 選択の2モード（#42）」の `skills/embedded.ts` を
   参照。**この境界（import グラフに乗るものだけがデプロイ先に届く）は他の非コードアセットを
   足すときにも効く。**
+  検討して採らなかった代替案（#45）: **`build: Container`**（`skills/` はそのまま届くが、
+  `agentcore dev` がローカルでも `docker build` するため Docker デーモンが常に必要になる —
+  実機で確認済み）。**S3 から `SKILL.md` を都度ダウンロードする**（Harness の Skills 機能や
+  AgentCore Runtime の Bring-Your-Own ファイルシステムが使う手筋だが、後者はネイティブ機能
+  として使うと `networkMode: VPC` が必須で、VPC 化は #45 が別途除外した VPC Endpoint 一式
+  まで巻き取る。自前でダウンロードコードを書けば VPC は避けられるが、Runtime 実行ロールへの
+  IAM 権限付与が ADR-0010 で未解決のクロススタック参照問題に当たる）。
 - **CLI と `agentcore/cdk` の `@aws/agentcore-cdk` はバージョンが噛み合っていないと
   `deploy` だけが落ちる**（`validate` と `cdk synth` は通る）。F-25 と
   `.claude/rules/agentcore-cdk.md`
