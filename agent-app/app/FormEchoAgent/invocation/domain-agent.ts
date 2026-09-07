@@ -1,8 +1,22 @@
 import { Agent } from '@strands-agents/sdk';
+import { AgentSkills } from '@strands-agents/sdk/vended-plugins/skills';
+import { resolveSkillSelectionMode } from '../config.js';
 import { type Domain, domainOf, type TaskId } from '../contracts/index.js';
 import { loadModel } from '../model/load.js';
 import { loadDomainTools } from '../tools/load.js';
-import { buildSystemPrompt } from './system-prompt.js';
+import { buildSystemPrompt, skillsDomainDir } from './system-prompt.js';
+
+/**
+ * 自動モード（#42）の `AgentSkills` プラグイン。ドメインごとに1つ持ち、複数の
+ * Agent インスタンスで共有する（活性化状態は `agent.appState` 側でエージェントごと
+ * に持つので、プラグイン自体の使い回しは安全 — SDK のドキュメント参照）。
+ * `skills/{domain}` だけを指すので、ドメインエージェントは他ドメインの
+ * `SKILL.md` を読み込まない。
+ */
+const DOMAIN_SKILLS_PLUGINS: Record<Domain, AgentSkills> = {
+  'ic-card': new AgentSkills({ skills: [skillsDomainDir('ic-card')] }),
+  meeting: new AgentSkills({ skills: [skillsDomainDir('meeting')] }),
+};
 
 /**
  * ドメインエージェントの名前。taskId のドメイン部から引く。
@@ -58,6 +72,10 @@ export function getOrCreateDomainAgent(
     tools: loadDomainTools(domain),
     model: loadModel(),
     systemPrompt: buildSystemPrompt(taskId),
+    plugins:
+      resolveSkillSelectionMode() === 'auto'
+        ? [DOMAIN_SKILLS_PLUGINS[domain]]
+        : [],
     // 既定の printer を切る。モデルのテキストとツールの印を素の stdout へ書くが、
     // Structured Output を一括で受け取る（`stream: false`）この Runtime では逐次
     // テキストが存在せず、残るのはツール名の1行だけ。それが fastify の pino が

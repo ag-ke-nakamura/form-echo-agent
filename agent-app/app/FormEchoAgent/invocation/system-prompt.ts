@@ -2,7 +2,8 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Skill } from '@strands-agents/sdk/vended-plugins/skills';
-import type { TaskId } from '../contracts/index.js';
+import { resolveSkillSelectionMode } from '../config.js';
+import type { Domain, TaskId } from '../contracts/index.js';
 
 /**
  * skills/ を指す基準になるパッケージルート。
@@ -27,14 +28,18 @@ function findPackageRoot(): string {
 
 const PACKAGE_ROOT = findPackageRoot();
 
+/** ドメインの Skill が並ぶ親ディレクトリ。自動モードの `AgentSkills` が指す先。 */
+export function skillsDomainDir(domain: Domain): string {
+  return join(PACKAGE_ROOT, 'skills', domain);
+}
+
 /**
  * 明示モードの Skill 読み込み。taskId が Skill を一意に決め、`SKILL.md` の本文
- * （frontmatter を除いた instructions）を system prompt に注入する。ドメインエージェント
- * に選ばせる自動モードは `AgentSkills` プラグインを入れるチケットで足す。
+ * （frontmatter を除いた instructions）を system prompt に注入する。
  */
 function loadSkill(taskId: TaskId): string {
   const [domain, task] = taskId.split('.');
-  return Skill.fromFile(join(PACKAGE_ROOT, 'skills', domain, task))
+  return Skill.fromFile(join(skillsDomainDir(domain as Domain), task))
     .instructions;
 }
 
@@ -59,6 +64,15 @@ function nowInJst(): string {
   }).format(new Date());
 }
 
+/**
+ * 自動モードでは Skill の instructions をここで注入しない。`AgentSkills` プラグイン
+ * （`domain-agent.ts`）が `<available_skills>` のメタデータ注入と、活性化された
+ * Skill の本文の受け渡しを持つ。ここで両方注入すると同じ内容を二重に持つ。
+ */
 export function buildSystemPrompt(taskId: TaskId): string {
-  return `${loadSkill(taskId)}\n\n## 基準時刻\n\n現在は ${nowInJst()}（JST）です。相対的な日付・時刻表現はこの時点を基準に解決してください。`;
+  const skillContent =
+    resolveSkillSelectionMode() === 'explicit'
+      ? `${loadSkill(taskId)}\n\n`
+      : '';
+  return `${skillContent}## 基準時刻\n\n現在は ${nowInJst()}（JST）です。相対的な日付・時刻表現はこの時点を基準に解決してください。`;
 }

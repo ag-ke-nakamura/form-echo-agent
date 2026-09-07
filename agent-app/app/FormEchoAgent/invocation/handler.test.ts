@@ -1,7 +1,7 @@
 import { ModelError } from '@strands-agents/sdk';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { z } from 'zod';
-import { resolveModelName } from '../config.js';
+import { resolveModelName, resolveSkillSelectionMode } from '../config.js';
 import {
   type AiTaskRequest,
   ALLOWED_TASK_IDS,
@@ -225,6 +225,65 @@ describe('taskId の解決', () => {
 
     expect(expectError(response).code).toBe('INVALID_INPUT');
     expect(fakeModelScript.calls).toHaveLength(0);
+  });
+});
+
+/**
+ * Skill 選択の2モード（#42）。
+ *
+ * 明示モード（既定）は上の「taskId の解決」がすでに見ている — `# ${taskId}` の
+ * 見出しが載ることは、Skill の本文が直接注入されていることの証拠になる。
+ * ここでは自動モードだけを見る: 直接は注入せず、`AgentSkills` プラグインが
+ * 自分のドメインの Skill のメタデータだけを system prompt に載せ、活性化用の
+ * `skills` ツールを渡すこと。
+ *
+ * **どの Skill を実際に activate するかは境界越しに見ない。** fake モデルの台本は
+ * 固定の応答を返すだけで、複数の候補から選ぶという判断そのものは持たない
+ * （モデルの賢さを assert しないという既存の線引きの延長）。会議ロジが3 Skill を
+ * 持つ状態で実際に正しく選べるかは #44 の実測で答える。
+ */
+describe('Skill 選択の2モード（#42）', () => {
+  afterEach(() => {
+    delete process.env.FORMECHO_SKILL_SELECTION_MODE;
+  });
+
+  it('既定は明示モード', () => {
+    expect(resolveSkillSelectionMode()).toBe('explicit');
+  });
+
+  it('自動モードでは会議ロジドメインエージェントに3つの Skill のメタデータが渡り、本文は注入されない', async () => {
+    process.env.FORMECHO_SKILL_SELECTION_MODE = 'auto';
+    fakeModelScript.write({
+      kind: 'structuredOutput',
+      output: VALID_OUTPUTS['meeting.parse-availability'],
+    });
+
+    expectSuccess(await invokeBoundary(REQUESTS['meeting.parse-availability']));
+
+    const systemPrompt = systemPromptOf(lastCall());
+    expect(systemPrompt).toContain('<name>parse-availability</name>');
+    expect(systemPrompt).toContain('<name>parse-candidates</name>');
+    expect(systemPrompt).toContain('<name>recommend-schedule</name>');
+    // 他ドメイン（交通IC）の Skill は読み込まない。
+    expect(systemPrompt).not.toContain('<name>parse-reservation</name>');
+    // まだ活性化していない Skill の本文（instructions）は注入されない。
+    expect(systemPrompt).not.toContain('# meeting.parse-availability');
+    expect(lastCall().toolNames).toContain('skills');
+  });
+
+  it('自動モードでは交通ICドメインエージェントに自分の Skill のメタデータだけが渡る', async () => {
+    process.env.FORMECHO_SKILL_SELECTION_MODE = 'auto';
+    fakeModelScript.write({
+      kind: 'structuredOutput',
+      output: VALID_OUTPUTS['ic-card.parse-reservation'],
+    });
+
+    expectSuccess(await invokeBoundary(REQUESTS['ic-card.parse-reservation']));
+
+    const systemPrompt = systemPromptOf(lastCall());
+    expect(systemPrompt).toContain('<name>parse-reservation</name>');
+    expect(systemPrompt).not.toContain('<name>parse-availability</name>');
+    expect(lastCall().toolNames).toContain('skills');
   });
 });
 
