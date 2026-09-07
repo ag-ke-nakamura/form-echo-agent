@@ -27,9 +27,17 @@ const VALID_OUTPUT = {
   return_at: '2026-10-18T18:00',
   origin: '東京',
   destination: '大阪',
-  route: '東京(東海道新幹線) => 大阪',
-  transport_cost: '14720円',
   purpose: 'business_trip',
+  route_candidates: [
+    {
+      route: '東京(東海道新幹線) => 大阪',
+      fare: '14720円',
+      duration: '2時間30分',
+      transfer_count: 0,
+      is_selected: true,
+      reason: '運賃が最安',
+    },
+  ],
   message: '借りる日・返す日時・目的地・利用目的を読み取りました。',
   sources: [],
 };

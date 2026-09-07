@@ -6,6 +6,7 @@ import {
   type AiTaskRequest,
   ALLOWED_TASK_IDS,
   MAX_CANDIDATES,
+  MAX_ROUTE_CANDIDATES,
   type OUTPUT_SCHEMAS,
   type ParseAvailabilityInput,
   type ParseCandidatesInput,
@@ -128,9 +129,17 @@ const VALID_OUTPUTS = {
     return_at: '2026-10-18T18:00',
     origin: '東京',
     destination: '大阪',
-    route: '東京(東海道新幹線) => 大阪',
-    transport_cost: '14720円',
     purpose: 'business_trip',
+    route_candidates: [
+      {
+        route: '東京(東海道新幹線) => 大阪',
+        fare: '14720円',
+        duration: '2時間30分',
+        transfer_count: 0,
+        is_selected: true,
+        reason: '運賃が最安',
+      },
+    ],
     message: '借りる日・返す日時・目的地・利用目的を読み取りました。',
     sources: [],
   },
@@ -620,6 +629,19 @@ describe('出力契約が弾く形', () => {
     }),
   );
 
+  /** ちょうど1件だけ `is_selected: true` にする。件数超過だけを弾いているか見るため。 */
+  const overLimitRouteCandidates = Array.from(
+    { length: MAX_ROUTE_CANDIDATES + 1 },
+    (_, index) => ({
+      route: `東京(在来線${index + 1}) => 大阪`,
+      fare: `${1000 + index}円`,
+      duration: '3時間',
+      transfer_count: index,
+      is_selected: index === 0,
+      reason: index === 0 ? '運賃が最安' : '不採用',
+    }),
+  );
+
   it.each([
     {
       name: '借りる日が YYYY-MM-DD でない',
@@ -671,6 +693,48 @@ describe('出力契約が弾く形', () => {
       output: {
         ...VALID_OUTPUTS['ic-card.parse-reservation'],
         purpose: '打ち合わせ',
+      },
+    },
+    {
+      name: '経路候補が上限件数を超える',
+      taskId: 'ic-card.parse-reservation',
+      output: {
+        ...VALID_OUTPUTS['ic-card.parse-reservation'],
+        route_candidates: overLimitRouteCandidates,
+      },
+    },
+    {
+      // #100: 経路候補があるのに採用フラグ（is_selected）がどれにも立っていない。
+      // 比較検討した結果がフォームへ反映できないので、契約の段で作り直しに回す。
+      name: '経路候補があるのに採用フラグが0件',
+      taskId: 'ic-card.parse-reservation',
+      output: {
+        ...VALID_OUTPUTS['ic-card.parse-reservation'],
+        route_candidates: VALID_OUTPUTS[
+          'ic-card.parse-reservation'
+        ].route_candidates.map((candidate) => ({
+          ...candidate,
+          is_selected: false,
+        })),
+      },
+    },
+    {
+      // 逆に2件以上に立っていると、画面はどちらを移動経路欄に反映すべきか決められない。
+      name: '採用フラグが2件以上',
+      taskId: 'ic-card.parse-reservation',
+      output: {
+        ...VALID_OUTPUTS['ic-card.parse-reservation'],
+        route_candidates: [
+          ...VALID_OUTPUTS['ic-card.parse-reservation'].route_candidates,
+          {
+            route: '東京(東海道新幹線) => 名古屋(在来線) => 大阪',
+            fare: '15000円',
+            duration: '3時間',
+            transfer_count: 1,
+            is_selected: true,
+            reason: '不採用（比較用の別候補）',
+          },
+        ],
       },
     },
     {

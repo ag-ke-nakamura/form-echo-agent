@@ -105,6 +105,28 @@ function isSelectField(name: FieldName): name is SelectFieldName {
 }
 
 /**
+ * 比較検討の末に採用された経路候補（#100）。**他候補はこの変更では画面に表示しない**
+ * ので、ここで選んだ1件の `route`/`fare` だけを「移動経路」「交通費」欄へ写す。
+ *
+ * `is_selected` がちょうど1件であることは出力契約の `.refine()` が保証する
+ * （経路候補が0件のときは何も採用されていない）。
+ */
+function selectedRouteCandidate(result: ParseReservationOutput) {
+  return result.route_candidates.find((candidate) => candidate.is_selected);
+}
+
+/** 欄ごとの生の値。`route`/`transport_cost` は経路候補から導く2欄だけの例外。 */
+function rawValue(
+  name: FieldName,
+  result: ParseReservationOutput,
+): string | null {
+  const selected = selectedRouteCandidate(result);
+  if (name === "route") return selected?.route ?? null;
+  if (name === "transport_cost") return selected?.fare ?? null;
+  return result[name];
+}
+
+/**
  * プレビューに出す値（設計書 3.6.1節）。**フォームに入る値ではなく職員が読む文字列。**
  *
  * WHY 分けるか: 選択肢の欄（交通手段・利用目的）は契約の値（`train`）とフォームの値が
@@ -115,7 +137,7 @@ function previewValue(
   name: FieldName,
   result: ParseReservationOutput,
 ): string | null {
-  const raw = result[name];
+  const raw = rawValue(name, result);
   if (raw === null) return null;
   return isSelectField(name) ? SELECT_LABELS[name][raw] : raw;
 }
@@ -177,7 +199,7 @@ export function applyToForm(
   const preserved: string[] = [];
 
   for (const name of FIELD_NAMES) {
-    const raw = result[name];
+    const raw = rawValue(name, result);
     // 読み取れなかった項目（null）は触らない。職員が先に手で埋めていた値を
     // AI が空に戻してしまうのを避ける。
     if (raw === null) continue;

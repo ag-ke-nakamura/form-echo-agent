@@ -1,4 +1,7 @@
-import type { ParseReservationOutput } from "@contracts/index.js";
+import type {
+  ParseReservationOutput,
+  RouteCandidate,
+} from "@contracts/index.js";
 import { describe, expect, it } from "vitest";
 import {
   applyToForm,
@@ -15,11 +18,25 @@ function output(
     return_at: null,
     origin: null,
     destination: null,
-    route: null,
-    transport_cost: null,
     purpose: null,
+    route_candidates: [],
     message: "",
     sources: [],
+    ...overrides,
+  };
+}
+
+/** 採用済みの経路候補（#100）。`route`/`fare` 以外は反映に使わないので固定値で埋める。 */
+function selectedCandidate(
+  overrides: Partial<RouteCandidate> = {},
+): RouteCandidate {
+  return {
+    route: "東京 => 大阪",
+    fare: "14720円",
+    duration: "2時間30分",
+    transfer_count: 0,
+    is_selected: true,
+    reason: "運賃が最安",
     ...overrides,
   };
 }
@@ -107,13 +124,35 @@ describe("applyToForm", () => {
   it("読み取れた欄だけを AI 由来として入れる", () => {
     const { next, report } = applyToForm(
       EMPTY_FORM,
-      output({ origin: "東京", route: "東京 => 大阪" }),
+      output({
+        origin: "東京",
+        route_candidates: [selectedCandidate({ route: "東京 => 大阪" })],
+      }),
     );
     expect(next.origin).toEqual({ value: "東京", source: "ai" });
     expect(next.route).toEqual({ value: "東京 => 大阪", source: "ai" });
+    expect(next.transport_cost).toEqual({ value: "14720円", source: "ai" });
     // 読み取れなかった欄は触らない。
     expect(next.destination).toEqual(EMPTY_FORM.destination);
-    expect(report).toEqual({ updated: ["出発地", "移動経路"], preserved: [] });
+    expect(report).toEqual({
+      updated: ["出発地", "移動経路", "交通費"],
+      preserved: [],
+    });
+  });
+
+  /**
+   * 経路候補が0件（=経路を特定できなかった）のときは、既存の null と同じ扱いになる
+   * こと（#100）。`route_candidates` が空配列なら `selectedRouteCandidate` は
+   * 何も見つけられず、`route`/`transport_cost` は触らない。
+   */
+  it("経路候補が0件のときは移動経路・交通費を触らない", () => {
+    const { next, report } = applyToForm(
+      EMPTY_FORM,
+      output({ origin: "東京", route_candidates: [] }),
+    );
+    expect(next.route).toEqual(EMPTY_FORM.route);
+    expect(next.transport_cost).toEqual(EMPTY_FORM.transport_cost);
+    expect(report.updated).toEqual(["出発地"]);
   });
 
   /*
