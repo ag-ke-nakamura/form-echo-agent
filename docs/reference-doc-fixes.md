@@ -297,9 +297,15 @@ alpha.51 に固定していたのは alpha.49 の `connectorName` → `connector
 
 **あわせて CLI が `agentcore/cdk/package.json` の他の依存も書き換えた**（キャレット→チルダ、`@types/node` は 22 系から 24 系へ）。**#46 が意図した変更ではなく、`agentcore deploy` の副作用である。** 生成物のディレクトリなので差し戻しても次の deploy で戻る。詳細と受け入れた理由は `.claude/rules/agentcore-cdk.md`。
 
-### 🟡 F-26. Runtime の CodeZip バンドルが `contracts/` の symlink 越しに `zod` を解決できない
+### 🟢 F-26. Runtime の CodeZip バンドルが `contracts/` の symlink 越しに `zod` を解決できない（解消）
 
 **該当**: `.claude/rules/agent-app.md`「`agentcore package` は CLI 0.28.1 のバグで失敗する」
+
+**解消**: #110（ADR-0011）で、Runtime のスキーマ定義を `contracts/` の symlink から
+`agent-app/app/FormEchoAgent/contracts/` の自己完結の複製へ変えた。symlink を経由しなくなり
+`agent-app` 自身の `node_modules` から `zod` を通常どおり解決できるため、下記の症状の
+根本原因（symlink 越しの解決）は構造的には無くなっている。ただし実際に synth・deploy が
+通ることの確認は実クラウドリソースを作る操作のため別途行う（#45）。以下は原因調査時の記録。
 
 **事実**: 症状が変わっている。**esbuild がバイナリを見つけられないのではなく、`zod` を解決できない。**
 

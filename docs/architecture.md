@@ -4,38 +4,29 @@
 
 ## 1. 全体構成
 
-3プロジェクトが `contracts/`（入出力契約）だけを共有し、HTTP で直列につながる。
+3プロジェクトはそれぞれ入出力契約（Zod v4 スキーマ）を自己完結で持ち（ADR-0011）、HTTP で直列につながる。
 
 ```mermaid
 graph LR
     subgraph browser["ブラウザ"]
-        UI["nextjs-app<br/>SSG フロントエンド :3000"]
+        UI["nextjs-app<br/>SSG フロントエンド :3000<br/>[[app/lib/contracts/]]"]
     end
 
     subgraph bff_box["BFF"]
-        BFF["hono-app<br/>Hono :8787"]
+        BFF["hono-app<br/>Hono :8787<br/>[[src/schemas/]]"]
     end
 
     subgraph runtime_box["AgentCore Runtime"]
-        RT["agent-app/app/FormEchoAgent<br/>Strands Agent :8080"]
+        RT["agent-app/app/FormEchoAgent<br/>Strands Agent :8080<br/>[[contracts/]]"]
     end
 
     subgraph aws["AWS"]
         BR["Bedrock<br/>jp.anthropic.claude-*"]
     end
 
-    CT[["contracts/<br/>Zod v4 スキーマ"]]
-
     UI -->|"POST /api/ai/tasks<br/>{taskId, prompt, sessionId, input}"| BFF
     BFF -->|"POST /invocations<br/>+ X-Amzn-Bedrock-AgentCore-Runtime-Session-Id"| RT
     RT -->|"Converse (stream: false)"| BR
-
-    CT -.->|型のみ| UI
-    CT -.->|検査| BFF
-    CT -.->|検査| RT
-
-    classDef contract fill:#fff4e6,stroke:#d9822b,stroke-width:2px
-    class CT contract
 ```
 
 宛先はすべて環境変数で切り替わる。
@@ -49,7 +40,7 @@ graph LR
 
 ## 2. リクエスト1回の流れ
 
-各層が何を判断するか。**判断は契約側の関数に置き、同じ判断を2箇所に書かない**（ADR-0002）。
+各層が何を判断するか。**判断は各プロジェクト内の契約側の関数に置き、同じ判断をプロジェクト内の2箇所に書かない**（ADR-0011）。
 
 ```mermaid
 sequenceDiagram
@@ -82,7 +73,7 @@ sequenceDiagram
 
     IT-->>H: {result, usage}
     H-->>BFF: {sessionId, result, usage}
-    Note over BFF: 出力契約でもう一度検査<br/>（3者が同じ契約を見ることを実際に効かせる）
+    Note over BFF: 出力契約でもう一度検査<br/>（BFF は自分の複製したスキーマで独立に見る）
     BFF-->>UI: 200 / エラーコード
     Note over UI: プレビュー表示（ADR-0006）
     Staff->>UI: 「反映」でフォームへ書き込む
@@ -112,24 +103,24 @@ graph TD
 
 ドメイン間で協調しないので、Strands の Graph / Swarm / agent-as-tool は使わない。会議ロジは Websearch を持たない（F-22）。
 
-## 4. contracts の解決経路
+## 4. 各プロジェクトの契約定義
 
-パッケージ化せず素の `.ts` で置き、各プロジェクトが自前の経路で参照する（ADR-0002）。
+共有ディレクトリは無く、3プロジェクトがそれぞれ自分のパッケージ内に複製を持つ（ADR-0011）。
+複製元は同じなので現状は内容が一致しているが、3者間のドリフトを検知する自動テストは無い
+（意図的。実運用で BFF の `PARSE_FAILED` 等として顕在化する）。
 
 ```mermaid
 graph TD
-    C["contracts/<br/>task-ids.ts / api.ts / inputs.ts /<br/>outputs.ts / output-schema.ts /<br/>task-input.ts / errors.ts ほか"]
-
-    C -->|"symlink<br/>app/FormEchoAgent/contracts/"| A["Runtime"]
-    C -->|"tsconfig paths @contracts/*"| B["BFF"]
-    C -->|"tsconfig paths @contracts/*"| N["フロントエンド"]
-
-    A --> AU["Zod で検査する<br/>（リクエスト・Structured Output）"]
-    B --> BU["Zod で検査する<br/>（門・応答の再検査）"]
-    N --> NU["ほぼ import type。値で引くのは<br/>zod を持たない meeting.ts /<br/>prompt-requirement.ts だけ<br/>（SSG のバンドルに zod を乗せない）"]
+    A["Runtime<br/>agent-app/app/FormEchoAgent/contracts/"] --> AU["Zod で検査する<br/>（リクエスト・Structured Output）"]
+    B["BFF<br/>hono-app/src/schemas/"] --> BU["Zod で検査する<br/>（門・応答の再検査）"]
+    N["フロントエンド<br/>nextjs-app/app/lib/contracts/"] --> NU["ほぼ import type。値で引くのは<br/>zod を持たない meeting.ts /<br/>prompt-requirement.ts だけ<br/>（SSG のバンドルに zod を乗せない）"]
 ```
 
-契約が持つ「表」。
+3プロジェクトとも自分自身の `node_modules` から `zod` を通常どおり解決する（symlink も
+tsconfig の `paths` エイリアスも不要）。`recommendation.ts`（候補日提案の導出・集計）は
+nextjs-app だけが持つ — 他プロジェクトは使っていないため複製していない。
+
+契約が持つ「表」（各プロジェクトの複製に共通する内容）。
 
 | 表 | 決めること |
 | --- | --- |

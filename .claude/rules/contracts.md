@@ -1,25 +1,32 @@
 ---
 paths:
-  - "contracts/**/*"
-  - "**/tsconfig*.json"
-  - "hono-app/src/**/*"
+  - "agent-app/app/FormEchoAgent/contracts/**/*"
   - "agent-app/app/FormEchoAgent/invocation/**/*"
+  - "hono-app/src/schemas/**/*"
+  - "hono-app/src/lib/**/*"
   - "nextjs-app/app/lib/**/*"
 ---
 
-# contracts（入出力の契約）
+# 入出力契約
 
-出力スキーマ（Zod）・リクエスト型・エラーコード・`taskId` 許可リストの正典。
+出力スキーマ（Zod）・リクエスト型・エラーコード・`taskId` 許可リストの定義。**共有ディレクトリは
+無く、`agent-app/app/FormEchoAgent/contracts/`・`hono-app/src/schemas/`・
+`nextjs-app/app/lib/contracts/` にそれぞれ自己完結の複製として存在する**（ADR-0011）。
+複製元は同じなので現状は内容が一致しているが、3者間のドリフトを検知する自動テストは無い
+（意図的。ADR-0011）。以下は3プロジェクトに共通する判断内容の説明で、実体は複製先ごとに別のコード。
 
 ## 判断は契約側の関数に置く
 
 `checkTaskInput(taskId, {prompt, input})` が「このリクエストが入力契約を満たすか」を、
 `outputSchemaFor(taskId, input)` が「この応答を何で検査するか」を決める。前者は Runtime の
-`aiTaskRequestSchema` と BFF の門の両方が、後者は Runtime の Structured Output 再試行と
-BFF の再検査の両方が引く。
+`aiTaskRequestSchema` と BFF の門が、後者は Runtime の Structured Output 再試行と BFF の
+再検査が、それぞれ自分の複製から引く（ADR-0011 により Runtime と BFF は独立した実装を持つ）。
 
-**同じ判断を2箇所に書かない。** 片方だけが契約の変更に追随すると、BFF は通すのに Runtime が
-弾く（またはその逆の）状態になる。
+**同じ判断をプロジェクト内の2箇所に書かない。** プロジェクトをまたぐ二重実装（Runtime と BFF が
+別々に `outputSchemaFor` を持つこと）自体は ADR-0011 で受け入れた設計だが、それでも
+**入出力の形を変える変更は3つの複製すべてに手で反映する。** 片方だけが追随すると、BFF は
+通すのに Runtime が弾く（またはその逆の）状態になる — これは自動検知されず、実運用の
+`PARSE_FAILED` で初めて顕在化する。
 
 ## リクエストに何が載るか
 
@@ -80,7 +87,7 @@ BFF は壊れた出典を**黙って落とさず** `PARSE_FAILED` にする。�
 
 **zod を import しない。** スキーマと同じモジュールに置くと SSG のバンドルに zod が丸ごと乗る。
 
-**`contracts/` の他のモジュールも値として import しない。** 引けるのは `import type` だけである。
+**`nextjs-app/app/lib/contracts/` の他のモジュールも値として import しない。** 引けるのは `import type` だけである。
 相対 import の `.js` は Runtime の NodeNext が要求する形だが、フロントエンドのバンドラ
 （Turbopack / webpack）はそれを `.ts` に読み替えない — `moduleResolution: bundler` の読み替えは
 tsc の中だけの話で、`next.config.ts` から効かせる手も無い（`resolveAlias` も `resolveExtensions` も
@@ -97,23 +104,13 @@ tsc の中だけの話で、`next.config.ts` から効かせる手も無い（`r
 開催日・予備日の初期選択。**AI に数えさせない**ための場所である。上の制約から `isAttending` を
 呼べないので、参加可否4状態を1つの `switch` で網羅して内訳の和を採る。
 
-## 参照のしかたはプロジェクトごとに違う
+## 置き場所
 
-- `hono-app` / `nextjs-app` — tsconfig の `paths` で `@contracts/*` を張る。どちらも emit しない
-  （`tsc --noEmit` / bundler）ので `rootDir` の制約を受けない
-- `agent-app/app/FormEchoAgent` — **`contracts` という symlink がパッケージ内にあり、
-  `./contracts/index.js` として相対 import する。** ここだけ `paths` を使わない
+- `agent-app/app/FormEchoAgent/contracts/` — Runtime 内のパッケージなので `./contracts/index.js`
+  として相対 import する。`agent-app` 自身の `node_modules` から `zod` を解決するので、
+  `paths` エイリアスも symlink も要らない
+- `hono-app/src/schemas/` — 同様に `hono-app` 自身のパッケージ内から相対 import する
+- `nextjs-app/app/lib/contracts/` — `nextjs-app` 自身のパッケージ内から相対 import する
 
-**この symlink を消さないこと。** `tsc` は emit するので `rootDir` の外のファイルを取り込めず
-（TS6059）、`paths` エイリアスは emit 後の import 文にそのまま残るため Node が実行時に解決できない
-（`tsc` はエイリアスを書き換えない）。symlink なら `rootDir` 配下として扱われ、`dist/contracts/*.js`
-が実体として出力される。将来 CodeZip で固めるときも同じ理由で必要になる。
-
-あわせて各プロジェクトの tsconfig には `"zod": ["./node_modules/zod"]` の `paths` がある。
-`contracts/` 自身の位置からは `node_modules` を辿れないため。`contracts/package.json` は
-`{"type": "module"}` だけを宣言するモジュール種別のマーカーで、依存もスクリプトも持たない。
-
-**Zod は3プロジェクトとも v4 に揃える。**
-
-整形は `agent-app/app/FormEchoAgent` の biome で見る（どのプロジェクトにも属さないため）。
-`./node_modules/.bin/biome check ../../../contracts`
+3箇所とも自分のプロジェクトの通常の依存解決（各自の `node_modules`）で完結し、他プロジェクトの
+ファイルは一切参照しない。**Zod は3プロジェクトとも v4 に揃える。**

@@ -1,6 +1,6 @@
 # 出力契約を workspace 化せず `contracts/` に素の .ts で置く
 
-- **Status**: accepted
+- **Status**: superseded by ADR-0011
 - **Date**: 2026-09-03
 
 Structured Output のスキーマは Runtime（生成側）・BFF（検証側）・フロントエンド（フォーム反映側）の3者が同一のものを見る必要がある。本番リポジトリでは `packages/contracts` のようなパッケージになる想定だが、本検証環境では**パッケージ化せず、リポジトリルートの `contracts/` に素の TypeScript ファイルとして置き、各プロジェクトの tsconfig の `paths` から相対参照する**。
