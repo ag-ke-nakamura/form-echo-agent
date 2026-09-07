@@ -86,6 +86,21 @@ const routeCandidateSchema = z.object({
     .describe(
       '採用した理由、または他の候補と比べて採用しなかった理由（例:「運賃が最安」「所要時間が最短の1.5倍を超える」）',
     ),
+  /**
+   * 定期重複区間（#101、CONTEXT.md「定期重複区間」）。
+   *
+   * 定期区間は自由文でしか渡らない（`ic-card.parse-reservation` は構造化入力を持たない）。
+   * **自由文に定期区間の言及が無ければ全候補で null のまま。** 言及があるのに重複が
+   * 無い候補は空配列にする — null は「定期区間そのものが不明」、空配列は
+   * 「定期区間は分かったがこの候補とは重ならない」を表し、この2つを同じ値で潰すと
+   * 定期区間を聞き返すべきかどうかが `route_candidates` から読めなくなる。
+   */
+  commuter_pass_overlap_sections: z
+    .array(z.string())
+    .nullable()
+    .describe(
+      '定期区間とこの経路候補が重複する駅間。連続区間ごとに「駅名 => 駅名」の形式で1件（例:「新宿 => 渋谷」）。自由文に定期区間の言及が無い場合は null',
+    ),
 });
 
 export const parseReservationOutputSchema = z

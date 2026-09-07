@@ -138,6 +138,7 @@ const VALID_OUTPUTS = {
         transfer_count: 0,
         is_selected: true,
         reason: '運賃が最安',
+        commuter_pass_overlap_sections: null,
       },
     ],
     message: '借りる日・返す日時・目的地・利用目的を読み取りました。',
@@ -894,6 +895,45 @@ describe('出力契約が弾く形', () => {
       expect(fakeModelScript.calls).toHaveLength(2);
     },
   );
+});
+
+/**
+ * 定期重複区間（#101）。自由文に定期区間の言及が無ければ null、あれば駅間の配列
+ * という2つの形の両方を出力契約が通すことを見る。読み取りの精度は実測の対象なので、
+ * ここでは fake モデルが返す値をそのまま結果に運ぶかどうかだけを確かめる。
+ */
+describe('定期重複区間（#101）', () => {
+  it('定期区間の言及が無ければ null のまま結果になる', async () => {
+    fakeModelScript.write({
+      kind: 'structuredOutput',
+      output: VALID_OUTPUTS['ic-card.parse-reservation'],
+    });
+
+    const response = expectSuccess(
+      await invokeBoundary(REQUESTS['ic-card.parse-reservation']),
+    );
+
+    expect(response.result).toEqual(VALID_OUTPUTS['ic-card.parse-reservation']);
+  });
+
+  it('定期区間の言及があれば駅間の配列が結果になる', async () => {
+    const output = {
+      ...VALID_OUTPUTS['ic-card.parse-reservation'],
+      route_candidates: [
+        {
+          ...VALID_OUTPUTS['ic-card.parse-reservation'].route_candidates[0],
+          commuter_pass_overlap_sections: ['新宿 => 渋谷'],
+        },
+      ],
+    };
+    fakeModelScript.write({ kind: 'structuredOutput', output });
+
+    const response = expectSuccess(
+      await invokeBoundary(REQUESTS['ic-card.parse-reservation']),
+    );
+
+    expect(response.result).toEqual(output);
+  });
 });
 
 describe('セッションと会話履歴', () => {

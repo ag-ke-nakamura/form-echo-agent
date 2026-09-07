@@ -37,6 +37,7 @@ function selectedCandidate(
     transfer_count: 0,
     is_selected: true,
     reason: "運賃が最安",
+    commuter_pass_overlap_sections: null,
     ...overrides,
   };
 }

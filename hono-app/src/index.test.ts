@@ -118,6 +118,7 @@ const VALID_RESULTS = {
         transfer_count: 0,
         is_selected: true,
         reason: '運賃が最安',
+        commuter_pass_overlap_sections: null,
       },
     ],
     message: '借りる日・返す日時・目的地・利用目的を読み取りました。',
