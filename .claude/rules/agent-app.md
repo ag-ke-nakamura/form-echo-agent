@@ -115,10 +115,10 @@ drift-guard テストも無い。
   **`npx cdk deploy` は自動実行されない** — 実行すると共用アカウントに実際のリソースを作る。
   作成後、CFN 出力の `GuardrailIdOutput` / `GuardrailVersionOutput` を
   `FORMECHO_GUARDRAIL_ID` / `FORMECHO_GUARDRAIL_VERSION` に設定する
-- **Runtime 実行ロールに必要な IAM 権限**（Runtime はまだデプロイ未確認のため未適用。
-  デプロイが確認できたら付与する。cdk は生成物のため手で編集しない — `agent-app/infra`
-  スタックから agentcore 管理のロールをどう参照するか〔cross-stack export か
-  `agentcore status` 等での動的解決か〕は ADR-0010 の Consequences に未解決のまま残っている）:
+- **Runtime 実行ロールに必要な IAM 権限**（cdk は生成物のため手で編集しない —
+  `agent-app/infra` の `FormEchoAgentInfraStack` が `cdk.json` にキャッシュされた ARN
+  （`scripts/cache-runtime-role-arn.ts` が `agentcore status --json` の `roleArn` から
+  書き込む）で agentcore 管理のロールを参照する。ADR-0010 の Consequences 参照）:
   ```json
   [
     { "Effect": "Allow", "Action": "bedrock:InvokeGuardrailChecks", "Resource": "*" },
@@ -126,7 +126,9 @@ drift-guard テストも無い。
       "Resource": "arn:aws:bedrock:ap-northeast-1:<account>:guardrail/<作成した guardrailId>" }
   ]
   ```
-  `InvokeGuardrailChecks` はリソースレスの API なので `Resource: "*"` になる（F-08）
+  `InvokeGuardrailChecks`（案A）はリソースレスの API なので `Resource: "*"` になる（F-08）。
+  **CDK 管理済みなのは案Aのみ（#116）。** 案B（`ApplyGuardrail`）は参照先の Guardrail が
+  未デプロイのため対象外で、Guardrail を実際にデプロイする回でまとめて追加する
 - **アカウントレベル適用（`PutEnforcedGuardrailConfiguration`）は有効化しない。** 有効化すると
   同一アカウント・同一リージョンの**全ての** Bedrock 呼び出し（`InvokeModel` /
   `Converse` 系）にガードレールが強制され、`bedrock:ApplyGuardrail` 権限を持たない他の
