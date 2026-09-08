@@ -38,7 +38,7 @@ export async function invokeWithSchemaRetry(
   prompt: string,
   schema: z.ZodType,
   log: InvocationLogger,
-): Promise<{ result: unknown; usage: Usage; cycles: number }> {
+): Promise<{ result: unknown; usage: Usage }> {
   let lastFailure: unknown;
   for (let attempt = 1; attempt <= MAX_STRUCTURED_OUTPUT_ATTEMPTS; attempt++) {
     // 試行のたびに履歴のスナップショットを取り、失敗したら戻す。
@@ -58,8 +58,7 @@ export async function invokeWithSchemaRetry(
       if (parsed.success) {
         // この1回の呼び出し分だけを返す。accumulatedUsage は Agent の生涯合計で、
         // セッションを跨いで再利用されると2ターン目以降が積み上がった値になる。
-        const invocation = agentResult.metrics?.latestAgentInvocation;
-        const usage = invocation?.usage;
+        const usage = agentResult.metrics?.latestAgentInvocation?.usage;
         return {
           result: parsed.data,
           usage: {
@@ -67,7 +66,6 @@ export async function invokeWithSchemaRetry(
             outputTokens: usage?.outputTokens ?? 0,
             totalTokens: usage?.totalTokens ?? 0,
           },
-          cycles: invocation?.cycles.length ?? 0,
         };
       }
       lastFailure = parsed.error;
