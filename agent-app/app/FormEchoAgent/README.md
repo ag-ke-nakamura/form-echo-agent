@@ -15,7 +15,7 @@ CLI コマンドは `agent-app/` で実行する。この Runtime 自体のコ�
 | --- | --- |
 | `main.ts` | エントリポイント。`BedrockAgentCoreApp` への配線と起動だけを持つ |
 | `invocation/` | invocation のロジック本体。`handler.ts`（リクエスト検査・エラー写像）→ `invoke-task.ts`（Guardrail・モデル呼び出し・Web検索予算）→ `domain-agent.ts`（Agent のセッションキャッシュ）→ `structured-output.ts`（Structured Output の再試行） |
-| `guardrail/` | Guardrail チェック。案A（`InvokeGuardrailChecks`）・案B（`ApplyGuardrail`）・日本固有 PII の正規表現チェックをそれぞれ独立に持ち、`load.ts` がまとめる |
+| `guardrail/` | Guardrail チェック。`InvokeGuardrailChecks` と日本固有 PII の正規表現チェックの2つを常時実行し、`load.ts` がまとめる（ADR-0013） |
 | `tools/` | ドメインエージェントに渡すツール（Web 検索。交通ICドメインのみ） |
 | `model/` | モデルの選択（Bedrock / テスト用 fake） |
 | `skills/` | taskId ごとの Skill データ（`registry.ts` が束ねる。Strands の `AgentSkills`、ADR-0012） |
@@ -47,15 +47,10 @@ CLI コマンドは `agent-app/` で実行する。この Runtime 自体のコ�
 | `PORT` | `8080` | HTTP サーバのポート |
 | `FORMECHO_MODEL` | `sonnet` | 使用モデル。`sonnet` / `haiku`（`jp.` プレフィックスの推論プロファイルのみ） / `fake`（Bedrock に接続しない。テスト用） |
 | `FORMECHO_WEB_SEARCH_GATEWAY_URL` | 未設定＝Web検索なし | 交通ICドメインが使う AgentCore Gateway の MCP エンドポイント。ホスト名が `ap-northeast-1` でなければ起動時に落ちる |
-| `FORMECHO_GUARDRAIL_INVOKE_CHECKS` | `true` | 案A（`InvokeGuardrailChecks`）を有効にするか |
-| `FORMECHO_GUARDRAIL_APPLY_GUARDRAIL` | `false` | 案B（`ApplyGuardrail`）を有効にするか。`true` にする場合は `FORMECHO_GUARDRAIL_ID` / `FORMECHO_GUARDRAIL_VERSION` も必須 |
-| `FORMECHO_GUARDRAIL_CUSTOM_REGEX` | `true` | 日本固有 PII（マイナンバー）の正規表現チェックを有効にするか。案A・案Bのどちらにもマイナンバー検知の手段が無いため、既定で常時有効にしてある |
-| `FORMECHO_GUARDRAIL_ID` | — | 案B が参照する Guardrail リソースの ID。`agent-app/infra` の CDK スタック（ADR-0010）が作成する |
-| `FORMECHO_GUARDRAIL_VERSION` | — | 案B が参照する Guardrail リソースのバージョン |
-| `FORMECHO_GUARDRAIL_THRESHOLD_PROMPT_ATTACK` | `0.8` | 案Aの promptAttack ブロックしきい値。離散値 `{0, 0.2, 0.4, 0.6, 0.8, 1}` のいずれか、またはブロックしない `off` |
-| `FORMECHO_GUARDRAIL_THRESHOLD_SENSITIVE_INFO` | `0.6` | 案Aの sensitiveInformation ブロックしきい値。同上 |
-| `FORMECHO_GUARDRAIL_THRESHOLD_CONTENT_FILTER` | `off`（ブロックしない） | 案Aの contentFilter ブロックしきい値。同上 |
-| `FORMECHO_GUARDRAIL_STRATEGY` | 未設定 | **テスト専用。** `fake` にすると案A・案Bの呼び先を Bedrock に接続しない fake に差し替える（正規表現チェックは対象外） |
+| `FORMECHO_GUARDRAIL_STRATEGY` | 未設定 | **テスト専用。** `fake` にすると `InvokeGuardrailChecks` の呼び先を Bedrock に接続しない fake に差し替える（正規表現チェックは純関数なので対象外） |
+
+Guardrail の経路（`InvokeGuardrailChecks` + 日本固有 PII 検知）は常時有効で、
+env で切り替えられない。しきい値も `config.ts` の定数（ADR-0013）。
 
 Guardrail の設計判断・IAM 権限・Guardrail リソース運用の詳細は
 `../../.claude/rules/agent-app.md` を参照。

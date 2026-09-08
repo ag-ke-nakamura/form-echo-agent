@@ -4,19 +4,20 @@ export const GUARDRAIL_NAME = 'FormEchoGuardrail';
 
 /**
  * `agent-app/app/FormEchoAgent/guardrail/pii.ts` の `MY_NUMBER_PATTERN` と同じ
- * パターン文字列。コード側の正規表現チェックと Guardrail リソースの
- * `regexesConfig` が同じ入力に同じ判定を下すか実測で比べるため、値を揃える
- * （lookaround は Guardrail 側で使えないので、コード側でも使っていない）。
+ * パターン文字列。値を揃えたのは、コード側の正規表現チェックとこのリソースの
+ * `regexesConfig` が同じ入力に同じ判定を下すかを実測で比べるためで、**その比較は
+ * #44 で終わっている**（ADR-0013 で案Bを畳んだ）。揃え続ける理由はもう無い —
+ * このリソース自体を #126 で消す。
  */
 const MY_NUMBER_PATTERN = String.raw`\d{4}-?\d{4}-?\d{4}`;
 
 const BLOCKED_MESSAGE = '入力内容に問題があります。個人情報（マイナンバー等）が含まれていないか確認してください。';
 
 /**
- * 案B（`ApplyGuardrail`）が参照する Guardrail リソース（Classic Tier、新規名前）の
- * 定義。旧 `scripts/create-guardrail.ts`（ADR-0010 により廃止）の設定をそのまま
- * 移した — 実測データの前提が変わらないよう、しきい値・PII 対象・正規表現は
- * 変更していない。
+ * 案B（`ApplyGuardrail`）が参照していた Guardrail リソース（Classic Tier、新規名前）の
+ * 定義。**案Bを畳んだので読む側はもう居ない**（ADR-0013。削除は #126）。旧
+ * `scripts/create-guardrail.ts`（ADR-0010 により廃止）の設定をそのまま移した —
+ * 実測データの前提が変わらないよう、しきい値・PII 対象・正規表現は変更していない。
  *
  * Tier は **Classic** に固定する。Standard Tier はクロスリージョン推論が必須で、
  * ap-northeast-1 発の唯一のプロファイルの宛先6つのうち4つが国外になり ADR-011

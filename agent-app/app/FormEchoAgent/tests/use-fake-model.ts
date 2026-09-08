@@ -13,8 +13,8 @@ import { fakeModelScript } from '../model/fake.js';
 process.env.FORMECHO_MODEL = FAKE_MODEL_NAME;
 
 /**
- * Guardrail も同じ理由で fake に固定する（#43）。案A・案Bそのものは
- * invoke-checks.test.ts / apply-guardrail.test.ts が個別に見る。
+ * Guardrail も同じ理由で fake に固定する（#43）。`InvokeGuardrailChecks` の判定
+ * そのものは invoke-checks.test.ts が個別に見る。
  */
 process.env.FORMECHO_GUARDRAIL_STRATEGY = FAKE_GUARDRAIL_STRATEGY_NAME;
 
