@@ -41,6 +41,10 @@ _Avoid_: レスポンス型、スキーマ（単独）、Structured Output（機
 `InvokeGuardrailChecks` API による入力・出力の検査。`contentFilter` / `promptAttack` / `sensitiveInformation` の3種からなる。
 _Avoid_: ガードレール（リソースとしての Guardrail と紛れる）、入力検証（BFF の長さ・形式チェックと紛れる）
 
+**日本固有 PII 検知**:
+**Guardrail チェック**が持たない日本の識別子を、Runtime のコード内の正規表現で検知する層。AWS の PII タイプは米英加・汎用のものだけで日本の識別子に対応する型が無いため、恒久的にこちら側で持つ。現在の対象はマイナンバー。
+_Avoid_: マイナンバー検知（対象が増えたら語が壊れる。マイナンバーはこの境界に落ちた最初の1つ）、カスタム正規表現（Guardrail リソース側の `regexesConfig` と紛れる）、PII 追加検知（「追加」が相対的で、Guardrail チェック側が将来対応すると意味を失う）
+
 **severityScore**:
 コンテンツがチェック基準にどれだけ強く該当するかの度合い。`contentFilter` と `promptAttack` が返す。モデルの確信度ではない。
 _Avoid_: 信頼度、確度

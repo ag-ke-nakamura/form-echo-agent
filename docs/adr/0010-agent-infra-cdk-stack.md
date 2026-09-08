@@ -2,6 +2,7 @@
 
 - **Status**: accepted
 - **Date**: 2026-09-07
+- **Amended by**: [ADR-0013](0013-collapse-verified-branches.md) — Guardrail リソースを破棄したため、Consequences の「Guardrail を実際にデプロイする回でまとめて追加する」（`bedrock:ApplyGuardrail`）は取り消し。前提の「参照先の Guardrail が未デプロイ」も現在は偽。スタックに残るのは案Aの権限付与のみ
 
 Guardrail（案B）は `agentcore.json` の `AgentCoreProjectSpec` にリソースとして宣言する枠が無い（F-11）。`agent-app/agentcore/cdk` は agentcore CLI の完全な生成物で、`agentcore.json` から毎回作り直され `agentcore deploy` のたびに依存バージョンまで書き換わるため、手書きのリソースを混在させる場所として使えない。**agentcore.json のスキーマに乗らないリソースは、`agentcore/cdk` とは独立した `agent-app/infra`（スタック名 `FormEchoAgentInfra`）に、我々が所有する CDK アプリとして書く。** SDK を直叩きする使い捨てスクリプト（`scripts/create-guardrail.ts` はこの ADR により廃止）は state も diff も持たず再実行安全性が無いため採らない。
 
