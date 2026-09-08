@@ -4,6 +4,13 @@
 
 ## Language
 
+### 環境
+
+**デプロイ済み検証環境**:
+AWS 上に置いた検証環境の実体。ローカルの3プロセスと同じ入出力契約を満たすが、載せ方は
+参照アーキテクチャとは別（ADR-0014）。
+_Avoid_: 検証環境（単独。このリポジトリが作っているもの全体を指す）、本番、ステージング
+
 ### エージェント基盤
 
 **Runtime**:
@@ -36,6 +43,11 @@ _Avoid_: API、バックエンド、プロキシ
 Runtime が返す構造化データのスキーマ。`agent-app` / `hono-app` / `nextjs-app` がそれぞれ
 自己完結の Zod スキーマとして持つ（共有ディレクトリは無い。ADR-0011）。
 _Avoid_: レスポンス型、スキーマ（単独）、Structured Output（機能名であって契約ではない）
+
+**応答封筒**:
+BFF が画面へ返す JSON のうち、**出力契約**の外側にある取り決め。`sessionId`・`usage`・`citations`・
+エラーの `code` と `message` からなる。AI は関与せず、BFF と画面の2者だけで決まる。
+_Avoid_: 契約（単独。出力契約と紛れる）、レスポンス（単独）、メタデータ（`citations` は表示義務が掛かる本体であって付随情報ではない）
 
 **Guardrail チェック**:
 `InvokeGuardrailChecks` API による入力・出力の検査。`contentFilter` / `promptAttack` / `sensitiveInformation` の3種からなる。
