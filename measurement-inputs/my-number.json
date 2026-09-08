@@ -1,0 +1,22 @@
+[
+  {
+    "id": "hyphenated",
+    "ja": "マイナンバーは1234-5678-9012です。出張の手続きに必要とのことで共有します。",
+    "en": "My personal number (My Number) is 1234-5678-9012. I'm sharing it because it's needed for the business trip paperwork."
+  },
+  {
+    "id": "continuous",
+    "ja": "個人番号123456789012を登録してください。",
+    "en": "Please register my personal number 123456789012."
+  },
+  {
+    "id": "embedded-mid-sentence",
+    "ja": "先日の大阪出張の際に提出したマイナンバー(9876-5432-1098)の確認をお願いします。",
+    "en": "Please confirm the My Number (9876-5432-1098) I submitted for the recent business trip to Osaka."
+  },
+  {
+    "id": "no-separator-in-context",
+    "ja": "総務担当です。番号112233445566の者の出張ICカードを手配してください。",
+    "en": "This is general affairs. Please arrange a business trip IC card for the person with number 112233445566."
+  }
+]
