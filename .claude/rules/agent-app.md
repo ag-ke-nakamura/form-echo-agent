@@ -120,11 +120,11 @@ drift-guard テストも無い。
 - **ブロックすると `discardSession`（`domain-agent.ts`）でそのセッションの Agent を全て
   破棄する。** ブロック対象が会話履歴に残ると以降のメッセージまで連鎖ブロックする
   （F-14）。同じ `sessionId` を送り直しても、次回は空の履歴から再開する
-- **`agent-app/infra` に残る Guardrail 実クラウドリソース**（`FormEchoGuardrail`、
-  Classic Tier、ADR-0010）**を読むコードはもう無い。** 案Bのために作ったもので、CDK の
-  定義ごと削除するのは #126（実リソースの破棄は人が実行する）。
-  **`npx cdk deploy` / `cdk destroy` は自動実行しない** — 共用アカウントの実リソースを
-  作る・消す操作なので、必ず人が判断する
+- **Guardrail 実クラウドリソース**（`FormEchoGuardrail`、Classic Tier）**の CDK 定義は
+  #126 で削除した。** 案Bのために作ったもので、読むコードはもう無い（ADR-0013）。
+  `agent-app/infra` に残るのは Runtime 実行ロールへの権限付与だけ。**実リソースの破棄
+  （`npx cdk deploy` による削除の反映）は人が実行する** — 共用アカウントの実リソースを
+  作る・消す操作なので、`npx cdk deploy` / `cdk destroy` は自動実行しない
 - **Runtime 実行ロールに必要な IAM 権限**（cdk は生成物のため手で編集しない —
   `agent-app/infra` の `FormEchoAgentInfraStack` が `cdk.json` にキャッシュされた ARN
   （`scripts/cache-runtime-role-arn.ts` が `agentcore status --json` の `roleArn` から

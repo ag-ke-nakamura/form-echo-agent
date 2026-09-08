@@ -4,14 +4,12 @@
 我々が所有する独立の CDK アプリとして管理する（ADR-0010）。`agent-app/agentcore/cdk` は
 agentcore CLI の生成物で `agentcore deploy` のたびに作り直されるため、ここには置けない。
 
-現時点で持つのは Runtime 実行ロールへの `bedrock:InvokeGuardrailChecks` 許可（ADR-0010）と、
-消費者のいなくなった Guardrail リソース（案Bのために作った。削除は #126）。
+持つのは Runtime 実行ロールへの `bedrock:InvokeGuardrailChecks` 許可（ADR-0010）だけ。
 
 ## 構成
 
 - `bin/infra.ts` — エントリポイント。`FormEchoAgentInfraStack` を1つ作る。
 - `lib/formecho-agent-infra-stack.ts` — スタック本体。
-- `lib/guardrail-config.ts` — Guardrail の設定（旧 `scripts/create-guardrail.ts` から移植）。
 - `scripts/cache-runtime-role-arn.ts` — Runtime 実行ロールの ARN を `cdk.json` の
   `context.runtimeRoleArn` にキャッシュするスクリプト。
 - `test/` — スタックの synth 結果を検証する単体テスト。
@@ -38,14 +36,12 @@ ARN は synth のたびに解決するのではなく `cdk.json` の `context.ru
 
 ## デプロイ前に必ず確認する
 
-**このスタックの `cdk deploy` は共用アカウントに実際の AWS リソースを作る。**
-実行前に必ずユーザーへ確認を取ること。既存の2つの Guardrail はこの CDK では
+**このスタックの `cdk deploy` は共用アカウントの実際の AWS リソースを作る・消す。**
+実行前に必ずユーザーへ確認を取ること。既存2つの Guardrail はこの CDK では
 一切 import・参照しない。
 
 デプロイ後:
 
-- `GuardrailIdOutput` / `GuardrailVersionOutput` の CFN 出力を読むコードはもう無い
-  （案Bを畳んだ。ADR-0013）。Guardrail リソースを定義ごと消すのは #126。
 - Runtime からの `bedrock:InvokeGuardrailChecks` 呼び出しが引き続き成功することを確認したら、
   応急処置として手動で付けたインラインポリシー `InvokeGuardrailChecks`
   （ロール `AgentCore-FormEcho-defaul-ApplicationAgentFormEchoA-0lN6LVXEiBWj`）を削除する。
