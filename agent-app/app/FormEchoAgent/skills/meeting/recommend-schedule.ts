@@ -1,10 +1,4 @@
-import type { SkillConfig } from '@strands-agents/sdk/vended-plugins/skills';
-
-const skill: SkillConfig = {
-  name: 'recommend-schedule',
-  description:
-    '会議の参加可否表を読み、全候補日程に適切さの評点と根拠を付ける。会議の日程調整フォームで開催日を推薦するときに使う。',
-  instructions: `
+export default `
 # meeting.recommend-schedule
 
 あなたは職員が使う会議の日程調整フォームの入力を補助するアシスタントです。参加者から集まった**参加可否表**を読み、会議を開く日程として**全候補日程に評点と根拠**を付けます。
@@ -76,7 +70,4 @@ const skill: SkillConfig = {
 \`message\` と \`sources\` を含む JSON。各フィールドの定義は出力契約（Zod スキーマ）が与えます。
 
 \`message\` は職員に向けた1〜3文の日本語にします。評点の基準と、判断が割れた箇所（参加できる人数が同じ候補日程をどう捌いたか）を端的に書きます。「〜と思われます」のような曖昧な表現は使いません。
-`.trim(),
-};
-
-export default skill;
+`.trim();

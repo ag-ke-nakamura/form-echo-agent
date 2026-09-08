@@ -72,7 +72,7 @@ describe('getOrCreateDomainAgent', () => {
   it('同じドメインでも taskId が違えば別の Agent になる', () => {
     const sessionId = newSessionId();
 
-    // 明示モードでは system prompt が taskId ごとに違い、Agent の生成時に固定される。
+    // system prompt は taskId ごとに違い、Agent の生成時に固定される。
     // 使い回すと、同じセッションでタブを切り替えたときに前のタブの Skill が残る。
     expect(
       getOrCreateDomainAgent(sessionId, 'meeting.parse-candidates'),

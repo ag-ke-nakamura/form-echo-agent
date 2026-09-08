@@ -1,31 +1,8 @@
 import { Agent } from '@strands-agents/sdk';
-import { AgentSkills, Skill } from '@strands-agents/sdk/vended-plugins/skills';
-import { resolveSkillSelectionMode } from '../config.js';
 import { type Domain, domainOf, type TaskId } from '../contracts/index.js';
 import { loadModel } from '../model/load.js';
-import { SKILLS } from '../skills/registry.js';
 import { loadDomainTools } from '../tools/load.js';
 import { buildSystemPrompt } from './system-prompt.js';
-
-/**
- * 自動モード（#42）の `AgentSkills` プラグイン。ドメインごとに1つ持ち、複数の
- * Agent インスタンスで共有する（活性化状態は `agent.appState` 側でエージェントごと
- * に持つので、プラグイン自体の使い回しは安全 — SDK のドキュメント参照）。
- * `SKILLS[domain]` だけを渡すので、ドメインエージェントは他ドメインの Skill を
- * 読み込まない。
- *
- * `SKILLS`（`skills/registry.js`、ADR-0012）のデータから直接 `new Skill(...)` する。
- * ディレクトリパスは使わない — デプロイ済み Runtime（CodeZip）には `skills/` を
- * ディレクトリとして読む手段が無いため（#45）。
- */
-const DOMAIN_SKILLS_PLUGINS: Record<Domain, AgentSkills> = {
-  'ic-card': new AgentSkills({
-    skills: Object.values(SKILLS['ic-card']).map((config) => new Skill(config)),
-  }),
-  meeting: new AgentSkills({
-    skills: Object.values(SKILLS.meeting).map((config) => new Skill(config)),
-  }),
-};
 
 /**
  * ドメインエージェントの名前。taskId のドメイン部から引く。
@@ -48,9 +25,9 @@ const AGENT_CACHE_LIMIT = 128;
  * では microVM 1つが1セッションを持つので、実際の要素は1つになる。
  * 永続的な履歴が要るなら memory を付ける。
  *
- * taskId までをキーに含めるのは、明示モードでは system prompt が taskId ごとに
- * 変わり、Agent の生成時に固定されるため。同じセッションでタブを切り替えても
- * 前のタブの Skill が混ざらない。
+ * taskId までをキーに含めるのは、system prompt が taskId ごとに変わり、Agent の
+ * 生成時に固定されるため。同じセッションでタブを切り替えても前のタブの Skill が
+ * 混ざらない。
  */
 const agentCache = new Map<string, Agent>();
 
@@ -81,10 +58,6 @@ export function getOrCreateDomainAgent(
     tools: loadDomainTools(domain),
     model: loadModel(),
     systemPrompt: buildSystemPrompt(taskId),
-    plugins:
-      resolveSkillSelectionMode() === 'auto'
-        ? [DOMAIN_SKILLS_PLUGINS[domain]]
-        : [],
     // 既定の printer を切る。モデルのテキストとツールの印を素の stdout へ書くが、
     // Structured Output を一括で受け取る（`stream: false`）この Runtime では逐次
     // テキストが存在せず、残るのはツール名の1行だけ。それが fastify の pino が
@@ -109,18 +82,4 @@ export function discardSession(sessionId: string): void {
   for (const key of agentCache.keys()) {
     if (key.startsWith(prefix)) agentCache.delete(key);
   }
-}
-
-/**
- * このセッション・taskId の Agent が自動モードで activate した Skill 名（#44）。
- *
- * Skill 選択の的中率の実測はこの境界の外からは言えない — `AgentSkills` の活性化
- * 状態は `agent.appState` にあり、invocation 境界の出力（応答本文）には現れない。
- */
-export function getActivatedSkills(
-  sessionId: string,
-  taskId: TaskId,
-): readonly string[] {
-  const agent = getOrCreateDomainAgent(sessionId, taskId);
-  return DOMAIN_SKILLS_PLUGINS[domainOf(taskId)].getActivatedSkills(agent);
 }

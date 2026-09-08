@@ -62,34 +62,28 @@ paths:
 - **発火時のエラーコードは `PARSE_FAILED`**（職員の取る行動が作り直しの尽きた場合と同じ）。
   運用側が要る「契約に適合しなかった」と「上限で切った」の区別は `stopReason` の warn ログが担う
 
-## Skill 選択の2モード（#42）
+## Skill の解決（#42・ADR-0013）
 
-`config.ts` の `resolveSkillSelectionMode()`（`FORMECHO_SKILL_SELECTION_MODE`、既定
-`explicit`）で切り替える。両モードとも `skills/registry.ts`（`SKILLS`）が束ねる同じ
-Skill データを使う。
+**`taskId` が Skill を一意に決める。** `invocation/system-prompt.ts` の `buildSystemPrompt` が
+`SKILLS[taskId]`（`skills/registry.ts`）の instructions をそのまま system prompt へ埋め込む。
+レジストリは `Record<TaskId, string>` のフラットな表で、**キーが `TaskId` 型なので taskId を
+足したときの登録漏れが型エラーになる。**
 
 **Skill の本文は `SKILL.md` ではなく `skills/{domain}/{task}.ts` に TypeScript のデータ
-（`{ name, description, instructions }`）として直接書く**（ADR-0012）。デプロイ済み
-Runtime（CodeZip）は esbuild が `main.ts` から辿れる import グラフだけをバンドルし、
-fs 経由で読む非コードのアセットは zip に含まれない（#45。`agentcore dev` のローカル
-実行は `skills/` がそのまま残っているため気付けなかった）。一度は `SKILL.md` → 生成
-スクリプト → `skills/embedded.ts` という形にしたが、一次情報と生成物が並存する構造
-自体が受け入れられず却下した。**`skills/{domain}/{task}.ts` が唯一の実体** — 生成も
+（instructions の文字列）として直接書く**（ADR-0012）。デプロイ済み Runtime（CodeZip）は
+esbuild が `main.ts` から辿れる import グラフだけをバンドルし、fs 経由で読む非コードの
+アセットは zip に含まれない（#45。
+`agentcore dev` のローカル実行は `skills/` がそのまま残っているため気付けなかった）。一度は
+`SKILL.md` → 生成スクリプト → `skills/embedded.ts` という形にしたが、一次情報と生成物が並存
+する構造自体が受け入れられず却下した。**`skills/{domain}/{task}.ts` が唯一の実体** — 生成も
 drift-guard テストも無い。
 
-- **`explicit`**（既定）— `taskId` が Skill を一意に決める。`invocation/system-prompt.ts`
-  の `loadSkill` が `SKILLS[domain][task].instructions` を直接 system prompt に埋め込む
-  （`Skill` インスタンス化は経由しない）
-- **`auto`** — ドメインエージェントが `AgentSkills` プラグイン（`@strands-agents/sdk/vended-plugins/skills`）
-  の progressive disclosure で選ぶ（ADR-032 論点4）。`invocation/domain-agent.ts` の
-  `DOMAIN_SKILLS_PLUGINS` がドメインごとに1つ持ち、`SKILLS[domain]` の値を
-  `new Skill(config)` した Skill インスタンスの配列だけを渡す — **ドメインエージェントは
-  自分のドメインの Skill データしか読まない。** この場合 `buildSystemPrompt` は Skill の
-  本文を注入せず（メタデータの注入と活性化はプラグイン側が持つ）、モデルは `skills`
-  ツールを呼んで activate する
-- **Skill 選択の的中率の実測は #44 の範囲。** ここで押さえるのは配線（モードの切り替え・
-  ドメインの隔離・両モードが同じ Skill データを使うこと）で、`invocation/handler.test.ts`
-  の「Skill 選択の2モード（#42）」が見る
+**ドメインエージェントに Skill を選ばせる設計は採らない**（判断は ADR-0013、根拠の実測は
+`docs/reference-doc-fixes.md` F-09）。**Runtime は `@strands-agents/sdk/vended-plugins/skills`
+に依存しない。**
+
+配線（4つの taskId がそれぞれの instructions を受け取る・他の Skill が混ざらない）は
+`invocation/handler.test.ts` の「taskId の解決」が境界越しに見る。
 
 ## Guardrail（#43）
 
@@ -166,7 +160,7 @@ drift-guard テストも無い。
 - **Node の `CodeZip` は esbuild が import グラフだけをバンドルし、非コードのアセットは
   zip に含まれない（#45）。** `skills/**/SKILL.md` を fs 経由で読む実装で実際にこれを踏み、
   デプロイ済み Runtime だけが起動時に落ちた（`skill path does not exist or is not a valid
-  skill directory`）。対処は上の「Skill 選択の2モード（#42）」の `skills/{domain}/{task}.ts`
+  skill directory`）。対処は上の「Skill の解決（#42・ADR-0013）」の `skills/{domain}/{task}.ts`
   （ADR-0012）を参照。**この境界（import グラフに乗るものだけがデプロイ先に届く）は他の
   非コードアセットを足すときにも効く。**
   検討して採らなかった代替案（#45）: **`build: Container`**（`skills/` はそのまま届くが、
