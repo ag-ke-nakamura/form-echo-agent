@@ -1,20 +1,5 @@
-import { resolveSkillSelectionMode } from '../config.js';
 import type { TaskId } from '../contracts/index.js';
 import { SKILLS } from '../skills/registry.js';
-
-/**
- * 明示モードの Skill 読み込み。taskId が Skill を一意に決め、instructions を
- * system prompt に注入する。
- *
- * `skills/{domain}/{task}.ts` のデータを直接使う（ADR-0012）。以前は `SKILL.md` を
- * fs 経由で読んでいたが、デプロイ済み Runtime（CodeZip）は esbuild が import
- * グラフだけを束ねるため非コードのアセットは zip に含まれず起動時に落ちた（#45）。
- * TypeScript のデータとして直接書けば import グラフに乗るので、この問題は起きない。
- */
-function loadSkill(taskId: TaskId): string {
-  const [domain, task] = taskId.split('.');
-  return SKILLS[domain][task].instructions ?? '';
-}
 
 /**
  * 相対的な日付・時刻表現（「来月15日」「3泊4日」「今から3時間後」）を解決する基準時刻。
@@ -38,14 +23,14 @@ function nowInJst(): string {
 }
 
 /**
- * 自動モードでは Skill の instructions をここで注入しない。`AgentSkills` プラグイン
- * （`domain-agent.ts`）が `<available_skills>` のメタデータ注入と、活性化された
- * Skill の本文の受け渡しを持つ。ここで両方注入すると同じ内容を二重に持つ。
+ * taskId が Skill を一意に決め、その instructions を system prompt へ直接注入する
+ * （ADR-0013 で `explicit` に畳んだ）。
+ *
+ * `skills/{domain}/{task}.ts` のデータを直接使う（ADR-0012）。以前は `SKILL.md` を
+ * fs 経由で読んでいたが、デプロイ済み Runtime（CodeZip）は esbuild が import
+ * グラフだけを束ねるため非コードのアセットは zip に含まれず起動時に落ちた（#45）。
+ * TypeScript のデータとして直接書けば import グラフに乗るので、この問題は起きない。
  */
 export function buildSystemPrompt(taskId: TaskId): string {
-  const skillContent =
-    resolveSkillSelectionMode() === 'explicit'
-      ? `${loadSkill(taskId)}\n\n`
-      : '';
-  return `${skillContent}## 基準時刻\n\n現在は ${nowInJst()}（JST）です。相対的な日付・時刻表現はこの時点を基準に解決してください。`;
+  return `${SKILLS[taskId]}\n\n## 基準時刻\n\n現在は ${nowInJst()}（JST）です。相対的な日付・時刻表現はこの時点を基準に解決してください。`;
 }

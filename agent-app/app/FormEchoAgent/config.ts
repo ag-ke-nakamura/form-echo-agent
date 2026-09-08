@@ -19,28 +19,6 @@ const BEDROCK_MODEL_IDS = {
 export type BedrockModelName = keyof typeof BEDROCK_MODEL_IDS;
 
 /**
- * Skill の選び方（#42）。
- *
- * - `explicit` — `taskId` が Skill を一意に決め、その instructions を system prompt に
- *   直接注入する（共通設計方針書 14.2節）
- * - `auto` — ドメインエージェントが `AgentSkills` の progressive disclosure で選ぶ
- *   （ADR-032 論点4）。会議ロジは3 Skill を持つので、`taskId` と一致しない Skill を
- *   選ぶ余地がある — その的中率を実測するのは #44
- *
- * 両モードとも同じ Skill データ（`skills/registry.ts`）を読む。domain-agent.ts /
- * system-prompt.ts を参照。
- */
-export type SkillSelectionMode = 'explicit' | 'auto';
-
-export function resolveSkillSelectionMode(): SkillSelectionMode {
-  const mode = process.env.FORMECHO_SKILL_SELECTION_MODE ?? 'explicit';
-  if (mode === 'explicit' || mode === 'auto') return mode;
-  throw new Error(
-    `FORMECHO_SKILL_SELECTION_MODE は explicit / auto のいずれかにしてください（受け取った値: ${mode}）`,
-  );
-}
-
-/**
  * Bedrock に接続しない差し替え（#23 の決定性の確保、#40）。
  *
  * WHY: テストと実測は同じ invocation 境界を通り、違うのは設定だけにする。
