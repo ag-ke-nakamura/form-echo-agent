@@ -1,0 +1,11 @@
+# workspace のメンバーは pnpm 管理の2つだけ（ADR-0015）。agent-app は npm 管理なので
+# 入れない — 巻き込むと lockfile が2種類の管理下に跨り、`npm ci` の前提が壊れる。
+packages:
+  - hono-app
+  - nextjs-app
+
+# nextjs-app/pnpm-workspace.yaml から移設。ビルドスクリプトを走らせない依存の指定は
+# workspace ルートにしか置けない。
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver
