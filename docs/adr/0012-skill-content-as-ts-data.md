@@ -2,6 +2,7 @@
 
 - **Status**: accepted
 - **Date**: 2026-09-08
+- **Amended by**: [ADR-0013](0013-collapse-verified-branches.md) — Skill 選択を `explicit` に畳んだため、下記の「`#42` が導入した2モード設計自体は変えない」は成立しない。Decision（本文を TypeScript のデータとして持つ）は無傷で、`Skill` インスタンス化の呼び出し元が消えるぶん単純になる
 
 デプロイ済み Runtime（`build: CodeZip`）が `skill path does not exist or is not a valid skill directory` で起動時に落ちる（#45）。原因は Node の CodeZip パッケージャが esbuild の import グラフだけを束ね、`copySourceTreeSync` 相当の「非コードファイルをそのまま zip に含める」処理を持たないこと。`skills/**/SKILL.md` は import グラフに乗らないため、デプロイ済み zip に一切含まれない。
 

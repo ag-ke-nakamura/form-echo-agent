@@ -2,6 +2,7 @@
 
 - **Status**: accepted
 - **Date**: 2026-09-03
+- **Amended by**: [ADR-0013](0013-collapse-verified-branches.md) — 案B（`ApplyGuardrail`）の経路を畳んだため、下記のうち呼ぶ API 名（`InvokeGuardrailChecks` が正しい）と `bedrock:ApplyGuardrail` 権限の記述は成立しない。日本固有 PII の正規表現は常時有効になって確定した
 
 参照アーキテクチャ（`temp/00-arch-design.md` 3.2節「BFF 層の防御」）は、入力サニタイズ・taskID 判定・認可チェックとあわせて Guardrail による入力検証を BFF（apps/api）の責務としている。本検証環境ではこれを**意図的に外し、Guardrail チェックを AgentCore Runtime 側に置く**。AI 処理の責務を Runtime に集約し、BFF を「検証と転送」だけの薄い層に保つため。
 
