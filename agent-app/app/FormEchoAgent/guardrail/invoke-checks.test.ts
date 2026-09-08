@@ -3,20 +3,17 @@ import type {
   GuardrailChecksSensitiveInformationEntityType,
 } from '@aws-sdk/client-bedrock-runtime';
 import { describe, expect, it } from 'vitest';
-import type { GuardrailThresholds } from '../config.js';
 import { verdictFromChecksResults } from './invoke-checks.js';
 
 /**
- * 案A（`InvokeGuardrailChecks`）のしきい値との比較だけを見る。**実際に Bedrock は
+ * `InvokeGuardrailChecks` のしきい値との比較だけを見る。**実際に Bedrock は
  * 呼ばない** — `verdictFromChecksResults` はレスポンスを受け取って判定するだけの
  * 純関数なので、SDK クライアントを差し替える新しいテスト境界を作らずに済む。
+ *
+ * しきい値は `config.ts` の定数（`GUARDRAIL_THRESHOLDS`。promptAttack 0.8 /
+ * sensitiveInformation 0.6 / contentFilter は記録のみ）で、env で上書きできない
+ * （ADR-0013）。ここで見るスコアはその定数を前提に置いてある。
  */
-
-const THRESHOLDS: GuardrailThresholds = {
-  promptAttack: 0.8,
-  sensitiveInformation: 0.6,
-  contentFilter: null,
-};
 
 /** 検査に要らない位置情報は0で埋める。 */
 function sensitiveInfoEntry(
@@ -41,7 +38,7 @@ describe('verdictFromChecksResults', () => {
       },
     };
 
-    const verdict = verdictFromChecksResults(results, THRESHOLDS);
+    const verdict = verdictFromChecksResults(results);
 
     expect(verdict.blocked).toBe(true);
     expect(verdict.findings).toEqual([
@@ -63,7 +60,7 @@ describe('verdictFromChecksResults', () => {
       },
     };
 
-    expect(verdictFromChecksResults(results, THRESHOLDS)).toEqual({
+    expect(verdictFromChecksResults(results)).toEqual({
       blocked: false,
       findings: [],
     });
@@ -74,7 +71,7 @@ describe('verdictFromChecksResults', () => {
       contentFilter: { results: [{ category: 'INSULTS', severityScore: 1 }] },
     };
 
-    expect(verdictFromChecksResults(results, THRESHOLDS)).toEqual({
+    expect(verdictFromChecksResults(results)).toEqual({
       blocked: false,
       findings: [],
     });
@@ -90,14 +87,14 @@ describe('verdictFromChecksResults', () => {
       },
     };
 
-    const verdict = verdictFromChecksResults(results, THRESHOLDS);
+    const verdict = verdictFromChecksResults(results);
 
     expect(verdict.blocked).toBe(true);
     expect(verdict.findings).toHaveLength(2);
   });
 
   it('結果が空なら通す', () => {
-    expect(verdictFromChecksResults({}, THRESHOLDS)).toEqual({
+    expect(verdictFromChecksResults({})).toEqual({
       blocked: false,
       findings: [],
     });

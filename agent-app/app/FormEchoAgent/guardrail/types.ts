@@ -1,9 +1,8 @@
 /**
  * Guardrail チェック（#43）。ADR-0001 の決定（Runtime に置く）を実装する側。
  *
- * 案A（`InvokeGuardrailChecks`）・案B（`ApplyGuardrail`）・日本固有 PII の正規表現の
- * 3つが同じ形で結果を返し、`load.ts` がまとめる。呼び出し側（`invoke-task.ts`）は
- * どの実装が動いているかを知らない。
+ * `InvokeGuardrailChecks` と日本固有 PII の正規表現が同じ形で結果を返し、`load.ts`
+ * がまとめる。呼び出し側（`invoke-task.ts`）はどの実装が動いているかを知らない。
  */
 
 export type GuardrailDirection = 'INPUT' | 'OUTPUT';
@@ -25,13 +24,14 @@ export interface GuardrailFinding {
   /**
    * どの層が検知したか（#43）。
    *
-   * `checkGuardrail`（`load.ts`）は日本固有 PII の正規表現（常時実行）と
-   * 選択中の戦略（案A/案B）の結果を1つの `blocked` に OR で潰して返す。
-   * この `source` が無いと、`findings` を見ても両者を区別できない —
-   * 実際、`pii.ts` の正規表現と案Bの `regexesConfig` はどちらも同じ
-   * `"my_number(regex)"` という detail を返しうる。**「案A/Bの sensitiveInformation
-   * 自体がマイナンバーを検知できたか」を実測で確かめる（受け入れ条件の一つ）には、
-   * ログに残った findings からこの2つを区別できる必要がある。**
+   * `checkGuardrail`（`load.ts`）は日本固有 PII の正規表現と `InvokeGuardrailChecks`
+   * の結果を1つの `blocked` に OR で潰して返す。**この `source` が無いと、ログの
+   * findings を見てもどちらが検知したのか分からない** — 経路を1本に畳んだ後
+   * （ADR-0013）も、日本固有 PII 検知が効いたのか AWS 側の判定が効いたのかは
+   * 区別できる必要がある（前者はマイナンバーを、後者は Prompt Attack を担う）。
+   *
+   * `'strategy'` は AWS 側の判定（`InvokeGuardrailChecks`。テストでは fake）を指す。
+   * 案A/案Bを選べた頃の語彙だが、ログの値なので改名しない。
    */
   source: 'code-regex' | 'strategy';
 }
@@ -42,7 +42,7 @@ export interface GuardrailVerdict {
 }
 
 /**
- * 検査の実体。案A・案B・正規表現チェックがすべてこの形を満たす。
+ * 検査の実体。`InvokeGuardrailChecks`・正規表現チェック・fake がすべてこの形を満たす。
  *
  * `tools/web-search.ts` の `WebSearchBackend` と同じ考え方 — 実装の差し替えは
  * この関数の入れ替えだけで済み、呼び出し側の境界は増えない。

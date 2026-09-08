@@ -93,34 +93,31 @@ drift-guard テストも無い。
 
 ## Guardrail（#43）
 
-`guardrail/` に案A（`InvokeGuardrailChecks`）・案B（`ApplyGuardrail`）・日本固有 PII の
-正規表現チェックの3つがあり、`guardrail/load.ts` の `checkGuardrail` がまとめる。
-`invoke-task.ts` がモデル呼び出しの**前**（自然文 `prompt`）と**後**（Structured Output の
-パース結果）の両方でこれを呼ぶ。ADR-0001（Runtime に置く）・ADR-0009（ブロック時の文言の
-詳細度）を参照。
+`guardrail/` に `InvokeGuardrailChecks`（AWS 側の判定）と日本固有 PII の正規表現チェックの
+2つがあり、`guardrail/load.ts` の `checkGuardrail` がまとめる。`invoke-task.ts` がモデル
+呼び出しの**前**（自然文 `prompt`）と**後**（Structured Output のパース結果）の両方でこれを
+呼ぶ。ADR-0001（Runtime に置く）・ADR-0009（ブロック時の文言の詳細度）を参照。
 
-**正規表現チェックを「案C」と呼ばないこと。** チケット #43 が「案Cは採らない」と言うときの
-案Cは `BedrockModel` の `guardrailConfig`（不採用）を指す。この正規表現チェックはそれとは
-別物で、案A・案Bのどちらを選んでも必要になる補助的なチェック（F-03・F-16）であり、A/B と
-並ぶ実装方式の選択肢ではない。実装の初期段階でこの用語を混同していた（#43 のコメント参照）。
+**経路はこの1本に畳んである（ADR-0013）。** 元は案A（`InvokeGuardrailChecks`）・案B
+（`ApplyGuardrail`）・正規表現チェックを独立に ON/OFF できる形で、どちらの方式を採るかの
+実測（#44）のためにそうしていた。案Bのコード経路と切り替えフラグは削除済みで、**復活させる
+提案をする前に ADR-0013 を読むこと。**
 
-- **案A・案B・正規表現チェックはそれぞれ独立に ON/OFF できる**
-  （`FORMECHO_GUARDRAIL_INVOKE_CHECKS` / `FORMECHO_GUARDRAIL_APPLY_GUARDRAIL` /
-  `FORMECHO_GUARDRAIL_CUSTOM_REGEX`、いずれも `true`/`false`。既定は案A・正規表現
-  チェックが ON、案Bは Guardrail リソースが要るため OFF）。1つの排他的な選択に
-  していないのは、「案Aだけ／案Bだけでマイナンバーを検知できるか」を実測で
-  切り分けるため — 正規表現チェックが常時 ON だと、案A・案Bのどちらを選んでも
-  結果がそちらに覆い隠されて区別が付かない。`FORMECHO_GUARDRAIL_STRATEGY=fake` は
-  テスト専用で、案A・案Bの呼び先を fake に差し替える（正規表現チェックは純関数
-  なので対象外）。しきい値（案Aのみ）は
-  `FORMECHO_GUARDRAIL_THRESHOLD_{PROMPT_ATTACK,SENSITIVE_INFO,CONTENT_FILTER}`
-  （離散値 `{0,0.2,0.4,0.6,0.8,1}` または `off`。F-02）
-- **日本固有 PII の正規表現チェック（マイナンバー、`guardrail/pii.ts`）は案A・案Bと
-  重複して検知しうる。** `InvokeGuardrailChecks` の `sensitiveInformation` に日本
-  固有の型が無く（F-03）、`ApplyGuardrail` の `regexesConfig` も `toolUse.input`
-  （Structured Output の出力）を評価しない（F-16）ため、既定ではこのチェックも ON
-  にして常時カバーする。`GuardrailFinding.source`（`'code-regex' | 'strategy'`）で
-  どちらが検知したかを区別できる
+- **2つの経路はどちらも常時有効で、env で切り替えられない。** 片方だけでは足りないことが
+  #44 で数字になっている — `InvokeGuardrailChecks` は Prompt Attack を日英とも 8/8 で
+  ブロックするがマイナンバーを 0/8 しか検知せず、正規表現チェックは逆にマイナンバー専用。
+  在るフラグは `FORMECHO_GUARDRAIL_STRATEGY=fake` だけで、これはテスト専用（`InvokeGuardrailChecks`
+  の呼び先を fake に差し替える。正規表現チェックは純関数なので対象外）
+- **しきい値は `config.ts` の定数 `GUARDRAIL_THRESHOLDS`**（`promptAttack` は `>= 0.8`、
+  `sensitiveInformation` は `>= 0.6`、`contentFilter` は記録のみでブロックしない）。値は
+  離散スコアの格子 `{0, 0.2, 0.4, 0.6, 0.8, 1}` 上からしか選べない（F-02。`> 0.8` は
+  `== 1.0` と同義になり 0.8 を素通しする）ので、`GuardrailScore` 型で縛ってある。
+  `contentFilter` を記録のみにしているのは、日本語では露骨でない表現のスコアが下がる
+  （F-06）ため — 0.2 まで下げると誤検知が実用に耐えない
+- **日本固有 PII の正規表現チェック（マイナンバー、`guardrail/pii.ts`）と
+  `InvokeGuardrailChecks` は重複して検知しうる。** `InvokeGuardrailChecks` の
+  `sensitiveInformation` に日本固有の型が無い（F-03）ため正規表現が恒久的に必要で、
+  `GuardrailFinding.source`（`'code-regex' | 'strategy'`）でどちらが検知したかを区別する
 - **`sensitiveInformation` の検知対象に `ADDRESS` / `NAME` 等の汎用カテゴリを含めない
   こと。** 日本語でも confidence 1.0 で検知されるため（F-06）、`ic-card.parse-reservation`
   が行き先という**住所そのもの**を抽出する正常な出力と衝突し誤検知する（実機で確認済み。
@@ -129,27 +126,21 @@ drift-guard テストも無い。
 - **ブロックすると `discardSession`（`domain-agent.ts`）でそのセッションの Agent を全て
   破棄する。** ブロック対象が会話履歴に残ると以降のメッセージまで連鎖ブロックする
   （F-14）。同じ `sessionId` を送り直しても、次回は空の履歴から再開する
-- **案Bの Guardrail リソースは `agent-app/infra` の独立 CDK スタックで作る**
-  （`FormEchoAgentInfra`、ADR-0010）。`agentcore.json` に Guardrail を宣言する枠が無く
-  （F-11）、`agentcore/cdk` は生成物で手書きのリソースを混在させられないため。
-  Classic Tier・新規名前（`FormEchoGuardrail`）で作成する（`agent-app/infra/lib/guardrail-config.ts`）。
-  **`npx cdk deploy` は自動実行されない** — 実行すると共用アカウントに実際のリソースを作る。
-  作成後、CFN 出力の `GuardrailIdOutput` / `GuardrailVersionOutput` を
-  `FORMECHO_GUARDRAIL_ID` / `FORMECHO_GUARDRAIL_VERSION` に設定する
+- **`agent-app/infra` に残る Guardrail 実クラウドリソース**（`FormEchoGuardrail`、
+  Classic Tier、ADR-0010）**を読むコードはもう無い。** 案Bのために作ったもので、CDK の
+  定義ごと削除するのは #126（実リソースの破棄は人が実行する）。
+  **`npx cdk deploy` / `cdk destroy` は自動実行しない** — 共用アカウントの実リソースを
+  作る・消す操作なので、必ず人が判断する
 - **Runtime 実行ロールに必要な IAM 権限**（cdk は生成物のため手で編集しない —
   `agent-app/infra` の `FormEchoAgentInfraStack` が `cdk.json` にキャッシュされた ARN
   （`scripts/cache-runtime-role-arn.ts` が `agentcore status --json` の `roleArn` から
   書き込む）で agentcore 管理のロールを参照する。ADR-0010 の Consequences 参照）:
   ```json
-  [
-    { "Effect": "Allow", "Action": "bedrock:InvokeGuardrailChecks", "Resource": "*" },
-    { "Effect": "Allow", "Action": "bedrock:ApplyGuardrail",
-      "Resource": "arn:aws:bedrock:ap-northeast-1:<account>:guardrail/<作成した guardrailId>" }
-  ]
+  [{ "Effect": "Allow", "Action": "bedrock:InvokeGuardrailChecks", "Resource": "*" }]
   ```
-  `InvokeGuardrailChecks`（案A）はリソースレスの API なので `Resource: "*"` になる（F-08）。
-  **CDK 管理済みなのは案Aのみ（#116）。** 案B（`ApplyGuardrail`）は参照先の Guardrail が
-  未デプロイのため対象外で、Guardrail を実際にデプロイする回でまとめて追加する
+  `InvokeGuardrailChecks` はリソースレスの API なので `Resource: "*"` になる（F-08）。
+  **`bedrock:ApplyGuardrail` は付与しない**（案Bを採用しないため。ADR-0010 が約束していた
+  「デプロイする回でまとめて追加する」は ADR-0013 により来ない）
 - **アカウントレベル適用（`PutEnforcedGuardrailConfiguration`）は有効化しない。** 有効化すると
   同一アカウント・同一リージョンの**全ての** Bedrock 呼び出し（`InvokeModel` /
   `Converse` 系）にガードレールが強制され、`bedrock:ApplyGuardrail` 権限を持たない他の

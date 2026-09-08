@@ -23,7 +23,8 @@ export class FormEchoAgentInfraStack extends Stack {
     }
     const runtimeRole = Role.fromRoleArn(this, 'RuntimeRole', runtimeRoleArn, { mutable: true });
     // 案A（InvokeGuardrailChecks）はリソースレスAPIのため Resource: "*"（F-08）。
-    // 案B（ApplyGuardrail）はGuardrailが未デプロイのため対象外（#116）。
+    // 案B（ApplyGuardrail）は採用しないため対象外（ADR-0013 で案A + 日本固有 PII
+    // 検知の1本に畳んだ。「未デプロイのため」という当初の理由はもう当たらない）。
     new Policy(this, 'InvokeGuardrailChecksPolicy', {
       roles: [runtimeRole],
       statements: [new PolicyStatement({ actions: ['bedrock:InvokeGuardrailChecks'], resources: ['*'] })],
@@ -37,8 +38,8 @@ export class FormEchoAgentInfraStack extends Stack {
       description: '#43 の実測比較用の初回バージョン',
     });
 
-    // 案B（FORMECHO_GUARDRAIL_APPLY_GUARDRAIL=true）が読む
-    // FORMECHO_GUARDRAIL_ID / FORMECHO_GUARDRAIL_VERSION の値。
+    // 案Bを畳んだので、この出力を読むコードはもう無い（ADR-0013）。
+    // リソースごと消すのは #126。
     new CfnOutput(this, 'GuardrailIdOutput', {
       value: guardrail.attrGuardrailId,
     });

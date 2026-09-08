@@ -1,5 +1,4 @@
-import { isGuardrailFake, resolveGuardrailLayers } from '../config.js';
-import { applyGuardrail } from './apply-guardrail.js';
+import { isGuardrailFake } from '../config.js';
 import { fakeGuardrailCheck } from './fake.js';
 import { invokeGuardrailChecks } from './invoke-checks.js';
 import { checkJapanesePii } from './pii.js';
@@ -13,41 +12,28 @@ import type {
  * この Runtime が使う Guardrail 全体。`invoke-task.ts` が入力（自然文）と出力
  * （Structured Output のパース結果）の両方でこれを呼ぶ。
  *
- * 案A・案B・日本固有 PII の正規表現チェックはそれぞれ独立に ON/OFF できる
- * （`resolveGuardrailLayers`）。1つの排他的な選択にしないのは、「案Aだけ／
- * 案Bだけでマイナンバーを検知できるか」を確かめる実測（#43 の受け入れ条件）で、
- * 常時 ON の層が他の層の結果を覆い隠さないようにするため。有効な層をすべて
- * 並行に呼び、1つでもブロックすれば全体もブロックする。
+ * 経路は `InvokeGuardrailChecks`（AWS 側の判定）と日本固有 PII の正規表現の2つで、
+ * **どちらも常時有効**（ADR-0013）。両方を並行に呼び、1つでもブロックすれば
+ * 全体もブロックする。`InvokeGuardrailChecks` はマイナンバーを検知できず
+ * （#44 の実測で 0/8）、正規表現は日本語の Prompt Attack を見ないので、片方だけでは
+ * 足りない。
  *
- * `FORMECHO_GUARDRAIL_STRATEGY=fake` のときは案A・案Bの呼び先を fake に
- * 差し替える（AWS を呼ばない）。正規表現チェックは純関数で決定的なので差し替えの
- * 対象にしない。
- *
- * WHY 正規表現チェックを「案C」と呼ばないか: チケット #43 は `BedrockModel` の
- * `guardrailConfig`（不採用）を案Cと呼んでいる。この正規表現チェックは A/B の
- * どちらを選んでも必要になる補助的なチェック（F-03・F-16）で、A/B と並ぶ実装
- * 方式の選択肢ではない。
+ * `FORMECHO_GUARDRAIL_STRATEGY=fake` のときは `InvokeGuardrailChecks` の呼び先を
+ * fake に差し替える（AWS を呼ばない）。正規表現チェックは純関数で決定的なので
+ * 差し替えの対象にしない。
  */
 export async function checkGuardrail(
   text: string,
   direction: GuardrailDirection,
 ): Promise<GuardrailVerdict> {
-  const layers = resolveGuardrailLayers();
-  const fake = isGuardrailFake();
-  const invokeChecksBackend: GuardrailBackend = fake
+  const strategy: GuardrailBackend = isGuardrailFake()
     ? fakeGuardrailCheck
     : invokeGuardrailChecks;
-  const applyGuardrailBackend: GuardrailBackend = fake
-    ? fakeGuardrailCheck
-    : applyGuardrail;
 
-  const checks: Promise<GuardrailVerdict>[] = [];
-  if (layers.customRegex) checks.push(checkJapanesePii(text, direction));
-  if (layers.invokeChecks) checks.push(invokeChecksBackend(text, direction));
-  if (layers.applyGuardrail)
-    checks.push(applyGuardrailBackend(text, direction));
-
-  const results = await Promise.all(checks);
+  const results = await Promise.all([
+    checkJapanesePii(text, direction),
+    strategy(text, direction),
+  ]);
   return {
     blocked: results.some((result) => result.blocked),
     findings: results.flatMap((result) => result.findings),

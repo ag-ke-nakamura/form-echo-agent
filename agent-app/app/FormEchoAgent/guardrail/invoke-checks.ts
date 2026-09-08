@@ -2,10 +2,7 @@ import {
   type GuardrailChecksResults,
   InvokeGuardrailChecksCommand,
 } from '@aws-sdk/client-bedrock-runtime';
-import {
-  type GuardrailThresholds,
-  resolveGuardrailThresholds,
-} from '../config.js';
+import { GUARDRAIL_THRESHOLDS } from '../config.js';
 import { bedrockRuntimeClient } from './bedrock-runtime-client.js';
 import type {
   GuardrailBackend,
@@ -15,8 +12,8 @@ import type {
 } from './types.js';
 
 /**
- * 案A（`InvokeGuardrailChecks`）。リソース不要で、離散スコアを自前のしきい値と
- * 比べる（ADR-032「実装方式の比較」A）。
+ * `InvokeGuardrailChecks`。リソース不要で、離散スコアを自前のしきい値と比べる
+ * （ADR-032「実装方式の比較」A。ADR-0013 でこの1本に畳んだ）。
  *
  * `@aws-sdk/client-bedrock-runtime` は 3.1069.0 以降が必要（F-08。それ以前は
  * `InvokeGuardrailChecksCommand` が存在しない）。
@@ -76,11 +73,10 @@ function findingsAbove(
 /**
  * レスポンスをしきい値と比べて判定に写す。**純関数として切り出す** — SDK を叩く
  * 部分と分けることで、実際に Bedrock を呼ばずにしきい値の境界（F-02 の離散値）を
- * テストできる。
+ * テストできる。しきい値は定数（`GUARDRAIL_THRESHOLDS`）なので引数で受け取らない。
  */
 export function verdictFromChecksResults(
   results: GuardrailChecksResults,
-  thresholds: GuardrailThresholds,
 ): GuardrailVerdict {
   const findings = [
     ...findingsAbove(
@@ -89,7 +85,7 @@ export function verdictFromChecksResults(
         label: r.category ?? 'unknown',
         score: r.severityScore ?? 0,
       })),
-      thresholds.contentFilter,
+      GUARDRAIL_THRESHOLDS.contentFilter,
     ),
     ...findingsAbove(
       'promptAttack',
@@ -97,7 +93,7 @@ export function verdictFromChecksResults(
         label: r.category ?? 'unknown',
         score: r.severityScore ?? 0,
       })),
-      thresholds.promptAttack,
+      GUARDRAIL_THRESHOLDS.promptAttack,
     ),
     ...findingsAbove(
       'sensitiveInformation',
@@ -105,7 +101,7 @@ export function verdictFromChecksResults(
         label: r.type ?? 'unknown',
         score: r.confidenceScore ?? 0,
       })),
-      thresholds.sensitiveInformation,
+      GUARDRAIL_THRESHOLDS.sensitiveInformation,
     ),
   ];
 
@@ -133,8 +129,8 @@ export const invokeGuardrailChecks: GuardrailBackend = async (
           entities: SENSITIVE_INFORMATION_ENTITIES.map((type) => ({ type })),
         },
       },
-      // 役割は入出力どちらを評価しているかを表すだけで、案Aは role ごとの
-      // 挙動の違いを持たない。
+      // 役割は入出力どちらを評価しているかを表すだけで、`InvokeGuardrailChecks`
+      // は role ごとの挙動の違いを持たない。
       messages: [
         {
           role: direction === 'INPUT' ? 'user' : 'assistant',
@@ -144,8 +140,5 @@ export const invokeGuardrailChecks: GuardrailBackend = async (
     }),
   );
 
-  return verdictFromChecksResults(
-    response.results ?? {},
-    resolveGuardrailThresholds(),
-  );
+  return verdictFromChecksResults(response.results ?? {});
 };

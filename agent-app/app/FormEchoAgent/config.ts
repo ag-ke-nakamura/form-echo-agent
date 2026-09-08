@@ -161,16 +161,15 @@ export function resolveWebSearchGatewayUrl(): string | null {
 export const FAKE_GUARDRAIL_STRATEGY_NAME = 'fake';
 
 /**
- * テストは実際の AWS 呼び出し（案A・案B）を fake に差し替える。
+ * テストは `InvokeGuardrailChecks`（AWS 呼び出し）を fake に差し替える。
  *
  * 日本固有 PII の正規表現チェック（`pii.ts`）は AWS を呼ばない純関数なので
  * fake 化の対象にしない — 差し替えなくても決定的で、テストでも実物のロジックを
  * そのまま検証できる。
  *
- * **「案C」と呼ばない。** チケット #43 は `BedrockModel` の `guardrailConfig`
- * （不採用）を案Cと呼んでいる。この正規表現チェックはそれとは別物で、A/B のような
- * 実装方式の選択肢ではなく、A/B のどちらを選んでも必要になる補助的なチェック
- * （F-03・F-16）。
+ * **これは実装方式の選択肢ではない。** 経路は `InvokeGuardrailChecks` + 日本固有
+ * PII 検知の1本に畳んである（ADR-0013）。`fake` はその呼び先を差し替えるだけの
+ * テスト専用の設定。
  */
 export function isGuardrailFake(): boolean {
   return (
@@ -178,74 +177,14 @@ export function isGuardrailFake(): boolean {
   );
 }
 
-function resolveGuardrailFlag(envName: string, fallback: boolean): boolean {
-  const raw = process.env[envName];
-  if (raw === undefined) return fallback;
-  if (raw === 'true') return true;
-  if (raw === 'false') return false;
-  throw new Error(
-    `${envName} は true / false にしてください（受け取った値: ${raw}）`,
-  );
-}
-
-export interface GuardrailLayers {
-  /** 案A（`InvokeGuardrailChecks`）。リソース不要なので既定 ON。 */
-  invokeChecks: boolean;
-  /** 案B（`ApplyGuardrail`）。Guardrail リソースが要るので既定 OFF。 */
-  applyGuardrail: boolean;
-  /** 日本固有 PII のカスタム正規表現（マイナンバー）。既定 ON。 */
-  customRegex: boolean;
-}
-
-/**
- * 案A・案B・正規表現チェックをそれぞれ独立に ON/OFF できるようにする（#43）。
- *
- * ADR-032「入力検証方式の選択」の実測の土台がこのチケットで、決めるのは
- * 別チケット。3つを1つの排他的な選択にすると、「案Aだけ／案Bだけでマイナンバーを
- * 検知できるか」を試せない — 正規表現チェックが常時 ON だと、案Aと案Bのどちらを
- * 選んでも結果がそちらに覆い隠される。組み合わせて有効化できることで、この
- * 切り分けが設定だけでできる。
- */
-export function resolveGuardrailLayers(): GuardrailLayers {
-  return {
-    invokeChecks: resolveGuardrailFlag(
-      'FORMECHO_GUARDRAIL_INVOKE_CHECKS',
-      true,
-    ),
-    applyGuardrail: resolveGuardrailFlag(
-      'FORMECHO_GUARDRAIL_APPLY_GUARDRAIL',
-      false,
-    ),
-    customRegex: resolveGuardrailFlag('FORMECHO_GUARDRAIL_CUSTOM_REGEX', true),
-  };
-}
-
 /**
  * `InvokeGuardrailChecks` のスコアが取りうる離散値（F-02）。しきい値はこの格子
  * 上からしか選べない — `> 0.8` は `== 1.0` と同義になり、0.8 のスコアを素通し
  * してしまう（実際にあった誤り。参照ドキュメント側の修正メモが F-02）。
  */
-const GUARDRAIL_SCORE_GRID = [0, 0.2, 0.4, 0.6, 0.8, 1] as const;
-type GuardrailScore = (typeof GUARDRAIL_SCORE_GRID)[number];
+type GuardrailScore = 0 | 0.2 | 0.4 | 0.6 | 0.8 | 1;
 
-function resolveGuardrailThreshold(
-  envName: string,
-  fallback: GuardrailScore | null,
-): GuardrailScore | null {
-  const raw = process.env[envName];
-  if (raw === undefined) return fallback;
-  // ブロックしない設定を明示できるようにする（既定の contentFilter がこれ）。
-  if (raw === 'off') return null;
-  const value = Number(raw);
-  if (!(GUARDRAIL_SCORE_GRID as readonly number[]).includes(value)) {
-    throw new Error(
-      `${envName} は ${GUARDRAIL_SCORE_GRID.join(' / ')} のいずれか、またはブロックしない設定を表す "off" にしてください（受け取った値: ${raw}）`,
-    );
-  }
-  return value as GuardrailScore;
-}
-
-export interface GuardrailThresholds {
+interface GuardrailThresholds {
   promptAttack: GuardrailScore | null;
   sensitiveInformation: GuardrailScore | null;
   contentFilter: GuardrailScore | null;
@@ -254,45 +193,14 @@ export interface GuardrailThresholds {
 /**
  * チェック種別ごとのブロックしきい値（F-02・F-06）。`null` はブロックせず記録のみ。
  *
- * 初期値: `promptAttack` は `>= 0.8`。`sensitiveInformation` は `>= 0.6`。
- * `contentFilter` は日本語では露骨でない表現のスコアが下がる（F-06。「あなたみたいな
- * 人は尊敬に値しない」が INSULTS 0.20 にしかならない）ため、既定ではブロックしない
- * — 0.2 まで下げると誤検知が実用に耐えない。
+ * 値は #44 の実測で決まっており（`promptAttack` は `>= 0.8`、`sensitiveInformation`
+ * は `>= 0.6`）、env で上書きできる形は畳んだ（ADR-0013 — 設定している場所が
+ * 計測スクリプト以外に無かった）。`contentFilter` は日本語では露骨でない表現の
+ * スコアが下がる（F-06。「あなたみたいな人は尊敬に値しない」が INSULTS 0.20 に
+ * しかならない）ため記録のみ — 0.2 まで下げると誤検知が実用に耐えない。
  */
-export function resolveGuardrailThresholds(): GuardrailThresholds {
-  return {
-    promptAttack: resolveGuardrailThreshold(
-      'FORMECHO_GUARDRAIL_THRESHOLD_PROMPT_ATTACK',
-      0.8,
-    ),
-    sensitiveInformation: resolveGuardrailThreshold(
-      'FORMECHO_GUARDRAIL_THRESHOLD_SENSITIVE_INFO',
-      0.6,
-    ),
-    contentFilter: resolveGuardrailThreshold(
-      'FORMECHO_GUARDRAIL_THRESHOLD_CONTENT_FILTER',
-      null,
-    ),
-  };
-}
-
-/** 案B（`ApplyGuardrail`）が参照する Guardrail リソース。新規作成分のみ（既存2つには触らない）。 */
-export interface GuardrailResource {
-  identifier: string;
-  version: string;
-}
-
-/**
- * `agentcore.json` に Guardrail を宣言する枠が無い（F-11）ため、リソースの識別子は
- * スクリプトで作った後にここへ設定する。案B（`applyGuardrail`）を ON にしたときだけ読む。
- */
-export function resolveGuardrailResource(): GuardrailResource {
-  const identifier = process.env.FORMECHO_GUARDRAIL_ID;
-  const version = process.env.FORMECHO_GUARDRAIL_VERSION;
-  if (identifier === undefined || version === undefined) {
-    throw new Error(
-      '案B（FORMECHO_GUARDRAIL_APPLY_GUARDRAIL=true）には FORMECHO_GUARDRAIL_ID と FORMECHO_GUARDRAIL_VERSION の両方が必要です（agent-app/infra の CDK スタックがデプロイ出力として返す）。',
-    );
-  }
-  return { identifier, version };
-}
+export const GUARDRAIL_THRESHOLDS: GuardrailThresholds = {
+  promptAttack: 0.8,
+  sensitiveInformation: 0.6,
+  contentFilter: null,
+};

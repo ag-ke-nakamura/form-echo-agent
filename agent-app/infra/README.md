@@ -4,8 +4,8 @@
 我々が所有する独立の CDK アプリとして管理する（ADR-0010）。`agent-app/agentcore/cdk` は
 agentcore CLI の生成物で `agentcore deploy` のたびに作り直されるため、ここには置けない。
 
-現時点で持つのは Guardrail（案B、`ApplyGuardrail` が参照するリソース）と、Runtime 実行
-ロールへの `bedrock:InvokeGuardrailChecks`（案A）許可（ADR-0010）。
+現時点で持つのは Runtime 実行ロールへの `bedrock:InvokeGuardrailChecks` 許可（ADR-0010）と、
+消費者のいなくなった Guardrail リソース（案Bのために作った。削除は #126）。
 
 ## 構成
 
@@ -44,9 +44,8 @@ ARN は synth のたびに解決するのではなく `cdk.json` の `context.ru
 
 デプロイ後:
 
-- `GuardrailIdOutput` / `GuardrailVersionOutput` の CFN 出力を
-  `FORMECHO_GUARDRAIL_ID` / `FORMECHO_GUARDRAIL_VERSION` に設定する
-  （`agent-app/app/FormEchoAgent/config.ts` の `resolveGuardrailResource`）。
+- `GuardrailIdOutput` / `GuardrailVersionOutput` の CFN 出力を読むコードはもう無い
+  （案Bを畳んだ。ADR-0013）。Guardrail リソースを定義ごと消すのは #126。
 - Runtime からの `bedrock:InvokeGuardrailChecks` 呼び出しが引き続き成功することを確認したら、
   応急処置として手動で付けたインラインポリシー `InvokeGuardrailChecks`
   （ロール `AgentCore-FormEcho-defaul-ApplicationAgentFormEchoA-0lN6LVXEiBWj`）を削除する。

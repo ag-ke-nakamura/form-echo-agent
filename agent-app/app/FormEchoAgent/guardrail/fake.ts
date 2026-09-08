@@ -4,9 +4,9 @@ import type { GuardrailBackend, GuardrailVerdict } from './types.js';
  * Bedrock を呼ばないブロック判定。`FORMECHO_GUARDRAIL_STRATEGY=fake` で選ばれる。
  * `model/fake.ts` と同じ考え方 — テストは台本で振る舞いを決める。
  *
- * 既定（台本が空）は「ブロックしない」。案A・案Bそのものの判定ロジックは
- * `invoke-checks.test.ts` / `apply-guardrail.test.ts` が SDK クライアントを
- * 差し替えて見るので、invocation 境界の配線テストではここまでで足りる。
+ * 既定（台本が空）は「ブロックしない」。`InvokeGuardrailChecks` の判定ロジック
+ * そのものは `invoke-checks.test.ts` がレスポンスからの写像を直接見るので、
+ * invocation 境界の配線テストではここまでで足りる。
  */
 class FakeGuardrailScript {
   #verdicts: GuardrailVerdict[] = [];
