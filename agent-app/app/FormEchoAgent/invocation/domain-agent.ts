@@ -110,3 +110,17 @@ export function discardSession(sessionId: string): void {
     if (key.startsWith(prefix)) agentCache.delete(key);
   }
 }
+
+/**
+ * このセッション・taskId の Agent が自動モードで activate した Skill 名（#44）。
+ *
+ * Skill 選択の的中率の実測はこの境界の外からは言えない — `AgentSkills` の活性化
+ * 状態は `agent.appState` にあり、invocation 境界の出力（応答本文）には現れない。
+ */
+export function getActivatedSkills(
+  sessionId: string,
+  taskId: TaskId,
+): readonly string[] {
+  const agent = getOrCreateDomainAgent(sessionId, taskId);
+  return DOMAIN_SKILLS_PLUGINS[domainOf(taskId)].getActivatedSkills(agent);
+}
