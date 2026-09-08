@@ -86,6 +86,46 @@ export function bedrockModelId(name: BedrockModelName): string {
 export const WEB_SEARCH_MAX_CALLS = 3;
 
 /**
+ * Runtime が1リクエストに使える壁時計の既定値（#125）。
+ *
+ * **BFF の呼び出し側タイムアウト（`hono-app` の `RUNTIME_TIMEOUT_MS`、既定60秒）より
+ * 短く保つ。片方だけ変えるとこの関係が崩れる。** BFF が先に諦めると職員には
+ * `TIMEOUT` が返るが Runtime は止まらず、AgentCore Runtime の同期タイムアウト
+ * （15分。調整不可）まで走り続けて、誰も受け取らない応答のために Bedrock の
+ * トークンを消費する。Runtime 側を先に切れば、その経路が塞がる。
+ *
+ * 2つの別プロジェクトの定数の大小なので、自動テストでは守らない — 片方しか
+ * 見えないテストでは関係を検査できない。ここのコメントが唯一の歯止めである。
+ */
+const DEFAULT_AGENT_LOOP_TIMEOUT_MS = 55_000;
+
+/**
+ * `agent.invoke` に渡す `cancelSignal` の期限（ミリ秒）。
+ *
+ * 名前に `AGENT_LOOP` を入れて BFF 側の `FORMECHO_RUNTIME_TIMEOUT_MS`（呼び出し側が
+ * 待つ時間）と紛れないようにする。効くのはエージェントループだけで、Runtime の
+ * プロセス全体を止めるものではない。
+ *
+ * 不正な値はここで落とす。通すと `AbortSignal.timeout(NaN)` が即時に発火して
+ * **全リクエストが静かに PARSE_FAILED になる**（職員には「読み取れませんでした」が
+ * 出るだけで、設定の誤りだと分からない）。落とせば handler が 500 にし、BFF が
+ * RUNTIME_UNAVAILABLE を返すので、設定の誤りとして気付ける。
+ *
+ * 読むのはリクエストごと（`invokeTask` の入口）で、起動時ではない。
+ */
+export function resolveAgentLoopTimeoutMs(): number {
+  const raw = process.env.FORMECHO_AGENT_LOOP_TIMEOUT_MS;
+  if (raw === undefined) return DEFAULT_AGENT_LOOP_TIMEOUT_MS;
+  const ms = Number(raw);
+  if (!Number.isFinite(ms) || ms <= 0) {
+    throw new Error(
+      `FORMECHO_AGENT_LOOP_TIMEOUT_MS は正の数（ミリ秒）にしてください（受け取った値: ${raw}）`,
+    );
+  }
+  return ms;
+}
+
+/**
  * Web 検索を提供する AgentCore Gateway の MCP エンドポイント（#46）。
  *
  * **未設定なら Web 検索を持たない。** 実測は Websearch 有効／無効の同じ入力セットを

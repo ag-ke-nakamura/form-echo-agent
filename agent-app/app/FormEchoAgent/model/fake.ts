@@ -17,10 +17,22 @@ import { FAKE_MODEL_NAME } from '../config.js';
  * テストが決める** — 守るのは配線・契約・エラー処理であって、モデルの賢さではない。
  */
 
-/** 台本の1手。モデルが1回呼ばれるたびに先頭から1つ消費される。 */
+/**
+ * 台本の1手。モデルが1回呼ばれるたびに先頭から1つ消費される。
+ *
+ * `delayMs` はこの1手が答えるまでに使う時間。**壁時計の実行制限（#125）を境界越しに
+ * 見るために要る** — 上限が「時間」なので、台本が時間を使わないと、往復を何回積んでも
+ * 発火せず往復回数の上限の方が先に効く（1手も時間を使わないと全体がマイクロタスクで
+ * 完走し、タイマーが1度も走らない）。
+ */
 export type FakeModelTurn =
   /** Structured Output のツールを呼ぶ。`output` はそのままツールの入力になる。 */
-  | { kind: 'structuredOutput'; output: unknown; usage?: Usage }
+  | {
+      kind: 'structuredOutput';
+      output: unknown;
+      usage?: Usage;
+      delayMs?: number;
+    }
   /**
    * 素のテキストで答える。Structured Output のスキーマが渡っているときは、
    * Strands がツールの使用を強制して1回だけやり直し、それでもテキストなら例外になる。
@@ -139,6 +151,11 @@ export class FakeModel extends Model<BaseModelConfig> {
     });
 
     if (turn.kind === 'error') throw turn.error;
+
+    if (turn.kind === 'structuredOutput' && turn.delayMs !== undefined) {
+      const { delayMs } = turn;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
 
     yield { type: 'modelMessageStartEvent', role: 'assistant' };
 

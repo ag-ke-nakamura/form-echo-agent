@@ -41,6 +41,27 @@ paths:
   （`FST_ERR_REP_INVALID_PAYLOAD_TYPE`）。結果、**本文の無い 500** になって原因が伝わらない。
   `invocation/handler.ts` の中で `aiTaskRequestSchema` を回すこと
 
+## 実行制限（#125）
+
+**張り先は `agentcore.json` ではなく Strands の `InvokeOptions`**（`agent.invoke` の第2引数。
+`structuredOutputSchema` を渡しているのと同じオブジェクト）。`maxIterations` / `maxTokens` /
+`timeoutSeconds` は AgentCore **harness** のパラメータで、自前の Strands ループを Runtime に
+載せる本構成には宣言する場所が無い。`invocation/structured-output.ts` が `limits.turns`
+（値の根拠は #121 の往復回数の実測）と `cancelSignal`（`config.ts` の
+`resolveAgentLoopTimeoutMs`、`FORMECHO_AGENT_LOOP_TIMEOUT_MS`、既定 55,000ms）を渡す。
+張らない上限（`limits.outputTokens` / `limits.totalTokens`）とその理由はコードのコメント。
+
+- **`limits` のカウンタは `agent.invoke` ごとにリセットされる。** Web 検索の回数上限と同じ罠で、
+  内側に張ると Structured Output の作り直しで残高が戻り、外側の2試行がそれぞれ満額の予算を得る
+  （実質2倍）。**壁時計はリクエスト単位**にし、`invokeTask` の入口で1つ作って両方の試行に渡す
+- **Runtime 側（既定55秒）を BFF 側（`hono-app` の `RUNTIME_TIMEOUT_MS`、既定60秒）より短く
+  保つ。片方だけ変えるとこの関係が崩れる。** 崩れると、BFF が職員に `TIMEOUT` を返した後も
+  Runtime が AgentCore Runtime の同期タイムアウト（15分。調整不可）まで走り続け、誰も受け取ら
+  ない応答のために Bedrock のトークンを消費する。**別プロジェクトの定数の大小なので自動テストで
+  は守らない** — 片方しか見えないテストでは関係を検査できない。歯止めは `config.ts` のコメント
+- **発火時のエラーコードは `PARSE_FAILED`**（職員の取る行動が作り直しの尽きた場合と同じ）。
+  運用側が要る「契約に適合しなかった」と「上限で切った」の区別は `stopReason` の warn ログが担う
+
 ## Skill 選択の2モード（#42）
 
 `config.ts` の `resolveSkillSelectionMode()`（`FORMECHO_SKILL_SELECTION_MODE`、既定
