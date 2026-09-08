@@ -6,6 +6,8 @@
 
 **凡例** — 影響度: 🔴 設計判断が変わる / 🟡 記述の誤りだが結論は変わらない / 🟢 情報の追記
 
+節の途中に現れる2つのマーカーは役割が違う。**追記（#NN）** はその finding の議論を続けたもので、節の結論の一部である。**注記（#NN）** は「この節は当時の記録で、正典は別にある」と外から指すもので、**節の本文は書き換えずに**足す。
+
 ---
 
 ## Bedrock モデルの選定
@@ -296,7 +298,7 @@ Haiku を検討するなら、単価表ではなく「1リクエストあたり�
 
 **修正案**: `agentcore create` に直す。`agentcore add agent --type create` の `--type` の値も実際のヘルプで確認する。
 
-### 🟢 F-13. Runtime の入力検証を宣言的に張る経路は存在しない
+### 🔴 F-13. Runtime の入力検証を宣言的に張る経路は存在しない
 
 **該当**: ADR-032「AgentCore 構成要素の利用範囲」表、共通設計方針書 3.5節・3.6節
 
@@ -304,7 +306,33 @@ Haiku を検討するなら、単価表ではなく「1リクエストあたり�
 
 CLI の生成物 `agent-app/AGENTS.md` は「form-based guardrails (Bedrock content filters, prompt-attack, sensitive-info)」と説明しているが、**現行スキーマの `Policy` 型にその形は無い**（CLI 側のドキュメントバグ）。
 
-**修正案**: 3.6節の実行制限（`maxIterations` / `maxTokens` / `timeoutSeconds`）が `agentcore.json` で宣言できるのかを実機で確認する。現行スキーマの `runtimes` 要素にこれらのフィールドは見当たらない。宣言できないならコード側の責務として書き直す。
+**修正案**: 3.5節・3.6節の宣言的なガードレールを、**Runtime のコード側の責務**として書き直す。入力検証は ADR-0001（Runtime 内で `InvokeGuardrailChecks` を呼ぶ）で、実行制限は Strands の `InvokeOptions` で張る。
+
+**影響度を 🟢 から 🔴 へ上げた（#122）。** 当初この節は「宣言的に張れない」という情報の追記だったが、**実行制限についても宣言できる場所が無いことが確定した**ため、3.6節の記述ごと責務の置き場所が変わる。実行制限の実測と張り先は **F-29** に分けて書いた — 3つのパラメータは `agentcore add harness` のもので、自前の Strands ループを載せる本構成には渡す相手がいない。
+
+### 🔴 F-29. 実行制限（`maxIterations` / `maxTokens` / `timeoutSeconds`）は harness のパラメータで、自前ループの Runtime には宣言する場所が無い
+
+**該当**: 共通設計方針書 3.6節（実行制限を Runtime の設定として記述）
+
+**事実**（CLI 0.28.1 / Strands SDK 1.16.0 で確認、2026-09-08）:
+
+- **3つとも `agentcore add harness` のパラメータである。** `agentcore add harness --help` が `--max-iterations <n>`（Max iterations）・`--max-tokens <n>`（Max execution tokens per invocation (harness loop cap)）・`--timeout <seconds>`（Timeout in seconds）を並べている。API 側の欄名は `maxIterations` / `maxTokens` / `timeoutSeconds`（`bedrock-agentcore-control create-harness`、`AWS::BedrockAgentCore::Harness`）で、CLI のフラグ名だけ `--timeout` と短い。既定値は **`maxIterations` = 75 / `maxTokens` = N/A（無制限）/ `timeoutSeconds` = 3600**（AgentCore 開発者ガイド「Observability and cost controls」の "Control cost with limits" — <https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/harness-operations.html>。API リファレンス側は既定値を書いておらず、"If specified, overrides the harness default" としか言わない）
+- **harness は AWS 側がエージェントループを回すマネージド構成である。** 上の3つはそのループに効くキャップで、モデル呼び出し・ツール実行・停止判定を AWS が持っていることが前提になっている。**本構成は自前の Strands ループを Runtime に載せる**ので、キャップを渡す相手がいない。CLI にも harness から降りる経路しか無い — `agentcore export harness` は harness の設定を `app/<agentName>/` の Strands **Python** エージェントへ展開する片方向の変換で（`agent-app/AGENTS.md`）、逆に「既にある Runtime に harness のキャップを付ける」コマンドは無い。**本構成の Runtime は TypeScript** なので、展開先としても harness の下に入らない
+- **`agentcore.json` の `runtimes` 要素（`AgentEnvSpec`）に実行制限に相当するフィールドは1つも無い。** 並ぶのはビルドとネットワークと環境変数だけで（`build` / `entrypoint` / `codeLocation` / `dockerfile` / `buildContextPath` / `customDockerBuildArgs` / `runtimeVersion` / `envVars` / `networkMode` / `networkConfig` / `instrumentation` / `protocol` / `tags` / `filesystemConfigurations` / `connections`）、反復回数・トークン・時間のどれにも触れる欄が無い
+- **スキーマ内に現れる `timeout` は2件あるが、どちらも Runtime とは別のリソースである。** `ManagedCodeBasedConfig.timeoutSeconds`（**Evaluator** の Lambda。`Evaluator.config.codeBased.managed`）と `ToolComputeConfig.timeout`（**Tool** の Lambda）。名前が似ているだけで、Runtime のエージェントループには効かない
+- **harness はスキーマファイルに一切現れず、CLI 本体にだけ在る。** `agentcore/.llm-context/` を `harness` で grep すると0件で、`AgentCoreProjectSpec` に `harnesses` というキーも harness の型も無い。一方で同じ CLI が置く `agent-app/AGENTS.md` は root config の配列として `harnesses` を挙げ、`agentcore add harness` / `agentcore export harness` をコマンド表に載せている。**F-24 と同じ乖離**（あちらは `GatewayTargetType` の `'connector'`）で、遅れているのは `.llm-context` の型定義のほう。**スキーマだけを見て判断すると誤る** — この節でいえば「実行制限は宣言できない」は結論として正しいが、「harness という概念が無い」は誤りになる
+
+**張り先は Strands SDK 側にある。** `InvokeOptions`（`@strands-agents/sdk` の `agent.invoke()` / `agent.stream()` の第2引数）が同じ3つを per-invocation のキャップとして持つ。
+
+| 3.6節の実行制限 | `InvokeOptions` の張り先 | 停止時の `stopReason` |
+| --- | --- | --- |
+| `maxIterations` | `limits.turns`（1ターン = モデル呼び出し1回 + 後続のツール実行） | `limitTurns` |
+| `maxTokens` | `limits.outputTokens`（累積の出力トークン）／ `limits.totalTokens`（入力+出力の累積） | `limitOutputTokens` / `limitTotalTokens` |
+| `timeoutSeconds` | `cancelSignal`（`AbortSignal.timeout(ms)` を渡す） | `cancelled` |
+
+`limits` のキャップは各ループ反復の先頭で見るため、**直前のターンが要求したツールは必ず完走する**（`agent.messages` が再呼び出し可能な状態に保たれる）。`outputTokens` と `totalTokens` はどちらもソフトキャップで、1回の巨大な応答は予算を超過しうる（予算に達した最初のターン境界で止まるだけで、個々のモデル呼び出しは縛らない）。
+
+**修正案**: 3.6節を「`agentcore.json` に宣言する設定」から「**Runtime のコード側の責務**」へ書き直す。harness を使う構成であればこの3つは宣言できるので、**どちらの構成なのかを先に書く**（harness / 自前ループ）。宣言できる場所を探す探索を本番設計チームが繰り返さないよう、`InvokeOptions` を名指しする。
 
 ### 🟢 F-24. Gateway と Web Search コネクタは `agentcore.json` に宣言できる（#46 で確認）
 
@@ -651,6 +679,8 @@ Runtime が実際にこの穴を踏んでいないのは、Structured Output の
 
 **前半は生きている。** タイムゾーンも秒も持たせない — 消費側が `<input type="datetime-local">` である以上、`+09:00` や `Z` は上記と同じ無音の空欄を作る。日付だけを扱う会議ロジの候補日程（`isoDateSchema`）もこの節の結論のままである。
 
+**注記（#122）— この節は当時の記録であり、正典は `CONTEXT.md` と `docs/adr/` である。** 上の追記が「`borrow_at` / `return_at` として `YYYY-MM-DDTHH:mm` を要求する」と書いているのは、**現行実装と食い違う**。#86 が貸出だけを日時から日付へ戻しており、**貸出は `YYYY-MM-DD`、返却だけが `YYYY-MM-DDTHH:mm`** である（正典: `agent-app/app/FormEchoAgent/contracts/outputs.ts` の `parseReservationOutputSchema` — `borrow_at: isoDateSchema` / `return_at: isoDateTimeSchema`）。カードを受け取る「日」は時点ではないという、この節の前半の結論が貸出側では生きている。契約の置き場所も `contracts/fields.ts` 単一ではなく、3プロジェクトそれぞれの複製である（ADR-0011）。
+
 ---
 
 ## ツール利用方針
@@ -767,3 +797,12 @@ interface ParseAvailabilityOutput {
 3. **参加可否を候補IDではなく日付で写すことにした。** リクエスト契約に候補一覧を運ぶ経路を作らないため。判断の詳細は `docs/adr/0003-runtime-input-natural-language-only.md`
 
 **祝日・営業日の判定はモデルに求めない。** 外部知識であり、会議ロジドメインエージェントは Websearch を持たない（F-22）ので裏を取る手段がない。7.1節が会議ロジに Websearch を挙げていないことと整合する。
+
+**注記（#122）— この節は当時の記録であり、正典は `CONTEXT.md` と `docs/adr/` である。** 上の型定義と「設計上の判断」には、その後の実装で覆った箇所が4つある。**本文はそのまま残す**（当時どう考えたかの記録として要る）ので、現行の姿は以下で読む。
+
+- **候補日程は終了時刻を持たない。** 上の `ParseCandidatesOutput` にある `end_time` は無くなった。#66 で導出の向きが**反転**し、終わる時刻は会議の**所要時間**から導く（所要時間は構造化入力 `duration_minutes` として渡す。正典: `CONTEXT.md`「候補日程」、ADR-0005）。判断1が言う「`duration` を持たない」は逆になった — 持つのは所要時間のほうで、`end_time` が導出される側である
+- **参加可否は候補日程の識別子で写す。** 判断3の「日付で写すことにした」は#70 で撤回された。クリック単位が候補日程になった結果（#69）**同じ日に複数の候補日程が普通に発生する**ため、日付では「10月15日の14時には出られるが16時は無理」を表せない。識別子はフロントエンドが発番し AI は作らない（正典: ADR-0005、`CONTEXT.md`「候補日程」）
+- **参加可否は4状態 + 備考で、`available: boolean` の2値ではない。** 現地で出席・リモートで出席・欠席・未定の4つ（参加形式が現地のみ／オンラインのみなら3つに畳まれる）。4つに収まらない事情は**備考**（`note`）へ移す。上の「非AI経路の○×が出力契約の値域を決める」という読みは、手で埋める側の値域そのものが4状態に広がったことで前提が変わった（用語集は○×を _Avoid_ にしている — 2値を示唆する表記だから）。**`available: boolean` をそのまま本番設計へ写すと、参加者の回答を表現できない**（正典: `CONTEXT.md`「参加可否」「未定」「備考」、`agent-app/app/FormEchoAgent/contracts/fields.ts` の `availabilitySchema`）
+- **交通ICの出力には、この節に記述の無い3つの欄が在る。** 単一の経路・運賃ではなく**経路候補**の配列（`route_candidates`。運賃・所要時間・乗換回数・採用フラグと理由を持つ。#100、`CONTEXT.md`「移動経路」）、**利用目的**の選択肢（`purpose`。自由文字列にしない。#68）、経路候補ごとの**定期重複区間**（`commuter_pass_overlap_sections`。#101、`CONTEXT.md`「定期重複区間」）
+
+なお6.2節に足すべき型定義そのものは、`agent-app/app/FormEchoAgent/contracts/outputs.ts`（および `hono-app` / `nextjs-app` の複製。ADR-0011）が正典である。
