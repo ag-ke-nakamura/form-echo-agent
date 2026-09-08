@@ -2,6 +2,13 @@
   "targets": {
     "default": {
       "resources": {
+        "runtimes": {
+          "FormEchoAgent": {
+            "runtimeId": "FormEcho_FormEchoAgent-b7lxcgCRfb",
+            "runtimeArn": "arn:aws:bedrock-agentcore:ap-northeast-1:122664578519:runtime/FormEcho_FormEchoAgent-b7lxcgCRfb",
+            "roleArn": "arn:aws:iam::122664578519:role/AgentCore-FormEcho-defaul-ApplicationAgentFormEchoA-0lN6LVXEiBWj"
+          }
+        },
         "mcp": {
           "gateways": {
             "FormEchoWebSearch": {
@@ -17,7 +24,7 @@
           }
         },
         "stackName": "AgentCore-FormEcho-default",
-        "deployHash": "6820a9ab3820a154"
+        "deployHash": "25f022c562e170a2"
       }
     }
   }

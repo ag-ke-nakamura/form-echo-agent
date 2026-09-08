@@ -144,7 +144,7 @@ export function createWebSearchTool(
   return tool({
     name: 'web_search',
     /*
-      **Skill と同じことを言う。** ここと `skills/ic-card/parse-reservation/SKILL.md` は
+      **Skill と同じことを言う。** ここと `skills/ic-card/parse-reservation.ts` は
       どちらもモデルに届くので、食い違うと逆の指示が2つ渡ることになる。以前ここは
       「返ってきた url は sources に載せること」と書いており、Skill の「根拠にした
       ものだけを入れる」と矛盾していた。

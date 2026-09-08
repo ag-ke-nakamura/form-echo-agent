@@ -18,7 +18,7 @@ CLI コマンドは `agent-app/` で実行する。この Runtime 自体のコ�
 | `guardrail/` | Guardrail チェック。案A（`InvokeGuardrailChecks`）・案B（`ApplyGuardrail`）・日本固有 PII の正規表現チェックをそれぞれ独立に持ち、`load.ts` がまとめる |
 | `tools/` | ドメインエージェントに渡すツール（Web 検索。交通ICドメインのみ） |
 | `model/` | モデルの選択（Bedrock / テスト用 fake） |
-| `skills/` | taskId ごとの `SKILL.md`（Strands の `AgentSkills`） |
+| `skills/` | taskId ごとの Skill データ（`registry.ts` が束ねる。Strands の `AgentSkills`、ADR-0012） |
 | `contracts` | リポジトリ直下 `contracts/` への symlink。入出力契約の正典 |
 | `tests/` | vitest のテストとテスト用の足場 |
 

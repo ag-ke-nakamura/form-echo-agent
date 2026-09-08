@@ -10,7 +10,7 @@ import type { INPUT_SCHEMAS, TaskId } from '../contracts/index.js';
  *
  * WHY 自然文の見出しも taskId ごとにするか: **書き手が違う。** 参加可否回答フォームに
  * 自然文を書くのは参加者であって職員ではない（`CONTEXT.md` の用語集はこの2つを
- * 区別している）。全部を「職員からの指示」と名乗ると、`SKILL.md` が参加者に向けて
+ * 区別している）。全部を「職員からの指示」と名乗ると、Skill が参加者に向けて
  * 書いた文言とモデルが受け取る見出しが食い違う。
  */
 const HEADINGS = {

@@ -1,46 +1,19 @@
-import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { Skill } from '@strands-agents/sdk/vended-plugins/skills';
 import { resolveSkillSelectionMode } from '../config.js';
-import type { Domain, TaskId } from '../contracts/index.js';
+import type { TaskId } from '../contracts/index.js';
+import { SKILLS } from '../skills/registry.js';
 
 /**
- * skills/ を指す基準になるパッケージルート。
+ * 明示モードの Skill 読み込み。taskId が Skill を一意に決め、instructions を
+ * system prompt に注入する。
  *
- * WHY: このモジュールは tsx で実行される `.ts` としても `dist/` 配下の `.js`
- * としても動く。import.meta.url からの相対位置が両者で1階層ずれるので、
- * package.json のあるところまで遡ってパッケージルートを決める。
- */
-function findPackageRoot(): string {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  while (!existsSync(join(dir, 'package.json'))) {
-    const parent = dirname(dir);
-    if (parent === dir) {
-      throw new Error(
-        'package.json が見つからず skills/ の位置を決められません',
-      );
-    }
-    dir = parent;
-  }
-  return dir;
-}
-
-const PACKAGE_ROOT = findPackageRoot();
-
-/** ドメインの Skill が並ぶ親ディレクトリ。自動モードの `AgentSkills` が指す先。 */
-export function skillsDomainDir(domain: Domain): string {
-  return join(PACKAGE_ROOT, 'skills', domain);
-}
-
-/**
- * 明示モードの Skill 読み込み。taskId が Skill を一意に決め、`SKILL.md` の本文
- * （frontmatter を除いた instructions）を system prompt に注入する。
+ * `skills/{domain}/{task}.ts` のデータを直接使う（ADR-0012）。以前は `SKILL.md` を
+ * fs 経由で読んでいたが、デプロイ済み Runtime（CodeZip）は esbuild が import
+ * グラフだけを束ねるため非コードのアセットは zip に含まれず起動時に落ちた（#45）。
+ * TypeScript のデータとして直接書けば import グラフに乗るので、この問題は起きない。
  */
 function loadSkill(taskId: TaskId): string {
   const [domain, task] = taskId.split('.');
-  return Skill.fromFile(join(skillsDomainDir(domain as Domain), task))
-    .instructions;
+  return SKILLS[domain][task].instructions ?? '';
 }
 
 /**

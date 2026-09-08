@@ -203,7 +203,7 @@ describe('taskId の解決', () => {
 
       expectSuccess(await invokeBoundary(REQUESTS[taskId]));
 
-      // `SKILL.md` の見出しが taskId そのものなので、これが載っていれば
+      // Skill の見出しが taskId そのものなので、これが載っていれば
       // タスク部から Skill が決まっている。**ドメイン部の解決はここでは言えない**
       // — ドメインエージェントの違いは `Agent` の名前にしか出ず、モデルへは届かない。
       // そちらは `domain-agent.test.ts` が見る。
@@ -242,7 +242,7 @@ describe('taskId の解決', () => {
  * 曖昧表現の解釈ルールと出席方法デフォルトの転換（#102）。
  *
  * 抽出結果が正しいかどうか（AI の賢さ）は assert しない。ここで見るのは、
- * `SKILL.md` に書いたルールが system prompt に実際に載っているかどうかであり、
+ * Skill に書いたルールが system prompt に実際に載っているかどうかであり、
  * それは境界の外向きの側（Runtime が Bedrock へ何を投げたか）にしか現れない。
  */
 describe('meeting.parse-availability の曖昧表現ルール（#102）', () => {

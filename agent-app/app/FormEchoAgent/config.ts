@@ -27,7 +27,8 @@ export type BedrockModelName = keyof typeof BEDROCK_MODEL_IDS;
  *   （ADR-032 論点4）。会議ロジは3 Skill を持つので、`taskId` と一致しない Skill を
  *   選ぶ余地がある — その的中率を実測するのは #44
  *
- * 両モードとも同じ `SKILL.md` を読む。domain-agent.ts / system-prompt.ts を参照。
+ * 両モードとも同じ Skill データ（`skills/registry.ts`）を読む。domain-agent.ts /
+ * system-prompt.ts を参照。
  */
 export type SkillSelectionMode = 'explicit' | 'auto';
 

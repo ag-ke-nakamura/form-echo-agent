@@ -93,10 +93,10 @@ graph TD
     D1["交通ICドメインエージェント<br/>tools: []"]
     D2["会議ロジドメインエージェント<br/>tools: []"]
 
-    T1 -.-> S1["skills/ic-card/parse-reservation/SKILL.md"]
-    T2 -.-> S2["skills/meeting/parse-candidates/SKILL.md"]
-    T3 -.-> S3["skills/meeting/parse-availability/SKILL.md"]
-    T4 -.-> S4["skills/meeting/recommend-schedule/SKILL.md"]
+    T1 -.-> S1["skills/ic-card/parse-reservation.ts"]
+    T2 -.-> S2["skills/meeting/parse-candidates.ts"]
+    T3 -.-> S3["skills/meeting/parse-availability.ts"]
+    T4 -.-> S4["skills/meeting/recommend-schedule.ts"]
 
     S1 & S2 & S3 & S4 --> SP["buildSystemPrompt<br/>（基準時刻を付けて注入）"]
 ```

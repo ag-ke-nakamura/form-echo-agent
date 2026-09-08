@@ -54,7 +54,7 @@ const PURPOSE_VALUES = [
   'other',
 ] as const;
 
-/** 1回の応答で返せる経路候補の上限（#100）。`SKILL.md` の制約と同じ数を置く。 */
+/** 1回の応答で返せる経路候補の上限（#100）。Skill の制約と同じ数を置く。 */
 export const MAX_ROUTE_CANDIDATES = 5;
 
 /**
@@ -171,7 +171,7 @@ const newCandidateSchema = z.object({
   start_time: timeOfDaySchema.describe('開始時刻。HH:mm 形式（24時間表記）'),
 });
 
-/** 1回の応答で返せる候補日程の上限。`SKILL.md` の制約と同じ数を置く。 */
+/** 1回の応答で返せる候補日程の上限。Skill の制約と同じ数を置く。 */
 export const MAX_CANDIDATES = 10;
 
 export const parseCandidatesOutputSchema = z.object({
@@ -229,7 +229,7 @@ const candidateAvailabilitySchema = z.object({
  * 「候補日程は数件であって全営業日ではない」という判断から来ている。こちらは**渡された
  * 候補日程に答える**件数なので、渡しうる件数を下回ってはいけない — 下回ると、上限を
  * 超えた分の候補日程に参加者が答えられないのに、契約もモデルもそれを失敗として
- * 扱わない（`SKILL.md` が先頭から切り詰めるよう指示するだけ）。**画面には可否の
+ * 扱わない（Skill が先頭から切り詰めるよう指示するだけ）。**画面には可否の
  * 付かない候補日程が黙って残る。**
  *
  * 識別子で答えるようになった（#70）ので、この上限は `findAvailabilityMismatch` の

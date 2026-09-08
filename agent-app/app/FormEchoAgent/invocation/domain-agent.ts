@@ -1,21 +1,30 @@
 import { Agent } from '@strands-agents/sdk';
-import { AgentSkills } from '@strands-agents/sdk/vended-plugins/skills';
+import { AgentSkills, Skill } from '@strands-agents/sdk/vended-plugins/skills';
 import { resolveSkillSelectionMode } from '../config.js';
 import { type Domain, domainOf, type TaskId } from '../contracts/index.js';
 import { loadModel } from '../model/load.js';
+import { SKILLS } from '../skills/registry.js';
 import { loadDomainTools } from '../tools/load.js';
-import { buildSystemPrompt, skillsDomainDir } from './system-prompt.js';
+import { buildSystemPrompt } from './system-prompt.js';
 
 /**
  * 自動モード（#42）の `AgentSkills` プラグイン。ドメインごとに1つ持ち、複数の
  * Agent インスタンスで共有する（活性化状態は `agent.appState` 側でエージェントごと
  * に持つので、プラグイン自体の使い回しは安全 — SDK のドキュメント参照）。
- * `skills/{domain}` だけを指すので、ドメインエージェントは他ドメインの
- * `SKILL.md` を読み込まない。
+ * `SKILLS[domain]` だけを渡すので、ドメインエージェントは他ドメインの Skill を
+ * 読み込まない。
+ *
+ * `SKILLS`（`skills/registry.js`、ADR-0012）のデータから直接 `new Skill(...)` する。
+ * ディレクトリパスは使わない — デプロイ済み Runtime（CodeZip）には `skills/` を
+ * ディレクトリとして読む手段が無いため（#45）。
  */
 const DOMAIN_SKILLS_PLUGINS: Record<Domain, AgentSkills> = {
-  'ic-card': new AgentSkills({ skills: [skillsDomainDir('ic-card')] }),
-  meeting: new AgentSkills({ skills: [skillsDomainDir('meeting')] }),
+  'ic-card': new AgentSkills({
+    skills: Object.values(SKILLS['ic-card']).map((config) => new Skill(config)),
+  }),
+  meeting: new AgentSkills({
+    skills: Object.values(SKILLS.meeting).map((config) => new Skill(config)),
+  }),
 };
 
 /**

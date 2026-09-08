@@ -39,9 +39,11 @@ Lint/format は [Biome](https://biomejs.dev)（`biome.json`）。biome 本体は
   `Hono` インスタンス（`app`）は名前付きでも export してある — テストが `app.request()` で
   プロセスを立てずにこの境界を叩くため（#23 のシームその2）。
 - `src/lib/runtime-transport.ts` — Runtime との**通信だけ**を担う層（`RuntimeTransport`）。
-  宛先と実装は `FORMECHO_RUNTIME_CLIENT` が決める（`local` / `fake`）。デプロイ済み Runtime を
-  SigV4 で叩く経路はここに `deployed` として足す。切り替えは呼び出し側ではなくこのモジュールの
-  中で行う（BFF の他の部分は宛先を知らない）。
+  宛先と実装は `FORMECHO_RUNTIME_CLIENT` が決める（`local` / `fake` / `deployed`）。`deployed`
+  はデプロイ済み Runtime を `@aws-sdk/client-bedrock-agentcore` 経由で SigV4 で叩く（#45）。
+  region は `FORMECHO_RUNTIME_ARN` の文字列からこのモジュールがパースする（専用の env は
+  増やさない）。切り替えは呼び出し側ではなくこのモジュールの中で行う（BFF の他の部分は
+  宛先を知らない）。
 - `src/lib/fake-runtime.ts` — Runtime に接続しないクライアント（#41）。返す内容は台本
   （`fakeRuntimeScript`）が決める。**差し替わるのは「Runtime が何を返したか」だけで、
   「それをどう扱うか」は実物と同じコードが通る。**
@@ -69,10 +71,11 @@ Lint/format は [Biome](https://biomejs.dev)（`biome.json`）。biome 本体は
 
 設定はすべて環境変数から読む（`src/config.ts`）。再ビルドせずに切り替えられるようにするため。
 `PORT` / `FORMECHO_RUNTIME_URL` / `FORMECHO_RUNTIME_TIMEOUT_MS` / `FORMECHO_ALLOWED_ORIGINS` /
-`FORMECHO_RUNTIME_CLIENT`。
+`FORMECHO_RUNTIME_CLIENT` / `FORMECHO_RUNTIME_ARN`。
 
 `FORMECHO_RUNTIME_CLIENT` だけは **`src/index.ts` が起動時に検証する**。不正な値をリクエスト時に
 落とすと、Runtime を呼ぶ前の失敗が `RUNTIME_UNAVAILABLE` として出て Runtime 障害と区別が付かない。
+`deployed` を指しているのに `FORMECHO_RUNTIME_ARN` が無い場合も同じ理由でここで落ちる。
 
 ## 言語方針
 
