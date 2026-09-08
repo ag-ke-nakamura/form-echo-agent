@@ -1,3 +1,4 @@
+import { resolveAgentLoopTimeoutMs } from '../config.js';
 import {
   outputSchemaFor,
   type TaskId,
@@ -84,6 +85,14 @@ export async function invokeTask(
 ): Promise<TaskInvocationResult> {
   const agent = getOrCreateDomainAgent(sessionId, taskId);
   /*
+    実行制限の壁時計をここで1つ作る（#125）。**Web 検索の予算と同じ理由で
+    invocation 全体を包む必要がある** — `agent.invoke` ごとに作ると、`limits` の
+    カウンタが試行ごとにリセットされるのと同じく、作り直しの2試行がそれぞれ満額の
+    時間を得る。入口で作るので Guardrail の往復に使った時間もこの予算から引かれる
+    （**Guardrail 自身は signal を受け取らないので、その呼び出しの途中では切れない**）。
+  */
+  const cancelSignal = AbortSignal.timeout(resolveAgentLoopTimeoutMs());
+  /*
     Web 検索の予算をここで張る（#46）。**上限はリクエスト単位**（共通設計方針書
     7.1節）なので、`invokeWithSchemaRetry` の作り直しを含めた全体を包む必要がある。
     内側に張ると、Structured Output が1回失敗しただけで残高が戻る。
@@ -109,6 +118,7 @@ export async function invokeTask(
       // 入力を見ないと言えない不変条件（提案が入力の候補日程と過不足なく対応して
       // いるか）もここに載せる。値域を外れた評点と同じく作り直しに回す。
       outputSchemaFor(taskId, input),
+      cancelSignal,
       log,
     );
 

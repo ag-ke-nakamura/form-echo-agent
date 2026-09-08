@@ -15,13 +15,24 @@ import { type FakeModelCall, fakeModelScript } from '../model/fake.js';
  */
 
 /**
- * 何もしないロガー。
- *
- * 境界の内側が残すのは警告と失敗の1本ずつで、どちらも呼び出し側には応答の
- * エラーコードとして返る。ログそのものを検証する項目は無いので、記録は持たない。
+ * 何もしないロガー。ログを見ない大多数のテストが使う。
  */
 export function discardingLogger(): InvocationLogger {
   return { warn: () => {}, error: () => {} };
+}
+
+/**
+ * warn の内容を控えるロガー。
+ *
+ * 応答のエラーコードだけでは言えないものが1つある — 実行制限で打ち切ったのか
+ * 出力契約に届かなかったのかは、どちらも `PARSE_FAILED` になり、区別は
+ * `stopReason` の warn ログにしか現れない（#125）。
+ */
+export function recordingLogger(): InvocationLogger & {
+  readonly warns: object[];
+} {
+  const warns: object[] = [];
+  return { warns, warn: (details) => warns.push(details), error: () => {} };
 }
 
 /**
@@ -59,8 +70,9 @@ export function newSessionId(): string {
 export function invokeBoundary(
   payload: unknown,
   sessionId: string = newSessionId(),
+  log: InvocationLogger = discardingLogger(),
 ): Promise<AiTaskSuccessResponse | AiErrorResponse> {
-  return handleInvocation(payload, { sessionId, log: discardingLogger() });
+  return handleInvocation(payload, { sessionId, log });
 }
 
 export function expectSuccess(

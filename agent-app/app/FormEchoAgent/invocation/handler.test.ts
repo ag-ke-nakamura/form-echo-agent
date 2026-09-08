@@ -1,7 +1,11 @@
 import { ModelError } from '@strands-agents/sdk';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { z } from 'zod';
-import { resolveModelName, resolveSkillSelectionMode } from '../config.js';
+import {
+  resolveAgentLoopTimeoutMs,
+  resolveModelName,
+  resolveSkillSelectionMode,
+} from '../config.js';
 import {
   type AiTaskRequest,
   ALLOWED_TASK_IDS,
@@ -22,6 +26,7 @@ import {
   invokeBoundary,
   lastCall,
   newSessionId,
+  recordingLogger,
   systemPromptOf,
   userMessagesOf,
   useWebSearchGateway,
@@ -610,6 +615,78 @@ describe('Structured Output の再試行', () => {
     // 作り直しに乗せない。乗せても同じところで落ちるだけなので、台本の2手目は残る。
     expect(fakeModelScript.calls).toHaveLength(1);
     expect(fakeModelScript.remaining).toBe(1);
+  });
+});
+
+describe('実行制限（#125）', () => {
+  afterEach(() => {
+    delete process.env.FORMECHO_AGENT_LOOP_TIMEOUT_MS;
+  });
+
+  /** 出力契約に届かない出力。Strands が検査に落として作り直しを求める。 */
+  const NOT_CONFORMING = {
+    kind: 'structuredOutput',
+    output: { message: '読み取れませんでした。' },
+  } as const;
+
+  /*
+    「Runtime 側（55秒）が BFF 側（60秒）より短い」は**テストにしない。** 2つの別
+    プロジェクトの定数の大小で、片方しか見えないこのテストからは関係を検査できない
+    （`config.ts` のコメントが歯止め）。
+  */
+  it('壁時計に読めない値は落とす（黙って全リクエストを PARSE_FAILED にしない）', () => {
+    // 通すと AbortSignal.timeout(NaN) が即時に発火し、職員には「読み取れません
+    // でした」が出続けるだけで、設定の誤りだと分からない。
+    process.env.FORMECHO_AGENT_LOOP_TIMEOUT_MS = 'すぐ';
+    expect(() => resolveAgentLoopTimeoutMs()).toThrow(
+      /FORMECHO_AGENT_LOOP_TIMEOUT_MS/,
+    );
+  });
+
+  it('往復回数の上限で打ち切られ、PARSE_FAILED と stopReason のログになる', async () => {
+    // 上限より多く積む。**尽きたら失敗する形にしない** — 尽きたときの例外は
+    // モデルのエラーなので、検査対象が上限ではなく台本の枯れ方になる。
+    fakeModelScript.write(...Array.from({ length: 14 }, () => NOT_CONFORMING));
+    const log = recordingLogger();
+
+    const response = await invokeBoundary(
+      REQUESTS['ic-card.parse-reservation'],
+      newSessionId(),
+      log,
+    );
+
+    expect(expectError(response).code).toBe('PARSE_FAILED');
+    // 内側のループは上限（10往復）で止まり、作り直しには回らない。回すと
+    // カウンタが戻るぶん予算を2倍に使う。
+    expect(fakeModelScript.calls).toHaveLength(10);
+    expect(fakeModelScript.remaining).toBe(4);
+    // 運用側が「契約に適合しなかった」と区別できるのはこのログだけ。
+    expect(log.warns).toContainEqual(
+      expect.objectContaining({ stopReason: 'limitTurns' }),
+    );
+  });
+
+  it('壁時計の期限で打ち切られ、PARSE_FAILED と stopReason のログになる', async () => {
+    // この設定を足さないと55秒待つテストになる。
+    process.env.FORMECHO_AGENT_LOOP_TIMEOUT_MS = '1';
+    // 台本が時間を使わないと壁時計は発火しない（`model/fake.ts` の `delayMs`）。
+    fakeModelScript.write(
+      ...Array.from({ length: 14 }, () => ({ ...NOT_CONFORMING, delayMs: 5 })),
+    );
+    const log = recordingLogger();
+
+    const response = await invokeBoundary(
+      REQUESTS['ic-card.parse-reservation'],
+      newSessionId(),
+      log,
+    );
+
+    expect(expectError(response).code).toBe('PARSE_FAILED');
+    expect(log.warns).toContainEqual(
+      expect.objectContaining({ stopReason: 'cancelled' }),
+    );
+    // 上限（10往復）より手前で切れている。切れていなければ壁時計が効いていない。
+    expect(fakeModelScript.calls.length).toBeLessThan(10);
   });
 });
 
