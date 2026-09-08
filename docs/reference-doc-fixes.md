@@ -143,7 +143,8 @@
 会議ロジの3タスク（`parse-candidates` / `parse-availability` / `recommend-schedule`）は
 同じドメインエージェント（1つの `AgentSkills` プラグイン）を共有する。`taskId` を教えず、
 日本語の自然文だけから正しい Skill を選べるかを実測した。モデルは `jp.anthropic.claude-sonnet-4-6`。
-再現手順は `agent-app/app/FormEchoAgent/tests/measure-skill-selection.ts`。**#23 の方針に従い
+**`61a482e`（PR #118）時点のコードで実施。** 再現手順だった計測スクリプトは #121 で
+削除したので、追試するなら `git checkout 61a482e` する。**#23 の方針に従い
 合否判定は持たず、観測した数字だけを置く。**
 
 taskId ごとに2件、計6件の日本語入力を通し、`AgentSkills.getActivatedSkills` で実際に
@@ -199,9 +200,11 @@ F-09 が挙げた「画面はどちらの機能か知っているのに AI に�
 
 #### 実測: モデル別（Sonnet 4.6 / Haiku 4.5）の抽出精度とトークン使用量（#44、2026-09-08）
 
+**`61a482e`（PR #118）時点のコードで実施。** 再現手順だった計測スクリプトと入力セットは
+#121 で削除したので、追試するなら `git checkout 61a482e` する。
+
 `ic-card.parse-reservation` の正当な入力4件（日本語、目的4種・行き先4件）を両モデルへ
-同じ形で通した。再現手順は `agent-app/app/FormEchoAgent/tests/measure-model-comparison.ts`。
-**#23 の方針に従い合否判定は持たず、観測した数字だけを置く。**
+同じ形で通した。**#23 の方針に従い合否判定は持たず、観測した数字だけを置く。**
 
 | モデル | 行き先の抽出精度 | 利用目的の抽出精度 | 平均トークン | 平均応答時間 |
 | --- | --- | --- | --- | --- |
@@ -213,11 +216,57 @@ F-09 が挙げた「画面はどちらの機能か知っているのに AI に�
 
 **トークン使用量に約2.5倍の差が出た（Sonnet 約5.8k・Haiku 約14.6k、同一の入力・同一の
 system prompt に対して）。** 内訳は `inputTokens` の差がほぼそのまま（Sonnet 約5.5k・
-Haiku 約14.1k）で、出力側の差は数百トークン程度と小さい。同じ system prompt・同じ
-Structured Output スキーマを渡しているため、入力トークンが2.5倍に開く理由はモデル外部
-（プロンプトの与え方）からは説明できず、**この検証環境では原因を特定していない**。
-コスト試算にはモデルごとの実測値をそのまま使う必要があり、「Haiku は安いモデルだから
-Sonnet よりコストが低い」という単価だけの比較は成り立たない可能性がある。
+Haiku 約14.1k）で、出力側の差は数百トークン程度と小さい。
+
+##### 追測: 入力トークンの差を往復回数で切り分ける（#121、2026-09-08）
+
+**この追測だけは `6a67030`（#121）時点のコードで実施した。** 往復回数を invocation 境界から
+返す配線を足したコミットで、上の実測（`61a482e`）には無い。追試するなら
+`git checkout 6a67030` する — 直後のコミットで計測スクリプトごと畳んでいる。
+
+上の実測は原因を「未特定」のまま閉じていたので、`metrics.latestAgentInvocation.cycles.length`
+（Strands のエージェントループの往復回数。SDK が既に持っているカウンタで、記録は新設して
+いない）を同じ4件で観測した。同じ入力セットを2回まわし、モデルあたり8観測を得ている。
+**#23 の方針に従い合否判定は持たず、観測した数字だけを置く。**
+
+| モデル | 往復回数 | 1往復に収まった回の `inputTokens` | 2往復した回の `inputTokens` |
+| --- | --- | --- | --- |
+| `jp.anthropic.claude-sonnet-4-6` | 8/8 件が1往復 | 約5,480 | （発生せず） |
+| `jp.anthropic.claude-haiku-4-5-20251001-v1:0` | 5/8 件が2往復、3/8 件が1往復 | 約7,020 | 約14,140 |
+
+**差は独立した2つの要因の積になっている。**
+
+1. **往復回数（1〜2倍。件ごとに振れる）** — Haiku は Structured Output を1往復で決められず
+   2往復目に回る回がある。2往復目は1往復目までの会話履歴に加えてその往復の出力も載せて
+   再送されるので、`inputTokens` はほぼ倍になる（1往復のみの回が約7,020、2往復の回が
+   約14,140 で、差分の約7,120 が2往復目ぶん）。Sonnet は2回のランを通して8件すべて1往復
+2. **1往復あたりの差（約1.28倍。常に効く）** — 1往復に収まった回どうしで比べても Haiku
+   約7,020 対 Sonnet 約5,480 で、約1,540トークン開く。**こちらは説明できていない。** 同じ
+   system prompt・同じ Structured Output スキーマ・同じ入力文を、同じ `BedrockModel` の設定
+   （prompt caching なし、`stream: false`）で投げており、リクエスト側に差が見当たらない
+
+**上の実測の「約2.5倍」は固定値ではなく、2往復率で動く。** 同じ4件でも、run ごとに何件が
+2往復に回るかが変わる。倍率は「(1 + 2往復率) × 1.28」でほぼ説明できる。
+
+| run | Haiku の2往復率 | Haiku 平均 `inputTokens` | Sonnet 比（実測） | (1 + 2往復率) × 1.28 |
+| --- | --- | --- | --- | --- |
+| 上の実測（#44） | 4/4（推定） | 約14,100 | 約2.5倍 | 2.56 |
+| 追測 run 1 | 2/4 | 約10,580 | 約1.93倍 | 1.92 |
+| 追測 run 2 | 3/4 | 約12,360 | 約2.26倍 | 2.24 |
+
+**上の実測の2往復率だけは推定である** — 当時は往復回数を記録していない。4件の
+`inputTokens` がいずれも2往復の値（約14,140）に一致することから 4/4 とした。
+
+**倍率そのものが run ごとに動き、動く量が2往復率でほぼ言い当てられる。** これが「入力
+トークンの差の主因は往復回数である」の実質的な裏付けで、逆にいえば**単一の倍率を
+コスト試算に持ち込むのが誤り**である。
+
+**F-10 への回答: 「コスト試算にはモデルごとの実測値をそのまま使う」は残るが、理由が変わる。**
+主因はモデル固有の消費量ではなく **Haiku が Structured Output を一発で返せない確率**であり、
+これはプロンプトの与え方（スキーマの単純化、出力例の追加）で動きうる数字である。**本番設計が
+Haiku を検討するなら、単価表ではなく「1リクエストあたり何往復するか」を先に測る必要がある。**
+往復が毎回1回に収まれば差は1.28倍まで縮み、Haiku と Sonnet の単価差の方が大きくなる。残る
+1.28倍はモデル側の要因と見られるが特定できておらず、プロンプトでは消えない前提で見積もる。
 
 ---
 
@@ -491,7 +540,7 @@ Standard Tier は `crossRegionConfig.guardrailProfileIdentifier` が必須で、
 
 **該当**: Issue #85 の受け入れ条件、F-03（案Aにマイナンバー対応の PII 型が無い）の続き
 
-**事実**: `agent-app/infra`（ADR-0010）でデプロイした Guardrail リソース（`FormEchoGuardrail`、Classic Tier）に対し、`FORMECHO_GUARDRAIL_APPLY_GUARDRAIL=true` / `FORMECHO_GUARDRAIL_INVOKE_CHECKS=false` / `FORMECHO_GUARDRAIL_CUSTOM_REGEX=false`（コード側の正規表現チェックも切り、案Bの `regexesConfig` 単体に絞った状態）で `checkGuardrail` を直接呼び、マイナンバー形式の文字列2種を通した。
+**事実**（**`61a482e`（PR #118）時点のコードで実施。** 案Bのコード経路は ADR-0013 で畳むため、追試するなら `git checkout 61a482e` する）: `agent-app/infra`（ADR-0010）でデプロイした Guardrail リソース（`FormEchoGuardrail`、Classic Tier）に対し、`FORMECHO_GUARDRAIL_APPLY_GUARDRAIL=true` / `FORMECHO_GUARDRAIL_INVOKE_CHECKS=false` / `FORMECHO_GUARDRAIL_CUSTOM_REGEX=false`（コード側の正規表現チェックも切り、案Bの `regexesConfig` 単体に絞った状態）で `checkGuardrail` を直接呼び、マイナンバー形式の文字列2種を通した。
 
 | 入力 | 結果 |
 |---|---|
@@ -504,10 +553,11 @@ Standard Tier は `crossRegionConfig.guardrailProfileIdentifier` が必須で、
 #### 実測: ADR-032「入力検証方式の選択」に数字で答える（#44、2026-09-08）
 
 **本検証環境で実施した。** 入力セット（日本語・英語を対にした正当な入力／Prompt Attack／
-PII／マイナンバー形式の4カテゴリ、`measurement-inputs/`）を、コード側の正規表現チェックを
+PII／マイナンバー形式の4カテゴリ。当時のリポジトリルートの `measurement-inputs/`）を、コード側の正規表現チェックを
 両方とも off にした**案A単体**（`InvokeGuardrailChecks`）と**案B単体**（`ApplyGuardrail`、
 `agent-app/infra` がデプロイした `FormEchoGuardrail`）に通し、判定と finding を直接比べた。
-再現手順は `agent-app/app/FormEchoAgent/tests/measure-guardrail.ts`。**#23 の方針に従い
+**`61a482e`（PR #118）時点のコードで実施。** 再現手順だった計測スクリプトと入力セットは
+#121 で削除したので、追試するなら `git checkout 61a482e` する。**#23 の方針に従い
 合否判定は持たず、観測した数字だけを置く。**
 
 ##### 案A・案Bのブロック一致率（4カテゴリ × 日英、各8件）
@@ -632,7 +682,7 @@ Runtime が実際にこの穴を踏んでいないのは、Structured Output の
 
 **本検証環境で実施すると判断した。** Web Search コネクタは ap-northeast-1 で利用でき（2026-08-14 対応）、`agentcore.json` に宣言して `agentcore deploy` で張れたので、本番設計への申し送りにする理由が無くなった。#23 の Out of Scope の記述はこの判断で更新した。
 
-同じ入力5件を、**設定だけを変えて**（`FORMECHO_WEB_SEARCH_GATEWAY_URL` の有無）両モードに通した。モデルは `jp.anthropic.claude-sonnet-4-6`。再現手順は `agent-app/app/FormEchoAgent/tests/measure-web-search.ts`。**#23 の方針に従い合否判定は持たず、観測した数字だけを置く。**
+同じ入力5件を、**設定だけを変えて**（`FORMECHO_WEB_SEARCH_GATEWAY_URL` の有無）両モードに通した。モデルは `jp.anthropic.claude-sonnet-4-6`。**`61a482e`（PR #118）時点のコードで実施。** 再現手順だった計測スクリプトは #121 で削除したので、追試するなら `git checkout 61a482e` する。**#23 の方針に従い合否判定は持たず、観測した数字だけを置く。**
 
 | 入力 | 無効: 所要時間 | 有効: 所要時間 | 有効: 便の名指し | 検索回数 / `sources` |
 | --- | --- | --- | --- | --- |
