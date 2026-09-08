@@ -54,6 +54,16 @@ export type ModelName = BedrockModelName | typeof FAKE_MODEL_NAME;
 /** ADR-011 によりこの検証環境は ap-northeast-1 に固定する。切り替え口は設けない。 */
 export const AWS_REGION = 'ap-northeast-1';
 
+/**
+ * 既定は `sonnet`。**コストで `haiku` に倒さないこと。**
+ *
+ * WHY: #121 の実測では Haiku の方が1リクエストあたり25〜58%安い（トークンは
+ * 約2.1倍だが単価差3倍がそれを上回る）。それでも Sonnet を既定にするのは、
+ * Haiku が Structured Output を1往復で返せず2往復目に回る率が高い（8観測中5件。
+ * Sonnet は8/8 が1往復）ため。`MAX_STRUCTURED_OUTPUT_ATTEMPTS` は2しかないので、
+ * スキーマに手こずるモデルは PARSE_FAILED に近い側で動くことになる。
+ * 抽出精度自体はこの実測の範囲では差が出ていない（`docs/reference-doc-fixes.md` F-10）。
+ */
 export function resolveModelName(): ModelName {
   const name = process.env.FORMECHO_MODEL ?? 'sonnet';
   if (name === FAKE_MODEL_NAME) return FAKE_MODEL_NAME;
