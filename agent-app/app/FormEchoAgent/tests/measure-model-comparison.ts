@@ -33,6 +33,8 @@ interface Observation {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  /** エージェントループの往復回数。入力トークンの差の原因切り分けに使う（#121）。 */
+  cycles: number;
   elapsedMs: number;
 }
 
@@ -73,6 +75,7 @@ async function run(): Promise<void> {
         inputTokens: invoked.usage.inputTokens,
         outputTokens: invoked.usage.outputTokens,
         totalTokens: invoked.usage.totalTokens,
+        cycles: invoked.cycles,
         elapsedMs,
       });
     }
@@ -88,7 +91,10 @@ async function run(): Promise<void> {
       model,
       destinationAccuracy: accuracyOf((o) => o.destinationCorrect),
       purposeAccuracy: accuracyOf((o) => o.purposeCorrect),
+      avgInputTokens: avg(forModel.map((o) => o.inputTokens)),
+      avgOutputTokens: avg(forModel.map((o) => o.outputTokens)),
       avgTotalTokens: avg(forModel.map((o) => o.totalTokens)),
+      avgCycles: avg(forModel.map((o) => o.cycles)),
       avgElapsedMs: avg(forModel.map((o) => o.elapsedMs)),
     };
   });
