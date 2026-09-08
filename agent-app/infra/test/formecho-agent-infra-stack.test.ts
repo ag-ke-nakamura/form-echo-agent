@@ -30,41 +30,10 @@ test('Runtime 実行ロールに bedrock:InvokeGuardrailChecks を許可する�
   });
 });
 
-test('Guardrail は Classic Tier・新規名前で作られる', () => {
-  synth().hasResourceProperties('AWS::Bedrock::Guardrail', {
-    Name: 'FormEchoGuardrail',
-    ContentPolicyConfig: Match.objectLike({
-      ContentFiltersTierConfig: { TierName: 'CLASSIC' },
-    }),
-  });
-});
-
-test('マイナンバーの正規表現チェックが my_number という名前で登録される', () => {
-  synth().hasResourceProperties('AWS::Bedrock::Guardrail', {
-    SensitiveInformationPolicyConfig: Match.objectLike({
-      RegexesConfig: Match.arrayWith([
-        Match.objectLike({
-          Name: 'my_number',
-          Pattern: String.raw`\d{4}-?\d{4}-?\d{4}`,
-          Action: 'BLOCK',
-        }),
-      ]),
-    }),
-  });
-});
-
-test('ADDRESS / NAME 等の汎用 PII カテゴリは含めない（F-06 の誤検知回避）', () => {
-  const piiEntities = synth().findResources('AWS::Bedrock::Guardrail')['Guardrail'].Properties
-    .SensitiveInformationPolicyConfig.PiiEntitiesConfig as Array<{
-    Type: string;
-  }>;
-  const types = piiEntities.map(entity => entity.Type);
-  expect(types).not.toEqual(expect.arrayContaining(['ADDRESS', 'NAME', 'EMAIL', 'PHONE']));
-});
-
-test('GuardrailVersion が Guardrail を参照して1つ切られる', () => {
-  synth().hasResourceProperties('AWS::Bedrock::GuardrailVersion', {
-    GuardrailIdentifier: Match.anyValue(),
-  });
-  synth().resourceCountIs('AWS::Bedrock::GuardrailVersion', 1);
+// 案A（`InvokeGuardrailChecks`）はリソースレスAPIなので、このスタックが Guardrail
+// リソースを持つのは案Bを復活させたときだけ。
+test('案Bの Guardrail リソースを復活させない（ADR-0013）', () => {
+  const template = synth();
+  template.resourceCountIs('AWS::Bedrock::Guardrail', 0);
+  template.resourceCountIs('AWS::Bedrock::GuardrailVersion', 0);
 });
