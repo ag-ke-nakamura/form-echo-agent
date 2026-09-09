@@ -217,4 +217,4 @@ graph LR
     M --> P3["nextjs-app/<br/>pnpm run dev<br/>:3000"]
 ```
 
-ルートに `package.json` を置かない方針のため、この定義は `mise.toml` の `[tasks.*]` にしか置けない。
+ルートの `package.json` は pnpm workspace の宣言専用でスクリプトを持たない（ADR-0015）ため、この定義は `mise.toml` の `[tasks.*]` に置く。

@@ -13,9 +13,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 pnpm で導入したため）。依存の追加・スクリプト実行は pnpm、`dev` の中身だけが bun。
 `bun install` は使わない（`pnpm-lock.yaml` を無視して `bun.lock` を作ってしまう）。
 
+**このプロジェクトはルートの pnpm workspace のメンバー**（ADR-0015）。`pnpm-lock.yaml` はここには無く
+リポジトリルートに1つあるので、依存の追加・インストールはルートで打つ。
+
 ## Commands
 
-- 依存インストール: `pnpm install`
+- 依存インストール: リポジトリルートで `pnpm install`
 - 開発サーバー（ホットリロード）: `pnpm run dev` — http://localhost:8787
   （フロントエンド・Runtime とまとめて起動するならリポジトリルートで `mise run dev`）
 - 型チェック: `pnpm run typecheck`

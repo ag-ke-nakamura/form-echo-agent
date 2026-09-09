@@ -2,7 +2,9 @@
 
 ## Repository layout
 
-`agent-app/`（AgentCore Runtime）・`hono-app/`（BFF）・`nextjs-app/`（SSG フロントエンド）の3プロジェクトを並べたリポジトリ。共有しているのはハーネス（`.github/`, `lefthook.yml`, `mise.toml`, `.claude/`）だけで、**ルートに `package.json` やワークスペース定義は無い**。入出力スキーマは3プロジェクトがそれぞれ自己完結の複製として持つ（ADR-0011）。
+`agent-app/`（AgentCore Runtime）・`hono-app/`（BFF）・`nextjs-app/`（SSG フロントエンド）の3プロジェクトを並べたリポジトリ。**`hono-app` と `nextjs-app` の2つはルートの pnpm workspace のメンバー**で、`agent-app` は npm 管理のまま外にいる（ADR-0015）。メンバーの宣言は `pnpm-workspace.yaml` にあり、ルートの `package.json` は `packageManager` を固定するだけでスクリプトも依存も置かない。入出力スキーマは3プロジェクトがそれぞれ自己完結の複製として持つ（ADR-0011）。
+
+**`pnpm install` はリポジトリルートで打つ。** `pnpm-lock.yaml` は workspace に1つで、`hono-app/` `nextjs-app/` の中には無い。
 
 構成から読み取れない落とし穴。
 
@@ -12,7 +14,7 @@
 
 ## 3プロセスの起動
 
-`mise run dev` で Runtime・BFF・フロントエンドが並行起動する。ルートに `package.json` を置かない方針のため、この定義は `mise.toml` の `[tasks.*]` にしか置けない。
+`mise run dev` で Runtime・BFF・フロントエンドが並行起動する。ルートの `package.json` は workspace の宣言専用でスクリプトを持たないため、この定義は `mise.toml` の `[tasks.*]` に置く。
 
 | プロセス | ポート | 起動元 |
 | --- | --- | --- |

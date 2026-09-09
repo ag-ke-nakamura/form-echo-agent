@@ -10,6 +10,11 @@ pnpm-debug.log*
 .pnpm-store/
 dist/
 build/
+# next dev は turbopack の root をワークスペースルート（pnpm-workspace.yaml のある場所）と
+# 推論し、ここに .next/ を作る。next.config.ts で root を nextjs-app に固定すると直るように
+# 見えるが、pnpm は next の実体をルートの node_modules/.pnpm に置くので
+# "Could not find the Next.js package" で dev が起動しなくなる。推論のままにして無視する
+.next/
 coverage/
 *.tsbuildinfo
 

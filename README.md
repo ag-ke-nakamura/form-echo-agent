@@ -4,7 +4,7 @@ AWS Bedrock AgentCore を使ったエージェントと、それに付随する�
 
 ## 構成
 
-3つの独立したプロジェクトを並べています。ルートに `package.json` やワークスペース定義はなく、共有しているのは開発ハーネスだけです。
+3つのプロジェクトを並べています。`hono-app` と `nextjs-app` の2つはルートの pnpm workspace のメンバーで、`agent-app` は npm 管理のまま外にいます（ADR-0015）。
 
 | ディレクトリ | 内容 | パッケージ管理 |
 | --- | --- | --- |
@@ -21,13 +21,12 @@ mise install          # node, python, pnpm, bun, lefthook, betterleaks, aws-cli 
 lefthook install      # pre-commit / pre-push フックを有効化
 ```
 
-各プロジェクトの依存は個別に入れます。
+依存を入れます。pnpm の2プロジェクトはリポジトリルートで一度に入り（`pnpm-lock.yaml` は workspace に1つ）、npm の `agent-app` は個別です。
 
 ```sh
+pnpm install
 (cd agent-app/agentcore/cdk && npm ci)
 (cd agent-app/app/FormEchoAgent && npm ci)
-(cd hono-app && pnpm install)
-(cd nextjs-app && pnpm install)
 ```
 
 ## agent-app

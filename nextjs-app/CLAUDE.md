@@ -191,7 +191,7 @@ SSG なので BFF の宛先 `NEXT_PUBLIC_API_BASE_URL` はビルド時に埋め�
 
 ## Commands
 
-- 依存インストール: `pnpm install`
+- 依存インストール: リポジトリルートで `pnpm install`（pnpm workspace のメンバー。ADR-0015）
 - 開発サーバー: `pnpm run dev`
 - ビルド: `pnpm run build`
 - Lint: `pnpm run lint`（ESLint。`eslint.config.mjs`）
