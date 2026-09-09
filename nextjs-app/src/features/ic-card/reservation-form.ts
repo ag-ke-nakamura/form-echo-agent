@@ -1,6 +1,7 @@
 import type {
   ParseReservationInput,
   ParseReservationOutput,
+  RouteCandidate,
   RoundTrip,
 } from "@/lib/contracts/types";
 import type {
@@ -344,8 +345,9 @@ export function reservationInput(fields: FormState): ParseReservationInput {
 }
 
 /**
- * 比較検討の末に採用された経路候補（#100）。**他候補はこの変更では画面に表示しない**
- * ので、ここで選んだ1件の `route`/`fare` だけを「移動経路」「交通費」欄へ写す。
+ * 採用移動経路（#100。CONTEXT.md「採用移動経路」）。この1件の `route`/`fare` を
+ * 「移動経路」「交通費」欄へ写す。**フォームへ入るのは採用した1件だけ**で、その他の
+ * 移動経路候補は内訳に並ぶだけ（#173。切り替える操作は置かない）。
  *
  * `is_selected` がちょうど1件であることは出力契約の `.refine()` が保証する
  * （経路候補が0件のときは何も採用されていない）。
@@ -485,12 +487,50 @@ function searchConditionLine(
   return `${label}：${place ?? UNKNOWN_PLACE}（最寄：${nearest ?? UNKNOWN_PLACE}）`;
 }
 
+/** 定期区間を伝えていて、この候補とは重なっていない回の語（#173）。 */
+const NO_COMMUTER_PASS_OVERLAP = "重複なし";
+
 /**
- * AI提案の内訳（#172。設計書 2節）。**欄の一覧とは別の領域**で、AI が何を調べて
- * なぜそれを選んだかを見せる。いま持つのは検索条件（出発地・目的地とその最寄）だけ。
+ * 移動経路候補1件の行（#173。設計書 2.2・2.3節。CONTEXT.md「移動経路候補」）。職員が AI の判断を検算するので、
+ * 運賃だけでなく所要時間・乗換回数も並べる（少し高いが乗換が少ない候補を自分で選び
+ * 直せる）。
+ *
+ * **採用理由は採用したものだけ。** 採用しなかった候補の `reason` は「なぜ採らなかったか」
+ * なので、
+ * 同じ見出しで並べると比較の軸が候補ごとに変わって読める。
+ *
+ * **定期重複区間は null の回だけ行を落とす**（CONTEXT.md「定期重複区間」）。null は
+ * 職員が定期区間を伝えていない回で、空欄が候補ごとに並ぶと入れ忘れに見える。伝えて
+ * いて重なっていない（空配列）回は「重複なし」と出す — 落とすと、定期券で乗れる区間を
+ * 二重に請求していないかを職員が確かめられない。
+ */
+function candidateLines(candidate: RouteCandidate): string[] {
+  const overlap = candidate.commuter_pass_overlap_sections;
+  return [
+    `経路：${candidate.route}`,
+    `1人あたり合計運賃：${candidate.fare}`,
+    `所要時間：${candidate.duration}`,
+    `乗換回数：${candidate.transfer_count}回`,
+    ...(candidate.is_selected ? [`採用理由：${candidate.reason}`] : []),
+    // 空配列は `join` が空文字列にするので、そこで「重複なし」に倒す。
+    ...(overlap === null
+      ? []
+      : [`定期重複区間：${overlap.join("、") || NO_COMMUTER_PASS_OVERLAP}`]),
+  ];
+}
+
+/**
+ * AI提案の内訳（#172・#173。設計書 2節）。**欄の一覧とは別の領域**で、AI が何を
+ * 調べてなぜそれを選んだかを見せる。検索条件（出発地・目的地とその最寄）と、採用
+ * 移動経路・その他の移動経路候補が並ぶ。
  *
  * **最寄は値が同じでも省かない**（`出発地：霞ヶ関駅（最寄：霞ケ関駅）`）。出る回と
  * 出ない回があると、職員は運賃がどの区間の額なのかを必要な回に確かめられない。
+ *
+ * **その他の移動経路候補から採用を切り替える操作は置かない**（#173）。この関数は描画の
+ * たびに呼ばれる
+ * 純粋な導出で、選択状態を持たせると3タブ共有の部品（`AiPreview`）に状態が入る。
+ * 切り替えたい職員は、候補が画面に残っているので反映後のフォームで写せる。
  *
  * **経路候補が0件なら空を返す。** 何も調べられなかった回に見出しだけが残ると
  * 「調べたが根拠が無い」に見える。理由は AI の `message` が言う。
@@ -499,6 +539,10 @@ export function reservationBreakdown(
   result: ParseReservationOutput,
 ): BreakdownSection[] {
   if (result.route_candidates.length === 0) return [];
+  const selected = selectedRouteCandidate(result);
+  const others = result.route_candidates.filter(
+    (candidate) => !candidate.is_selected,
+  );
   return [
     {
       key: "search-conditions",
@@ -516,6 +560,26 @@ export function reservationBreakdown(
         ),
       ],
     },
+    /*
+      契約の `.refine()` が「候補があればちょうど1件が採用」を保証するので、ここは
+      実際には必ず1件になる。それでも条件で書くのは、`find` の戻りが型では
+      `undefined` を含むためで、非 null 断定を置くより外れたときの挙動が読める。
+    */
+    ...(selected === undefined
+      ? []
+      : [
+          {
+            key: "selected-route",
+            label: "採用移動経路",
+            lines: candidateLines(selected),
+          },
+        ]),
+    ...others.map((candidate, index) => ({
+      key: `route-candidate-${index + 1}`,
+      // 番号を振るのは、候補ごとの行が同じ見出しで続くと境目が読めないため。
+      label: `その他の移動経路候補${index + 1}`,
+      lines: candidateLines(candidate),
+    })),
   ];
 }
 

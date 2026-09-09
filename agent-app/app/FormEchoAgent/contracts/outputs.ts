@@ -219,6 +219,11 @@ export const parseReservationOutputSchema = z
       .describe(
         `同行者の人数。職員自身を含まない（「田中さんと2人で」は1、「同行者2人」は2）。読み取れない場合は null。${MAX_COMPANIONS}人を超える場合も null`,
       ),
+    /**
+     * 移動経路候補（#100。CONTEXT.md「移動経路候補」）。**件数の下限は置かない**（#173）。
+     * Skill は職員が比べられるよう最低3件を目安と言うが、契約が3件を要求すると、1区間で
+     * 選択肢が無い回の1件と、経路を引けなかった回の空配列が弾かれる — どちらも正しい応答。
+     */
     route_candidates: z
       .array(routeCandidateSchema)
       .max(MAX_ROUTE_CANDIDATES)
