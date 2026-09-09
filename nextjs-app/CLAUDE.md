@@ -8,8 +8,8 @@ SSG なので BFF の宛先 `NEXT_PUBLIC_API_BASE_URL` はビルド時に埋め�
 
 ## ディレクトリ（ADR-0016）
 
-`src/` を feature で切る。`src/app/` はルートと組み立てだけを持ち、機能は**交通IC と会議ロジの
-2 feature**。会議の内側は画面ごとに割る。
+`src/` を feature で切る。`src/app/` はルートと組み立てだけを持ち、機能は**交通IC・会議ロジ・
+プロンプト検証の3 feature**。会議の内側は画面ごとに割る。
 
 ```
 src/
@@ -21,14 +21,15 @@ src/
     availability/         参加可否回答
     recommend/            候補日提案
     shared/               3画面が読む会議情報・2画面が読む件数の上限
+  features/playground/    プロンプト検証（ADR-0020。フォームも AI入力アシスタントも持たない）
   components/ai-assistant/ 抽出系3タブが共有する AI入力アシスタント一式
   components/             タブ見出し・区切り線・フォームの枠
   lib/                    BFF クライアント・プレビューの語彙・エラーの案内・出典
   lib/contracts/          入出力契約の複製（ADR-0011）
 ```
 
-**4タブだが feature は2つ。** タブ2〜4（会議ロジ）は会議情報・候補日程・件数の上限を共有して
-いるので、4 feature に割るとそれらが全部 feature 跨ぎになり、共有先が top-level しか無くなる
+**5タブだが feature は3つ。** タブ2〜4（会議ロジ）は会議情報・候補日程・件数の上限を共有して
+いるので、タブごとに割るとそれらが全部 feature 跨ぎになり、共有先が top-level しか無くなる
 （会議ドメイン固有のものが「共有」に溜まって元のフラット構成が名前を変えて復活する）。
 
 **feature の境界を跨ぐ import は `@/` 始まり、feature 内は相対。** `@/*` は `tsconfig.json` と
@@ -163,8 +164,9 @@ src/
   **`sessionId` をタブごとにここで持つ**（タブは別々の会話として進む）。
   候補日提案タブはこれを使わず、`recommend-panel.tsx` がタブを開いた時に1回だけ推論する
 - `ai-assistant/ai-notice.tsx` — 生成中の表示・失敗の表示（`role="alert"`
-  `aria-live="assertive"`）・**プレビュー（`AiPreview`）**・反映の報告。失敗の表示は
-  AI入力アシスタントと候補日提案タブの両方から引く
+  `aria-live="assertive"`）・**プレビュー（`AiPreview`）**・反映の報告・**Web 検索の出典の一覧
+  （`SourceList`）**。失敗の表示は AI入力アシスタントと候補日提案タブの両方から、出典の一覧は
+  交通ICのプレビューとプロンプト検証タブの両方から引く（#202）
 - `ai-assistant/field-source.tsx` — 値の出どころ（`"default"` / `"manual"` / `"ai"`）の印と、
   再生成の報告（`ApplyReport`）。**タブ間で共有するのはこれだけ**で、フォームの状態モデルは
   タブごとに分ける（汎用のフォーム状態モデルを作らない）。`"default"` は**画面が最初から

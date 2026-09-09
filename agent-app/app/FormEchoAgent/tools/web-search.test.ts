@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { WEB_SEARCH_MAX_CALLS } from '../config.js';
 import {
   createWebSearchTool,
+  toCitations,
   type WebSearchBackend,
   type WebSearchHit,
   webSearchesUsed,
+  webSearchHits,
   withWebSearchBudget,
 } from './web-search.js';
 
@@ -233,5 +235,80 @@ describe('createWebSearchTool', () => {
     // 丸ごと入る側に置く — 短く切ると号数の対が落ちて、モデルが便を作る。
     expect(result.results[0]?.text.length).toBeLessThan(3_100);
     expect(result.results[0]?.text.length).toBeGreaterThan(2_500);
+  });
+});
+
+/**
+ * 応答封筒に載る出典（`citations`。#46・#202）。**境界越しには言えない** — 境界の出力に
+ * 出るのは出来上がった一覧だけで、それが本当に取得した結果から来ているのか、モデルが
+ * 書いた `sources` から来ているのかを区別できない。
+ *
+ * 交通ICと検証ドメインの2ドメインが同じものを引く（ADR-0020）。**両者で違うのは
+ * 番号を画面に出すかどうかだけ**で、一覧そのものはこの1つの関数が作る。
+ */
+describe('toCitations', () => {
+  it('出典（タイトル）とリンクだけを残し、本文は落とす', () => {
+    const citations = toCitations([
+      hit({ publishedDate: '2026-08-27' }),
+      hit({ url: 'https://www.example.jp/fare', title: '運賃表' }),
+    ]);
+
+    // 表示の義務が掛かっているのは出典とリンクであって本文ではない。載せると
+    // 応答が1件あたり数千字ぶん太る。
+    expect(citations).toEqual([
+      {
+        title: '東京から新大阪 時刻表',
+        url: 'https://www.example.jp/diagram',
+        publishedDate: '2026-08-27',
+      },
+      { title: '運賃表', url: 'https://www.example.jp/fare' },
+    ]);
+  });
+
+  it('タイトルが空の結果は URL で代える', () => {
+    const citations = toCitations([hit({ title: '  ' })]);
+
+    // 出典の欄が空のリンクは、職員にはどこの情報か分からない。
+    expect(citations).toEqual([
+      {
+        title: 'https://www.example.jp/diagram',
+        url: 'https://www.example.jp/diagram',
+      },
+    ]);
+  });
+
+  it('正規化して同じになる URL は初出の1件にまとめる', () => {
+    const citations = toCitations([
+      hit({ url: 'https://www.example.jp/a', title: '初出' }),
+      hit({ url: 'https://WWW.Example.jp:443/a', title: '同じページ' }),
+    ]);
+
+    // 画面も `new URL().href` で重複を落とすので、ここで2件残すと出典番号が
+    // 画面で引けなくなる（#174）。
+    expect(citations).toEqual([
+      { title: '初出', url: 'https://www.example.jp/a' },
+    ]);
+  });
+
+  it('上限を超えて検索できなかった分は出典に載らない', async () => {
+    // クエリごとに別のページを返す。上限が効いた回に一覧がどこまで伸びるかを見る。
+    const tool = createWebSearchTool(async (query) => [
+      hit({ url: `https://www.example.jp/${encodeURIComponent(query)}` }),
+    ]);
+
+    const citations = await withWebSearchBudget(async () => {
+      for (let i = 0; i <= WEB_SEARCH_MAX_CALLS; i++) {
+        await callTool(tool, `クエリ${i}`);
+      }
+      return toCitations(webSearchHits());
+    });
+
+    // **出典は実際に取得した結果そのもの**なので、断った検索のページは載らない。
+    // 上限（`WEB_SEARCH_MAX_CALLS`）は交通ICと検証ドメインで共有する1つの予算で、
+    // 張るのは `invokeTask` がリクエスト全体を包む1箇所だけである。
+    expect(citations).toHaveLength(WEB_SEARCH_MAX_CALLS);
+    expect(citations.at(-1)?.url).toContain(
+      encodeURIComponent(`クエリ${WEB_SEARCH_MAX_CALLS - 1}`),
+    );
   });
 });

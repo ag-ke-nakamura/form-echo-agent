@@ -606,15 +606,24 @@ describe('Web 検索（#46）', () => {
     expect(lastCall().toolNames).toContain('strands_structured_output');
   });
 
-  it('検証ドメインにも Web 検索が渡る', async () => {
+  it('検証ドメインにも Web 検索が渡り、出典の欄を持つ応答になる', async () => {
     useWebSearchGateway();
     fakeModelScript.write({ kind: 'text', text: '検索して答えました。' });
 
-    expectSuccess(await invokeBoundary(REQUESTS[FREE_PROMPT_TASK_ID]));
+    const response = expectSuccess(
+      await invokeBoundary(REQUESTS[FREE_PROMPT_TASK_ID]),
+    );
 
     // 交通ICと同じ Web 検索を持つ（ADR-0020）。**Structured Output のツールは
     // 渡らない**ので、この経路のツールは検索1つだけになる。
     expect(lastCall().toolNames).toEqual(['web_search']);
+    /*
+      台本は検索をしないので0件。**欄そのものは在ることを見る**（#202）— 落ちると
+      画面が出典の一覧を描けず、検索を使った回答を出典なしで職員に見せることになる。
+      中身が取得した結果から来ていることは境界越しには言えないので
+      `tools/web-search.test.ts` の `toCitations` が見る。
+    */
+    expect(response.citations).toEqual([]);
   });
 
   it('会議ロジには Gateway が設定されていてもツールが渡らない', async () => {
