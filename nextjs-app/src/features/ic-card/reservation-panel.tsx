@@ -22,6 +22,8 @@ import {
   FIELD_LABELS,
   type FieldName,
   type FormState,
+  PLACE_PLACEHOLDER,
+  PLACE_SUGGESTIONS,
   removeCompanion,
   reservationBreakdown,
   reservationInput,
@@ -120,17 +122,25 @@ export function ReservationPanel() {
             state={fields.return_at}
             onChange={setField}
           />
+          {/*
+            出発地・目的地は7駅から選べて自由記述もできる（#171）。同じ欄に両方を
+            載せるので、選択肢は `<datalist>` の候補であって値域ではない。
+          */}
           <Field
             name="origin"
             type="text"
             state={fields.origin}
             onChange={setField}
+            placeholder={PLACE_PLACEHOLDER}
+            suggestions={PLACE_SUGGESTIONS}
           />
           <Field
             name="destination"
             type="text"
             state={fields.destination}
             onChange={setField}
+            placeholder={PLACE_PLACEHOLDER}
+            suggestions={PLACE_SUGGESTIONS}
           />
           {/* 移動経路は区間をまたぐ長い文字列になりうるので、2列ぶん使う（#86）。 */}
           <div className="sm:col-span-2">
@@ -301,16 +311,32 @@ type FieldProps = {
   onChange: (name: FieldName, value: string) => void;
 };
 
+/**
+ * 入力欄。`suggestions` を渡すと候補付きになる。
+ *
+ * WHY `<datalist>` か: 選択肢と自由記述を**同じ欄**に載せられる唯一の素の部品である
+ * （#171）。`<select>` と入力欄を並べると職員がどちらに書くのかを選ぶことになり、
+ * 選んだ値を入力欄へ写す判断が画面に生える。候補を選んでも `onChange` は普通に
+ * 発火するので、`setFieldValue` を通って `"manual"` に落ちる。
+ */
 function Field({
   name,
   type,
   state,
   onChange,
-}: FieldProps & { type: "date" | "datetime-local" | "text" | "textarea" }) {
+  placeholder,
+  suggestions,
+}: FieldProps & {
+  type: "date" | "datetime-local" | "text" | "textarea";
+  placeholder?: string;
+  suggestions?: readonly string[];
+}) {
   const id = useId();
+  const listId = useId();
   const shared = {
     id,
     value: state.value,
+    placeholder,
     onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       onChange(name, event.target.value),
     className: `mt-1.5 ${INPUT_CLASS}`,
@@ -326,7 +352,18 @@ function Field({
       {type === "textarea" ? (
         <textarea rows={2} {...shared} />
       ) : (
-        <input type={type} {...shared} />
+        <input
+          type={type}
+          list={suggestions === undefined ? undefined : listId}
+          {...shared}
+        />
+      )}
+      {suggestions !== undefined && (
+        <datalist id={listId}>
+          {suggestions.map((place) => (
+            <option key={place} value={place} />
+          ))}
+        </datalist>
       )}
     </div>
   );

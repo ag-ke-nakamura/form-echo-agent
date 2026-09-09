@@ -8,10 +8,12 @@ import {
   addCompanion,
   applyToReservation,
   cardCount,
+  DEFAULT_ORIGIN,
   DEFAULT_ROUND_TRIP,
   EMPTY_FORM,
   EMPTY_RESERVATION,
   type FormState,
+  PLACE_SUGGESTIONS,
   removeCompanion,
   type ReservationState,
   reservationBreakdown,
@@ -306,13 +308,30 @@ describe("applyToReservation", () => {
 
   /* 初期状態は「既定値」。手入力ではないので AI が上書きできる（ADR-0018）。 */
   it("フォームの初期状態は既定値で、AI が上書きできる", () => {
-    expect(EMPTY_FORM.origin).toEqual({ value: "", source: "default" });
+    expect(EMPTY_FORM.origin).toEqual({
+      value: DEFAULT_ORIGIN,
+      source: "default",
+    });
     const { next, report } = applyToReservation(
       EMPTY_RESERVATION,
       output({ origin: "東京" }),
     );
     expect(next.fields.origin).toEqual({ value: "東京", source: "ai" });
     expect(report.preserved).toEqual([]);
+  });
+
+  /* プレプリントするのは出発地だけ（#171）。 */
+  it("目的地はプレプリントしない", () => {
+    expect(EMPTY_FORM.destination).toEqual({ value: "", source: "default" });
+  });
+
+  /*
+    `<datalist>` はいまの入力値で候補を絞るので、表記が割れると**プレプリントの
+    入った出発地欄で7駅が1件も出ない**（#171）。選んだ値は `is_manual: true` で
+    Runtime へ渡り AI が都道府県を補えないので、一覧側こそ曖昧にできない。
+  */
+  it("出発地の既定値は候補の一覧にも同じ表記で載る", () => {
+    expect(PLACE_SUGGESTIONS).toContain(DEFAULT_ORIGIN);
   });
 
   it("同じ値を読み取り直した欄は更新に数えない", () => {
@@ -338,7 +357,7 @@ describe("reservationInput", () => {
   it("既定値のままなら手入力ではない（AI が直せる）", () => {
     expect(reservationInput(EMPTY_FORM)).toEqual({
       // 空欄も与件として渡す（#170）。渡さないと AI は古いフォームを最後の与件と読む。
-      origin: { value: "", is_manual: false },
+      origin: { value: DEFAULT_ORIGIN, is_manual: false },
       destination: { value: "", is_manual: false },
       round_trip: { value: DEFAULT_ROUND_TRIP, is_manual: false },
     });
