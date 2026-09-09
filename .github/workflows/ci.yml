@@ -91,6 +91,14 @@ jobs:
       # ビルドを呼ばない代わりに、ここでは人が打つのと同じ mise のタスクを踏む
       # （`NEXT_PUBLIC_API_BASE_URL=""` をここに書き写すと2箇所に並ぶ）。
       # install はリポジトリルートで打つ（ADR-0015）。
+      #
+      # この install は BFF の分も兼ねる（#139）。cdk synth は esbuild で
+      # hono-app/src/lambda.ts の import グラフを（AWS SDK ごと）バンドルするため、
+      # hono-app の node_modules が無いと "Could not resolve" で落ちる。
+      # agent-app/agentcore/cdk のジョブが npm ci を2回打っているのと同じ事情だが、
+      # hono-app は workspace のメンバーなのでルートの1回で足りる — 別途の
+      # install ステップは要らない。上の npm test は影響を受けない（バンドルする
+      # のは infra/test/fixtures 配下の何も import しないエントリ）。
       - run: pnpm install --frozen-lockfile
         working-directory: .
       - run: mise run deploy:web

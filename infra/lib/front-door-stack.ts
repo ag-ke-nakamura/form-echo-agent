@@ -1,15 +1,25 @@
 import { existsSync } from 'node:fs';
 import * as path from 'node:path';
-import { CfnOutput, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
+import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
 import {
+  AllowedMethods,
+  CachePolicy,
   Distribution,
   Function as CloudFrontFunction,
   FunctionCode,
   FunctionEventType,
   FunctionRuntime,
+  OriginRequestCookieBehavior,
+  OriginRequestHeaderBehavior,
+  OriginRequestPolicy,
+  OriginRequestQueryStringBehavior,
   ViewerProtocolPolicy,
 } from 'aws-cdk-lib/aws-cloudfront';
-import { S3BucketOrigin } from 'aws-cdk-lib/aws-cloudfront-origins';
+import { FunctionUrlOrigin, S3BucketOrigin } from 'aws-cdk-lib/aws-cloudfront-origins';
+import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
+import { FunctionUrlAuthType, Runtime } from 'aws-cdk-lib/aws-lambda';
+import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
+import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { BlockPublicAccess, Bucket, BucketEncryption } from 'aws-cdk-lib/aws-s3';
 import { BucketDeployment, Source } from 'aws-cdk-lib/aws-s3-deployment';
 import { Construct } from 'constructs';
@@ -22,6 +32,34 @@ export interface FormEchoFrontDoorStackProps extends StackProps {
    * 依存させると、クローン直後や CI で `npm test` が「まだビルドしていない」だけで落ちる。
    */
   readonly frontendOutDir: string;
+
+  /**
+   * BFF の Lambda エントリ（`hono-app/src/lambda.ts`）。
+   *
+   * WHY 引数で受けるか: `frontendOutDir` と同じ理由に加えて、テストを小さなフィクスチャで
+   * 回せるようにするため。本物を指すと `npm test` が `hono-app` の node_modules を要求し、
+   * synth のたびに AWS SDK ごと esbuild で束ねる時間を払う。実際のエントリが束ねられるかは
+   * CI の `cdk synth` が見る。
+   */
+  readonly bffEntry: string;
+
+  /**
+   * BFF のバンドルが基準にする lock file。
+   *
+   * WHY 明示するか: `bffEntry` はこのプロジェクトの外（`hono-app`）にある。CDK は
+   * lock file を渡されないと cwd から探すので projectRoot が `infra` になり、
+   * 「entryPath should be under projectRoot」で synth ごと落ちる。projectRoot は
+   * この lock file の置き場所（= workspace ルート）になる。
+   */
+  readonly bffDepsLockFilePath: string;
+
+  /**
+   * BFF が叩くデプロイ済み Runtime の ARN。`readRuntimeArn` で状態ファイルから解決した値。
+   *
+   * WHY 引数で受けるか: 出所（`agent-app` のデプロイ状態ファイル）を読むのは `bin/` の
+   * 仕事にする。スタックがファイルを読むと、テストが実際のデプロイ状態に依存する。
+   */
+  readonly runtimeArn: string;
 }
 
 /**
@@ -66,8 +104,8 @@ function basicAuthFunctionCode(password: string): string {
  * デプロイ済み検証環境の front door（ADR-0014）。
  *
  * 参照アーキテクチャ（ALB + ECS Fargate）には従わず、CloudFront 単一オリジンで
- * 静的ファイルを配信する。BFF の Lambda Function URL を `/api/*` に足すのはこの
- * スタックの続き（#139）。その behavior にも Basic 認証の Function を付けること。
+ * 静的ファイルを配信し、同じディストリビューションの `/api/*` に BFF の Lambda
+ * Function URL を繋ぐ（#139）。オリジンが1つなので CORS は発生しない。
  *
  * `agent-app/infra` には相乗りしない。ADR-0010 がその範囲を「`agentcore.json` に
  * 乗らない**エージェント**リソース」と定義しているため。
@@ -110,6 +148,69 @@ export class FormEchoFrontDoorStack extends Stack {
       comment: 'FormEcho デプロイ済み検証環境の Basic 認証',
     });
 
+    // BFF を Lambda（Node 22 のマネージドランタイム）に載せる（#139）。Function URL を
+    // 同じディストリビューションの `/api/*` に繋ぐので、オリジンは1つのままで CORS は
+    // 発生せず、パスも透過するので BFF 側のルーティング改修は0行になる。
+    const bff = new NodejsFunction(this, 'BffFunction', {
+      entry: props.bffEntry,
+      depsLockFilePath: props.bffDepsLockFilePath,
+      runtime: Runtime.NODEJS_22_X,
+      // 既定の128MBだと、AWS SDK を含むバンドルの読み込みでコールドスタートが数秒に伸びる。
+      memorySize: 512,
+      // 時間予算は触らない（#139）。連鎖は Runtime の自己打ち切り55秒（#125）→ BFF 60秒 →
+      // 画面60秒。Runtime が先に諦めるので、ここが60秒でも張り付かない。
+      timeout: Duration.seconds(60),
+      // 保持期間を設定しないと「無期限」になる。検証環境のログを永久に貯める理由が無い。
+      logGroup: new LogGroup(this, 'BffLogGroup', {
+        retention: RetentionDays.ONE_MONTH,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }),
+      environment: {
+        // `FORMECHO_RUNTIME_CLIENT` が不正なら BFF はコールドスタートで落ちる
+        // （`hono-app/src/index.ts` が起動時に検証する）。リクエスト時に落とすと
+        // 設定ミスが RUNTIME_UNAVAILABLE として出て Runtime 障害と区別が付かない。
+        FORMECHO_RUNTIME_CLIENT: 'deployed',
+        FORMECHO_RUNTIME_ARN: props.runtimeArn,
+      },
+      bundling: {
+        // AWS SDK を外部化しない。`@aws-sdk/client-bedrock-agentcore` は新しいサービスの
+        // クライアントで、マネージドランタイムに同梱される版に頼ると、ランタイムが
+        // 更新された回に「動いていたものが解決できない」形で壊れ得る。
+        externalModules: [],
+      },
+    });
+
+    // Runtime を呼ぶ権限。`*` にはしない — 他の Runtime を叩けても得るものが無く、
+    // 事故のときに請求だけが増える。エンドポイント修飾子付きの ARN も来るので配下も許す。
+    bff.addToRolePolicy(
+      new PolicyStatement({
+        actions: ['bedrock-agentcore:InvokeAgentRuntime'],
+        resources: [props.runtimeArn, `${props.runtimeArn}/*`],
+      })
+    );
+
+    // Function URL は公開 DNS 名を持つが公開エンドポイントにはしない。`AWS_IAM` にすると
+    // 署名の無いリクエストは 403 になり、CloudFront の OAC だけが SigV4 で署名して通れる。
+    // resource policy（OAC 付きオリジンから CDK が自動で張る）は principal を CloudFront の
+    // サービスプリンシパルに、`AWS:SourceArn` をこのディストリビューションに絞るので、
+    // この CloudFront 以外から BFF を叩く経路が閉じる。
+    const bffFunctionUrl = bff.addFunctionUrl({ authType: FunctionUrlAuthType.AWS_IAM });
+
+    /**
+     * `/api/*` がビューアの `Authorization` を origin へ転送しないための origin request policy。
+     *
+     * OAC は origin へのリクエストで `Authorization` を自分の SigV4 署名に差し替える。#138 の
+     * Basic 認証が読むのは同じヘッダなので、転送すると署名と衝突する。CDK 既定の
+     * `AllViewerExceptHostHeader` は `Authorization` を含むため使えない。`Host` も落とす
+     * （署名は Function URL のドメインに対して行われる）。
+     */
+    const apiOriginRequestPolicy = new OriginRequestPolicy(this, 'ApiOriginRequestPolicy', {
+      headerBehavior: OriginRequestHeaderBehavior.denyList('authorization', 'host'),
+      queryStringBehavior: OriginRequestQueryStringBehavior.all(),
+      cookieBehavior: OriginRequestCookieBehavior.all(),
+      comment: 'FormEcho /api/*: ビューアの Authorization を OAC の署名にぶつけない',
+    });
+
     // 単一ルートの SSG なので default root object だけで足りる。ディレクトリ
     // インデックスを書き換える CloudFront Function は要らない。
     const distribution = new Distribution(this, 'Distribution', {
@@ -117,6 +218,23 @@ export class FormEchoFrontDoorStack extends Stack {
         origin: S3BucketOrigin.withOriginAccessControl(bucket),
         viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         functionAssociations: [{ function: basicAuth, eventType: FunctionEventType.VIEWER_REQUEST }],
+      },
+      additionalBehaviors: {
+        '/api/*': {
+          origin: FunctionUrlOrigin.withOriginAccessControl(bffFunctionUrl, {
+            // 時間予算の外側に置く（既定は30秒で、Runtime の55秒より手前で切れてしまう）。
+            // 60秒は origin response timeout の既定クォータ内なので上限緩和は要らない。
+            readTimeout: Duration.seconds(60),
+          }),
+          viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          // BFF は POST で受ける。既定（GET/HEAD）のままだと 405 になる。
+          allowedMethods: AllowedMethods.ALLOW_ALL,
+          cachePolicy: CachePolicy.CACHING_DISABLED,
+          originRequestPolicy: apiOriginRequestPolicy,
+          // 静的ファイルだけ守って `/api/*` を開けると Bedrock の課金口が無認証で公開される。
+          // default behavior と同じ Function を使い回す（#138）。
+          functionAssociations: [{ function: basicAuth, eventType: FunctionEventType.VIEWER_REQUEST }],
+        },
       },
       defaultRootObject: 'index.html',
       comment: 'FormEcho デプロイ済み検証環境',

@@ -41,6 +41,10 @@ Lint/format は [Biome](https://biomejs.dev)（`biome.json`）。biome 本体は
   Bun のランタイムがこれを拾って HTTP を受ける。明示的な listen 呼び出しは存在しない。
   `Hono` インスタンス（`app`）は名前付きでも export してある — テストが `app.request()` で
   プロセスを立てずにこの境界を叩くため（#23 のシームその2）。
+- `src/lambda.ts` — Lambda（Node 22 のマネージドランタイム）のエントリ（#139）。`app` を
+  Hono の Lambda アダプタに渡すだけで、判断は1つも持たない。Bun 向けのエントリ
+  （`src/index.ts` の default export）はローカル開発用に残してある。宛先は CloudFront の
+  `/api/*` behavior にパス透過で繋がるので、ルーティングは両者で同じ。
 - `src/lib/runtime-transport.ts` — Runtime との**通信だけ**を担う層（`RuntimeTransport`）。
   宛先と実装は `FORMECHO_RUNTIME_CLIENT` が決める（`local` / `fake` / `deployed`）。`deployed`
   はデプロイ済み Runtime を `@aws-sdk/client-bedrock-agentcore` 経由で SigV4 で叩く（#45）。
