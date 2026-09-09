@@ -21,6 +21,7 @@ CONTEXT.md が挙げるこのリポジトリの目的は「プロンプト・Gua
 ## Consequences
 
 - **Function URL は公開 DNS 名だが、公開エンドポイントにはしない。** `authType` を `AWS_IAM` にし、CloudFront の OAC が SigV4 で署名する。Function URL の resource policy は principal `cloudfront.amazonaws.com` かつ `AWS:SourceArn` がこのディストリビューションのものだけを許すので、**この CloudFront 以外から叩く経路が閉じる**
+- **OAC 越しの POST は本文ハッシュを呼び出し側が載せる。** AWS のドキュメントは「PUT / POST では利用者が本文の SHA256 を計算して `x-amz-content-sha256` に入れて CloudFront へ送る必要がある。Lambda は unsigned payload をサポートしない」と明記している。**したがって上の「フロントのコード改修は0行」は成り立たず、`app/lib/api.ts` が `hc` に渡す `fetch` でこのヘッダを載せる**（#139 で判明）。ローカル開発でも常に載せる — 環境で分岐すると「デプロイ済みでだけ 403」になり手元では気付けない
 - **OAC は `Authorization` ヘッダを自分の署名で上書きする。** Basic 認証（CloudFront Function・viewer request）が読むのは同じヘッダなので、origin request policy でビューアの `Authorization` を**転送しない**必要がある。両立するが、片方を足すときにもう片方を壊しやすい組み合わせとして残る
 - **`middleware/auth.ts` は素通しのまま。** 本番の JWT 検証を実装する代わりに、CloudFront の手前の Basic 認証で Bedrock の課金口を閉じる。`auth.ts` のコメントが言う「相手が決まっていて検証の余地がない」が有効な間はこれで足り、経路（ミドルウェアの差し込み口）は変わらない
 - **応答ストリーミングの余地を1つ手放していない。** BFF は `c.json()` で一括応答なので `handle` + 既定の `BUFFERED` を使うが、将来 Runtime の応答を流すなら `streamHandle` + `invokeMode: RESPONSE_STREAM` に切り替えられる。ALB / API GW を選んだ場合と違い、この切り替えは front door を作り直さずに済む

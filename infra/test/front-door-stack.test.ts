@@ -285,6 +285,10 @@ describe('BFF（Lambda + Function URL）', () => {
 
 // ARN は context にもスタックのコードにも手写ししない（#139）。出所は
 // `agentcore deploy` の結果としてコミットされている状態ファイルだけ。
+//
+// ここだけが実物の状態ファイルを読む。スタック側は受け取った ARN しか見ないので、
+// 上のテストは作り話の ARN で回る — 「形の検証」と「コミット済みの出所が生きているか」
+// を分けてある。
 describe('Runtime の ARN の解決', () => {
   const DEPLOYED_STATE_PATH = path.join(__dirname, '..', '..', 'agent-app', 'agentcore', '.cli', 'deployed-state.json');
 

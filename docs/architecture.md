@@ -184,7 +184,7 @@ graph LR
 
 ## 7. 本番想定（参照アーキテクチャ・未実装）
 
-`agent-app/agentcore/aws-targets.json` が空のため **`agentcore deploy` と `cdk synth` は実行できない**。以下は `temp/00-arch-design.md` が定める到達点であって、このリポジトリの現状ではない。
+以下は `temp/00-arch-design.md` が定める到達点であって、このリポジトリの現状ではない。実際に AWS 上で動いているものは §8。
 
 ```mermaid
 graph LR
@@ -203,12 +203,36 @@ graph LR
 
 現状との差分。
 
-- **認証** — `middleware/auth.ts` は素通し。本番は GSS / Entra の JWT 検証とテナント識別が入る
-- **Runtime クライアント** — `local`（HTTP）のみ。デプロイ済み Runtime を SigV4 で叩く `deployed` を `runtime-transport.ts` に足す
-- **Guardrail チェック** — 未実装。BFF ではなく Runtime のモデル呼び出し前後に置くと決めてある（ADR-0001）
+- **front door** — ALB + ECS Fargate は据え置きの到達点で、デプロイ済み検証環境は CloudFront + Lambda Function URL を選んだ（ADR-0014。決め手は API Gateway の29秒ではなく時間予算そのもの）。本番へ持っていけるのは `hono-app` の中身と入出力契約であって CDK スタックではない
+- **認証** — `middleware/auth.ts` は素通し。本番は GSS / Entra の JWT 検証とテナント識別が入る。検証環境はその代わりに front door の手前で Basic 認証を掛ける（#138）
 - **Memory** — 会話履歴はプロセス内の LRU（128セッション）で、コールドスタートで消えるベストエフォート。永続化するなら AgentCore Memory を付ける
 
-## 8. ローカルの3プロセス
+## 8. デプロイ済み検証環境（実装）
+
+ブラウザから URL を開いて触れる状態。front door はルートの `infra/`（ADR-0014）、Runtime と Gateway は `agentcore deploy`、Guardrail は `agent-app/infra`（ADR-0010）が作る。
+
+```mermaid
+graph LR
+    U["職員のブラウザ"] -->|"Basic 認証<br/>CloudFront Function（viewer request）"| CF["CloudFront<br/>（単一オリジン）"]
+    CF -->|"default behavior<br/>OAC + SigV4"| S3["S3（非公開）<br/>SSG 静的ファイル"]
+    CF -->|"/api/*<br/>OAC + SigV4"| FU["Lambda Function URL<br/>authType: AWS_IAM"]
+    FU --> BFF["BFF（Node 22）<br/>hono-app/src/lambda.ts"]
+    BFF -->|"SigV4<br/>InvokeAgentRuntime"| RT["AgentCore Runtime<br/>microVM"]
+    RT --> BR["Bedrock Claude<br/>ap-northeast-1（jp. 推論プロファイル）"]
+    RT --> GR["Bedrock Guardrail"]
+    RT -->|"第3段・交通ICのみ"| GW["AgentCore Gateway → Websearch"]
+    BFF --> CW["CloudWatch Logs"]
+    RT --> CW
+```
+
+本番想定（§7）と違うところ。
+
+- **オリジンは CloudFront 1つ。** `/api/*` がパス透過で BFF に届くので CORS が発生せず、`NEXT_PUBLIC_API_BASE_URL` は空文字（相対パス）でよい。フロントエンドと BFF のコード改修は0行
+- **Function URL は公開 DNS 名だが公開エンドポイントではない。** `authType` は `AWS_IAM` で、resource policy が principal と `AWS:SourceArn` の両方でこの CloudFront に絞る。**OAC は `Authorization` を自分の署名に差し替えるので、`/api/*` の origin request policy はビューアの `Authorization` を転送しない**（Basic 認証が読むのと同じヘッダ）
+- **BFF は VPC の外にいる。** Runtime を叩くのは VPC Endpoint ではなく Lambda の実行ロール（`bedrock-agentcore:InvokeAgentRuntime` を Runtime の ARN に限定）
+- **時間予算は本番想定と同じ。** Runtime の自己打ち切り55秒（#125）→ BFF 60秒 → 画面60秒。CloudFront の origin response timeout 60秒はこの外側
+
+## 9. ローカルの3プロセス
 
 ```mermaid
 graph LR

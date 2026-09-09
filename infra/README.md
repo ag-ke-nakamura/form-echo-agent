@@ -25,9 +25,10 @@
 FORMECHO_BASIC_AUTH_PASSWORD=... mise run deploy   # nextjs-app のビルド → cdk deploy
 ```
 
-**`cdk deploy` を単体で打たない。** フロントエンドの成果物を貼るだけのスタックなので、
+**`cdk deploy` を単体で打たない。** フロントエンドの成果物をアセットとして貼るので、
 ビルドを飛ばすと古いものが配信されたままデプロイは成功して見える（一度もビルドして
-いない場合だけは synth が止める）。
+いない場合だけは synth が止める）。BFF のバンドルにはリポジトリルートの
+`pnpm install` も要る。
 
 初回は対象アカウント・リージョン（ap-northeast-1）の `cdk bootstrap` が要る。
 `agent-app/infra` を同じ場所へデプロイ済みなら済んでいる。
@@ -54,6 +55,10 @@ Runtime の宛先は環境変数（`FORMECHO_RUNTIME_CLIENT=deployed` と `FORME
 **ARN は context に手写しせず、`agent-app/agentcore/.cli/deployed-state.json`（`agentcore
 deploy` の結果としてコミットされている）から読む。** デプロイ先を張り替えたときに
 片方だけ古くなるのを防ぐため。
+
+**OAC 越しの POST は呼び出し側が本文ハッシュを載せる。** Lambda は unsigned payload を
+受け付けないので、`nextjs-app/app/lib/api.ts` が `x-amz-content-sha256` を付ける
+（ADR-0014）。ここが落ちると front door 越しの AI 機能が丸ごと 403 になる。
 
 `cdk synth` は esbuild で `hono-app/src/lambda.ts` の import グラフをバンドルする。
 **リポジトリルートで `pnpm install` を済ませていないと "Could not resolve" で落ちる。**

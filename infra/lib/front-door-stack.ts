@@ -158,8 +158,13 @@ export class FormEchoFrontDoorStack extends Stack {
       // 既定の128MBだと、AWS SDK を含むバンドルの読み込みでコールドスタートが数秒に伸びる。
       memorySize: 512,
       // 時間予算は触らない（#139）。連鎖は Runtime の自己打ち切り55秒（#125）→ BFF 60秒 →
-      // 画面60秒。Runtime が先に諦めるので、ここが60秒でも張り付かない。
-      timeout: Duration.seconds(60),
+      // 画面60秒で、Runtime が先に諦めるのでここには届かない想定。
+      //
+      // それでも BFF の60秒（`FORMECHO_RUNTIME_TIMEOUT_MS`）より数秒長くする。同値だと
+      // BFF が TIMEOUT を 504 に写す前に Lambda が殺され、ログにも何も残らない
+      // 不透明な失敗になる（`runtime-client.ts` のエラー写像がデプロイ済み環境だけ
+      // 到達不能になる）。
+      timeout: Duration.seconds(65),
       // 保持期間を設定しないと「無期限」になる。検証環境のログを永久に貯める理由が無い。
       logGroup: new LogGroup(this, 'BffLogGroup', {
         retention: RetentionDays.ONE_MONTH,
@@ -207,7 +212,9 @@ export class FormEchoFrontDoorStack extends Stack {
     const apiOriginRequestPolicy = new OriginRequestPolicy(this, 'ApiOriginRequestPolicy', {
       headerBehavior: OriginRequestHeaderBehavior.denyList('authorization', 'host'),
       queryStringBehavior: OriginRequestQueryStringBehavior.all(),
-      cookieBehavior: OriginRequestCookieBehavior.all(),
+      // BFF は Cookie を読まない。全通しにすると読まれない値を Lambda へ運ぶだけで、
+      // 攻撃面が増える（認証は front door の Basic 認証と OAC が持つ）。
+      cookieBehavior: OriginRequestCookieBehavior.none(),
       comment: 'FormEcho /api/*: ビューアの Authorization を OAC の署名にぶつけない',
     });
 

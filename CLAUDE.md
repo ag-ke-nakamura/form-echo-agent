@@ -93,7 +93,8 @@ CI（`.github/workflows/ci.yml`）と同じものを手元で回す。
 | `agent-app/infra` | `npx prettier --check . && npm run build && npm run test` |
 | `infra` | `npx prettier --check . && npm run build && npm run test && npx cdk synth --context basicAuthPassword=...` |
 
-`infra` の `cdk synth` はフロントエンドの成果物を貼るので、先に `mise run deploy:web` が要る。
+`infra` の `cdk synth` はフロントエンドの成果物を貼り、BFF のエントリを esbuild で束ねるので、
+先に `mise run deploy:web` とルートの `pnpm install` が要る（後者が無いと "Could not resolve"）。
 `basicAuthPassword` は synth を通すだけの捨て値でよい（#138）。
 
 `nextjs-app` に `typecheck` は無い（`build` が兼ねる）。Runtime だけ `build` と `typecheck` の
