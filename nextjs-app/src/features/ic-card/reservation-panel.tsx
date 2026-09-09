@@ -21,6 +21,7 @@ import {
   DEPART_TIME_STEP_SECONDS,
   departAtParts,
   EMPTY_RESERVATION,
+  FARE_UNIT,
   FIELD_LABELS,
   type FieldName,
   type FormState,
@@ -182,9 +183,25 @@ export function ReservationPanel() {
               onChange={setField}
             />
           </div>
+          {/*
+            運賃は数値で入る（#169）。単位はラベルが持ち、値には混ぜない — 文字列の
+            ままだと「約2000円」「1980円（往復）」が入りうる欄で、往復区分が往復なのに
+            片道の額が入っていることを職員が目で確かめられない。
+
+            但し書きが「見込み」を言う。用語は「1人あたり運賃（見込み）」だが、欄名は
+            「（見込み）」を落とした短い形に決めた（#192）ので、額が概算であることを
+            言う場所がラベルの外に要る。**手で直せることも同じ文が言う** — AI が経路を
+            引けなかった回は空欄のまま残るので（`applyToForm` が null を触らない）、
+            職員が自分で入れる欄だと分かっている必要がある。
+          */}
           <Field
             name="transport_cost"
-            type="text"
+            type="number"
+            unit={FARE_UNIT}
+            // 契約と同じ値域（0以上の整数。#169）。負の運賃を打てる欄にしない。
+            min={0}
+            required
+            note="AIが調べた見込みの額です。実額と違うときは手で直してください。"
             state={fields.transport_cost}
             onChange={setField}
           />
@@ -311,23 +328,64 @@ function FieldNote({ id, children }: { id: string; children: string }) {
 const INPUT_CLASS =
   "w-full rounded-md border border-solid-gray-600 bg-white px-3 py-2 text-dns-16N-130 text-solid-gray-900";
 
-/** 欄の見出し。ラベル・AI バッジ・「消す」の並びは全欄で同じ。 */
+/**
+ * 必須の印（#169）。並びは正典の `temp/design/reservation-ai-screen-design.md` が
+ * 示す形（2.1節の `出発駅 [必須]`、5.2節の例の `出発駅 [必須] [AIが生成]`）で、印は
+ * ラベルの直後・AI バッジの前に来る。**指南書は引かない** — ADR-0017 が指南書を
+ * この正典への吸収先と決めている。
+ *
+ * **検査はしない。** このフォームには送信先が無いので `required` を付けても発火する
+ * 場面が無く、付ければ「押せない理由が画面から読めない欄」だけが増える。印が言うのは
+ * 申請として要る欄であることで、入力を止める仕組みではない。読み上げに名乗るのは
+ * 入力側の `aria-required`（`Field`）— 字面だけだとどの欄の印なのかが分からない。
+ *
+ * **色は `error-*` を借りている。** 必須の印はエラーではないが、行政の申請フォームは
+ * 必須を赤で示すのが通例で、トークンにある赤はこの1組だけである（`globals.css` は
+ * 「設計書に出てくる分だけ」と決めているので足さない）。同じ赤が `ai-notice` の本物の
+ * エラーにも出るので、**この印は欄のラベルの隣にしか置かない** — 領域の枠や背景に
+ * 広げると、失敗した往復と見分けが付かなくなる。
+ *
+ * **いま印が付くのは運賃だけだが、正典は出発地・目的地（2.1節の `出発駅 [必須]`
+ * `到着駅 [必須]`）と往復区分にも必須を求めている。** #169 の範囲が運賃1欄なので
+ * そこに留めてある。残りは別のチケットで揃える — 揃うまでは「印の無い欄は任意」と
+ * 読めてしまう状態が残る。
+ */
+function RequiredBadge() {
+  return (
+    <span className="rounded bg-error-bg px-2 py-1 text-dns-12M-130 text-error-1">
+      必須
+    </span>
+  );
+}
+
+/**
+ * 欄の見出し。ラベル・必須の印・AI バッジ・「消す」の並びは全欄で同じ。
+ *
+ * `unit` はラベルに括って添える（#169）。数値入力の欄は値に単位を混ぜられないので、
+ * 単位の置き場所がラベルしかない。**`FIELD_LABELS` には入れない** — あの表は反映の
+ * 報告も引くので、報告が単位を名乗ることになる。
+ */
 function FieldHeader({
   htmlFor,
   label,
+  unit,
+  required,
   source,
   onClear,
 }: {
   htmlFor: string;
   label: string;
+  unit?: string;
+  required?: boolean;
   source?: FieldSource;
   onClear?: () => void;
 }) {
   return (
     <div className="flex items-center gap-2">
       <label htmlFor={htmlFor} className="text-dns-14M-130 text-solid-gray-900">
-        {label}
+        {unit === undefined ? label : `${label}（${unit}）`}
       </label>
+      {required === true && <RequiredBadge />}
       {source === "ai" && <AiBadge />}
       {onClear !== undefined && <ClearButton onClick={onClear} />}
     </div>
@@ -355,17 +413,29 @@ function Field({
   onChange,
   placeholder,
   suggestions,
+  min,
+  note,
+  required,
+  unit,
 }: FieldProps & {
-  type: "date" | "datetime-local" | "text" | "textarea";
+  type: "date" | "datetime-local" | "number" | "text" | "textarea";
   placeholder?: string;
   suggestions?: readonly string[];
+  /** 数値入力の下限。**値域は欄の側の話**なので、この部品には持たせず呼び出し側が渡す。 */
+  min?: number;
+  note?: string;
+  required?: boolean;
+  unit?: string;
 }) {
   const id = useId();
   const listId = useId();
+  const noteId = `${id}-note`;
   const shared = {
     id,
     value: state.value,
     placeholder,
+    "aria-describedby": note === undefined ? undefined : noteId,
+    "aria-required": required,
     onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       onChange(name, event.target.value),
     className: `mt-1.5 ${INPUT_CLASS}`,
@@ -375,14 +445,18 @@ function Field({
       <FieldHeader
         htmlFor={id}
         label={FIELD_LABELS[name]}
+        unit={unit}
+        required={required}
         source={state.source}
         onClear={state.value === "" ? undefined : () => onChange(name, "")}
       />
+      {note !== undefined && <FieldNote id={noteId}>{note}</FieldNote>}
       {type === "textarea" ? (
         <textarea rows={2} {...shared} />
       ) : (
         <input
           type={type}
+          min={min}
           list={suggestions === undefined ? undefined : listId}
           {...shared}
         />

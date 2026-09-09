@@ -152,7 +152,7 @@ const VALID_OUTPUTS = {
     route_candidates: [
       {
         route: '東京(東海道新幹線) => 大阪',
-        fare: '14720円',
+        fare: 14720,
         duration: '2時間30分',
         transfer_count: 0,
         is_selected: true,
@@ -760,7 +760,7 @@ describe('出力契約が弾く形', () => {
     { length: MAX_ROUTE_CANDIDATES + 1 },
     (_, index) => ({
       route: `東京(在来線${index + 1}) => 大阪`,
-      fare: `${1000 + index}円`,
+      fare: 1000 + index,
       duration: '3時間',
       transfer_count: index,
       is_selected: index === 0,
@@ -883,13 +883,41 @@ describe('出力契約が弾く形', () => {
           ...VALID_OUTPUTS['ic-card.parse-reservation'].route_candidates,
           {
             route: '東京(東海道新幹線) => 名古屋(在来線) => 大阪',
-            fare: '15000円',
+            fare: 15000,
             duration: '3時間',
             transfer_count: 1,
             is_selected: true,
             reason: '不採用（比較用の別候補）',
           },
         ],
+      },
+    },
+    {
+      /*
+        #169: 運賃が文字列。「約2000円」「1980円（往復）」のような値が通ると、往復区分が
+        往復なのに片道の額が入っていることを職員が目で確かめられない。
+      */
+      name: '運賃が数値でない',
+      taskId: 'ic-card.parse-reservation',
+      output: {
+        ...VALID_OUTPUTS['ic-card.parse-reservation'],
+        route_candidates: VALID_OUTPUTS[
+          'ic-card.parse-reservation'
+        ].route_candidates.map((candidate) => ({
+          ...candidate,
+          fare: '14720円',
+        })),
+      },
+    },
+    {
+      // 無料区間はありうるが負の運賃は無い。0以上の整数だけを通す（#169）。
+      name: '運賃が負の数',
+      taskId: 'ic-card.parse-reservation',
+      output: {
+        ...VALID_OUTPUTS['ic-card.parse-reservation'],
+        route_candidates: VALID_OUTPUTS[
+          'ic-card.parse-reservation'
+        ].route_candidates.map((candidate) => ({ ...candidate, fare: -1 })),
       },
     },
     {

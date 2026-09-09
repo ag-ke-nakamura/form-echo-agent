@@ -375,6 +375,10 @@ export const FIELD_LABELS: Record<FieldName, string> = {
     用語「1人あたり運賃（見込み）」から「（見込み）」を落としたラベル（#192）。
     「交通費」と呼ばない — 1人分か全員分かを言えていないので、同行者がいる回に
     欄の額が誰の分なのかを職員が欄名から判断できない（CONTEXT.md の _Avoid_）。
+
+    **単位はここに入れない**（#169）。この表は反映の報告（「更新: 1人あたり運賃」）も
+    引くので、「（円）」を混ぜると報告が単位を名乗ることになる。欄では `FARE_UNIT` を
+    ラベルに添え、プレビューと内訳では値に付ける。
   */
   transport_cost: "1人あたり運賃",
   /*
@@ -385,6 +389,25 @@ export const FIELD_LABELS: Record<FieldName, string> = {
 };
 
 export const FIELD_NAMES = Object.keys(FIELD_LABELS) as FieldName[];
+
+/**
+ * 運賃の単位（#169）。**契約の額は数値**なので、単位は表示側が足す。
+ *
+ * 欄だけが値に混ぜられない（`<input type="number">`）ので、そこではラベルが添える
+ * （`reservation-panel.tsx`）。それ以外は `fareText` が付ける。
+ */
+export const FARE_UNIT = "円";
+
+/**
+ * 職員が読む運賃（#169）。プレビューと内訳の行は「欄名：値」だけなので、単位を
+ * 置ける場所が値しかない。
+ *
+ * **単位を付ける判断はここだけに置く。** 2箇所に書くと、桁区切りを入れるような
+ * 書式の変更で片方だけが動き、同じ額がプレビューと内訳で別の字面になる。
+ */
+function fareText(fare: number): string {
+  return `${fare}${FARE_UNIT}`;
+}
 
 /**
  * 選択肢の欄の、契約の値から職員が読む語への対応。
@@ -503,7 +526,12 @@ function rawValue(
 ): string | null {
   const selected = selectedRouteCandidate(result);
   if (name === "route") return selected?.route ?? null;
-  if (name === "transport_cost") return selected?.fare ?? null;
+  /*
+    運賃は契約が数値で持つ（#169）。欄は `<input type="number">` なので、渡すのは
+    単位を含まない数字の文字列である（`FARE_UNIT` はラベルが添える）。
+  */
+  if (name === "transport_cost")
+    return selected === undefined ? null : String(selected.fare);
   return result[name];
 }
 
@@ -518,6 +546,14 @@ function previewValue(
   name: FieldName,
   result: ParseReservationOutput,
 ): string | null {
+  /*
+    運賃だけは欄へ入る値と字面が違う（#169）。欄は数字だけを持ち（単位はラベル）、
+    行は「欄名: 値」だけなので額として読めるのは値が単位を持つときだけである。
+  */
+  if (name === "transport_cost") {
+    const selected = selectedRouteCandidate(result);
+    return selected === undefined ? null : fareText(selected.fare);
+  }
   const raw = rawValue(name, result);
   if (raw === null) return null;
   return isChoiceField(name) ? CHOICE_LABELS[name][raw] : raw;
@@ -655,7 +691,7 @@ function candidateLines(
       欄名と同じ定数から引く（#192）。欄の額は採用候補の `fare` そのものなので、
       文言が2つに割れると同じ額を2通りに呼ぶことになる。
     */
-    `${FIELD_LABELS.transport_cost}：${candidate.fare}`,
+    `${FIELD_LABELS.transport_cost}：${fareText(candidate.fare)}`,
     `所要時間：${candidate.duration}`,
     `乗換回数：${candidate.transfer_count}回`,
     ...(candidate.is_selected ? [`採用理由：${candidate.reason}`] : []),

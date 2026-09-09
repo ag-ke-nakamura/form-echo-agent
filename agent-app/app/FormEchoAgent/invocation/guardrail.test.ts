@@ -48,7 +48,7 @@ const VALID_OUTPUT = {
   route_candidates: [
     {
       route: '東京(東海道新幹線) => 大阪',
-      fare: '14720円',
+      fare: 14720,
       duration: '2時間30分',
       transfer_count: 0,
       is_selected: true,

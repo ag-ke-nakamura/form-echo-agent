@@ -56,7 +56,13 @@ type Purpose =
 /** 移動経路の候補ひとつ（#100）。 */
 export type RouteCandidate = {
   route: string;
-  fare: string;
+  /**
+   * IC運賃の額（#169）。**単位を含まない0以上の整数の円**である。
+   *
+   * 文字列だと「約2000円」「1980円（往復）」が通り、往復区分が往復なのに片道の額が
+   * 入っていることを職員が目で確かめられない。単位は表示側が足す（`FARE_UNIT`）。
+   */
+  fare: number;
   duration: string;
   transfer_count: number;
   is_selected: boolean;
