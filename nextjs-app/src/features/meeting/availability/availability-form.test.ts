@@ -309,6 +309,44 @@ describe("applyAvailabilityResult", () => {
     ]);
   });
 
+  /*
+    「消す」で空にした備考も同じ（#179）。守るかどうかを出どころだけで決めるので、
+    消したという意図がそのまま残り、報告にも「備考は保持」が出る。空を除いていた頃は
+    守っているのに報告が黙り、なぜ備考が入らないのか画面のどこにも出なかった。
+  */
+  it("消して空にした備考も次の応答で埋め直さない", () => {
+    const answers: AvailabilityAnswers = {
+      "candidate-1": {
+        availability: "attend_onsite",
+        source: "ai",
+        note: "",
+        noteSource: "manual",
+      },
+    };
+
+    const applied = applyAvailabilityResult(
+      answers,
+      output([
+        {
+          candidate_id: "candidate-1",
+          availability: "absent",
+          note: "打ち合わせあり",
+        },
+      ]),
+      HYBRID,
+    );
+
+    expect(applied.answers["candidate-1"]).toEqual({
+      availability: "absent",
+      source: "ai",
+      note: "",
+      noteSource: "manual",
+    });
+    expect(applied.report.updated).toEqual([
+      "10月15日(木) 14:00–15:00（備考は保持）",
+    ]);
+  });
+
   it("AI が入れた備考は次の応答で書き換わる", () => {
     const answers: AvailabilityAnswers = {
       "candidate-1": {
@@ -527,6 +565,38 @@ describe("availabilityPreviewItems", () => {
       { candidates: CANDIDATES, format: "hybrid", durationMinutes: 60 },
     );
     expect(items[0].value).toBe("現地で出席（備考は保持）");
+  });
+
+  /* 消して空にした備考も同じ（#179）。反映と同じ条件を引くので食い違わない。 */
+  it("消して空にした備考も守られるので、AI の備考を見せない", () => {
+    const answers: AvailabilityAnswers = {
+      "candidate-1": {
+        availability: "undecided",
+        source: "ai",
+        note: "",
+        noteSource: "manual",
+      },
+    };
+    const result = output([
+      {
+        candidate_id: "candidate-1",
+        availability: "attend_onsite",
+        note: "AI が書いた備考",
+      },
+    ]);
+    const context = {
+      candidates: CANDIDATES,
+      format: "hybrid" as const,
+      durationMinutes: 60,
+    };
+    expect(availabilityPreviewItems(answers, result, context)[0].value).toBe(
+      "現地で出席（備考は保持）",
+    );
+    // 実際に反映しても備考は空のまま。
+    expect(
+      applyAvailabilityResult(answers, result, context).answers["candidate-1"]
+        .note,
+    ).toBe("");
   });
 
   /* 応答に載っていても画面から消えている候補日程は行を起こす先が無い。 */
