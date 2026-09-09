@@ -59,6 +59,24 @@ const PURPOSE_VALUES = [
 export const MAX_ROUTE_CANDIDATES = 5;
 
 /**
+ * 同行者の人数の上限（#176）。Skill の制約と同じ数を置く。
+ *
+ * WHY 上限が要るか: 画面はこの人数ぶんの**空の行を作る**（`reservation-form.ts`）。
+ * 縛らないと、読み違えた1つの数字がそのまま行数になる。
+ *
+ * **超えたときにモデルへ求めるのは切り詰めではなく null**（＝人数は分からない）。
+ * 経路候補や候補日程は「多くとも N 件返す」で意味が保たれるが、人数を N で頭打ちに
+ * すると間違った人数を自信を持って返すことになり、**行のラベルが連番なので画面からは
+ * 気付けない。**
+ *
+ * 契約違反として弾く（＝作り直させ、直らなければ `PARSE_FAILED`）ことは経路候補の
+ * 上限と同じ扱いである。1つの欄のために応答全体を捨てることになるが、Skill が
+ * 「10人を超える場合も null」という**適合する道**を与えているので、モデルには従える
+ * 選択肢がある。間違った行数が黙って通るほうが害が大きい。
+ */
+export const MAX_COMPANIONS = 10;
+
+/**
  * 移動経路の候補ひとつ（#100、`CONTEXT.md`「移動経路」）。
  *
  * WHY 単一の `route`/`transport_cost` から配列へ変えたか: 最安の経路を選ぶには
@@ -145,6 +163,26 @@ export const parseReservationOutputSchema = z
       .nullable()
       .describe(
         '利用目的。discussion=打ち合わせ / training=研修 / inspection=視察 / business_trip=出張 / other=その他。読み取れない場合は null',
+      ),
+    /**
+     * 同行者の人数（#176）。**職員自身を含まない。**
+     *
+     * WHY 氏名を載せないか: 参加者名をブラウザに留めると決めた ADR-0008 と同じ種類の
+     * データなので、Runtime へ渡さない。画面は人数ぶんの空の行を作り、職員が名前を埋める。
+     *
+     * WHY null を残すか: 同行者がいない出張のほうが普通なので、**言及が無いことを0人と
+     * 断定しない。** 0 は「一人で行く」と書かれた回であり、null は読み取れなかった回で
+     * ある。画面は null のとき行を作らず、プレビューにも同行者の行を出さない（普通の
+     * 出張で毎回聞き返しになると、聞き返しが意味を失う）。
+     */
+    companion_count: z
+      .number()
+      .int()
+      .min(0)
+      .max(MAX_COMPANIONS)
+      .nullable()
+      .describe(
+        `同行者の人数。職員自身を含まない（「田中さんと2人で」は1、「同行者2人」は2）。読み取れない場合は null。${MAX_COMPANIONS}人を超える場合も null`,
       ),
     route_candidates: z
       .array(routeCandidateSchema)

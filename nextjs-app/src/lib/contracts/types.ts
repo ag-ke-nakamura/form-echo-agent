@@ -64,6 +64,8 @@ export type ParseReservationOutput = {
   destination: string | null;
   round_trip: RoundTrip | null;
   purpose: Purpose | null;
+  /** 同行者の人数（#176）。**職員自身を含まない。** null は読み取れなかった回。 */
+  companion_count: number | null;
   route_candidates: RouteCandidate[];
   message: string;
   sources: string[];
