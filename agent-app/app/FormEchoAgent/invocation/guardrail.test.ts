@@ -37,6 +37,7 @@ const REQUEST: AiTaskRequest = {
 const VALID_OUTPUT = {
   borrow_at: '2026-10-15',
   return_at: '2026-10-18T18:00',
+  depart_at: '2026-10-15T09:30',
   origin: '東京',
   destination: '大阪',
   origin_nearest: '東京駅',

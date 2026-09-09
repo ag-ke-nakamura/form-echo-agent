@@ -141,6 +141,7 @@ const VALID_OUTPUTS = {
   'ic-card.parse-reservation': {
     borrow_at: '2026-10-15',
     return_at: '2026-10-18T18:00',
+    depart_at: '2026-10-15T09:30',
     origin: '東京',
     destination: '大阪',
     origin_nearest: '東京駅',
@@ -772,6 +773,16 @@ describe('出力契約が弾く形', () => {
       },
     },
     {
+      // 出発日時は移動を始める**時点**なので、日付だけでは出発日時にならない（#175）。
+      // 返す日時と同じ症状で、通すと画面の時刻の側が黙って空欄になる。
+      name: '出発日時のはずが日付だけ',
+      taskId: 'ic-card.parse-reservation',
+      output: {
+        ...VALID_OUTPUTS['ic-card.parse-reservation'],
+        depart_at: '2026-10-15',
+      },
+    },
+    {
       name: '返す日時が暦に存在しない日付',
       taskId: 'ic-card.parse-reservation',
       output: {
@@ -1038,6 +1049,26 @@ describe('定期重複区間（#101）', () => {
           commuter_pass_overlap_sections: ['新宿 => 渋谷'],
         },
       ],
+    };
+    fakeModelScript.write({ kind: 'structuredOutput', output });
+
+    const response = expectSuccess(
+      await invokeBoundary(REQUESTS['ic-card.parse-reservation']),
+    );
+
+    expect(response.result).toEqual(output);
+  });
+});
+
+/**
+ * 出発日時（#175）。**15分刻みは画面だけの制約**なので、契約はそれを強制しない。
+ * 縛ると、刻みを無視するブラウザや AI の読み取りで職員が `PARSE_FAILED` を見る。
+ */
+describe('出発日時（#175）', () => {
+  it('15分刻みでない出発日時も通す', async () => {
+    const output = {
+      ...VALID_OUTPUTS['ic-card.parse-reservation'],
+      depart_at: '2026-10-15T10:07',
     };
     fakeModelScript.write({ kind: 'structuredOutput', output });
 
