@@ -41,6 +41,7 @@ const VALID_OUTPUT = {
   destination: '大阪',
   round_trip: 'round',
   purpose: 'business_trip',
+  companion_count: null,
   route_candidates: [
     {
       route: '東京(東海道新幹線) => 大阪',

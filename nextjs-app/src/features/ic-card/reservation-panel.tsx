@@ -13,7 +13,8 @@ import { FormSection } from "@/components/form-section";
 import { RESERVATION_TASK_ID } from "@/lib/api";
 import {
   addCompanion,
-  applyToForm,
+  applyToReservation,
+  cardCount,
   CHOICE_LABELS,
   type ChoiceFieldName,
   type CompanionRow,
@@ -50,8 +51,8 @@ export function ReservationPanel() {
    * 純粋に保つ約束があり、実行も後になる）。
    */
   function applyResult(result: ParseReservationOutput): ApplyReport {
-    const { next, report } = applyToForm(fields, result);
-    setReservation((current) => ({ ...current, fields: next }));
+    const { next, report } = applyToReservation(reservation, result);
+    setReservation(next);
     return report;
   }
 
@@ -77,7 +78,7 @@ export function ReservationPanel() {
           "自然な言葉で予約内容を入力すると、AIが自動的にフォームに入力します。\n" +
           "例: 「来月15日から3泊4日で大阪出張、新幹線で往復」\n" +
           "追加指示は任意です。\n" +
-          "同行者とICカード利用枚数は対象外です。手で入力してください。"
+          "同行者は人数ぶんの空の行を作ります。氏名は手で入力してください。"
         }
         placeholder="予約内容を自然な言葉で入力してください..."
         followUpPlaceholder="返すのは18時です"
@@ -91,7 +92,7 @@ export function ReservationPanel() {
           そう出す必要がある（ADR-0006）。描画のたびに呼ばれるので、待っている間の
           手入力もプレビューに映る。
         */
-        previewItems={(result) => reservationPreviewItems(result, fields)}
+        previewItems={(result) => reservationPreviewItems(result, reservation)}
         onApply={applyResult}
         onReset={() => setReservation(resetReservation)}
       />
@@ -149,9 +150,9 @@ export function ReservationPanel() {
 
         <div className="mt-5 grid gap-5 sm:grid-cols-2">
           <CardCountField
-            value={reservation.cardCount}
-            onChange={(cardCount) =>
-              setReservation((current) => setCardCount(current, cardCount))
+            value={cardCount(reservation)}
+            onChange={(override) =>
+              setReservation((current) => setCardCount(current, override))
             }
           />
         </div>
@@ -244,20 +245,19 @@ function ClearButton({ onClick }: { onClick: () => void }) {
 }
 
 /**
- * AI が埋めない欄の但し書き（#68）。
+ * 欄の但し書き。
  *
- * WHY 画面に出すか: 同行者と利用枚数は出力契約に無いので、自然文に「田中さんと2人で」
- * と書いても行は増えない。画面が黙っていると、職員には**AI が読み落としたのか初めから
- * 対象外なのか区別が付かない** — 同じ文を足して往復を繰り返すことになる。SKILL.md は
- * モデルに `message` でこの2欄へ触れることを禁じているので、聞き返しからも分からない。
- *
- * 設計書 12章も「同行者情報のAI抽出」を**未対応**として将来の項目に挙げており、
- * 「対応しない」ではなく「いまは対象外」であることまで画面が言う必要はない。
+ * WHY 画面に出すか: AI が何をして何をしないかは、応答からは読めない。同行者の氏名は
+ * 契約に載らない（#176。参加者名をブラウザに留める ADR-0008 と同じ種類のデータ）ので
+ * AI は空の行しか作らず、黙っていると職員には**AI が氏名を読み落としたのか初めから
+ * 受け取っていないのか区別が付かない** — 同じ文を足して往復を繰り返すことになる。
+ * Skill はモデルに `message` でこの2欄へ触れることを禁じているので、聞き返しからも
+ * 分からない。
  */
-function ManualOnlyNote({ id }: { id: string }) {
+function FieldNote({ id, children }: { id: string; children: string }) {
   return (
     <p id={id} className="mt-1 text-dns-12N-130 text-solid-gray-600">
-      この項目は AI が入力しません。手で入力してください。
+      {children}
     </p>
   );
 }
@@ -363,7 +363,11 @@ function SelectField({
 }
 
 /**
- * ICカードの利用枚数。**AI は埋めない**ので AI バッジを持たない（#68）。
+ * ICカードの利用枚数。**同行者の行数から導く**（#176）。
+ *
+ * AI バッジを持たないのは、AI が埋める欄ではないため — 導出しているのは画面である。
+ * 職員が打てば固定される（`setCardCount`）ので、自分のICカードを持っている同行者が
+ * いる回もそのまま通る。
  */
 function CardCountField({
   value,
@@ -381,7 +385,9 @@ function CardCountField({
         label="ICカード利用枚数"
         onClear={value === "" ? undefined : () => onChange("")}
       />
-      <ManualOnlyNote id={noteId} />
+      <FieldNote id={noteId}>
+        同行者の人数から自動で入ります。直せます。
+      </FieldNote>
       <input
         id={id}
         type="number"
@@ -396,7 +402,7 @@ function CardCountField({
 }
 
 /**
- * 同行者。行として足したり消したりする（#68）。**AI は埋めない。**
+ * 同行者。行として足したり消したりする（#68）。**AI が作れるのは空の行だけ**（#176）。
  *
  * 何人になるか決まっていないので固定の欄にできない。行が1つも無い状態を初期値に
  * するのは、同行者がいない出張のほうが普通で、空行が1つあると「埋めるべき欄」に
@@ -417,7 +423,9 @@ function CompanionRows({
   return (
     <fieldset className="mt-5" aria-describedby={noteId}>
       <legend className="text-dns-14M-130 text-solid-gray-900">同行者</legend>
-      <ManualOnlyNote id={noteId} />
+      <FieldNote id={noteId}>
+        氏名は AI が入力しません。手で入力してください。
+      </FieldNote>
       {rows.length === 0 && (
         <p className="mt-1.5 text-dns-14N-130 text-solid-gray-600">
           同行者はいません。

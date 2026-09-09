@@ -48,6 +48,18 @@ const PURPOSE_VALUES = [
 export const MAX_ROUTE_CANDIDATES = 5
 
 /**
+ * 同行者の人数の上限（#176）。Skill の制約と同じ数を置く。
+ *
+ * 画面はこの人数ぶんの**空の行を作る**ので、縛らないと読み違えた1つの数字がそのまま
+ * 行数になる。**超えたときにモデルへ求めるのは切り詰めではなく null**（＝人数は
+ * 分からない）— N で頭打ちにすると間違った人数を自信を持って返すことになる。
+ *
+ * 超過を弾くと1つの欄のために応答全体が `PARSE_FAILED` になるが、Skill が「10人を
+ * 超える場合も null」という適合する道を与えている。経路候補の上限と同じ扱い。
+ */
+export const MAX_COMPANIONS = 10
+
+/**
  * 移動経路の候補ひとつ（#100、`CONTEXT.md`「移動経路」）。
  *
  * `is_selected` はちょうど1件（経路候補が0件のときは0件）という不変条件を
@@ -135,6 +147,25 @@ export const parseReservationOutputSchema = z
       .nullable()
       .describe(
         '利用目的。discussion=打ち合わせ / training=研修 / inspection=視察 / business_trip=出張 / other=その他。読み取れない場合は null',
+      ),
+    /**
+     * 同行者の人数（#176）。**職員自身を含まない。**
+     *
+     * 氏名は載せない（参加者名をブラウザに留める ADR-0008 と同じ種類のデータ）。
+     * 画面は人数ぶんの空の行を作り、職員が名前を埋める。
+     *
+     * null は読み取れなかった回、0 は「一人で行く」と書かれた回である。**言及が無い
+     * ことを0人と断定しない** — 同行者がいない出張のほうが普通なので、画面は null の
+     * とき行を作らず、プレビューにも同行者の行を出さない。
+     */
+    companion_count: z
+      .number()
+      .int()
+      .min(0)
+      .max(MAX_COMPANIONS)
+      .nullable()
+      .describe(
+        `同行者の人数。職員自身を含まない（「田中さんと2人で」は1、「同行者2人」は2）。読み取れない場合は null。${MAX_COMPANIONS}人を超える場合も null`,
       ),
     route_candidates: z
       .array(routeCandidateSchema)

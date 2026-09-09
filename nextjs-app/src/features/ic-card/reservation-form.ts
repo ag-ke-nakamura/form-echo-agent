@@ -22,8 +22,8 @@ import type { PreviewItem } from "@/lib/ai-preview";
  * 要るもの — 欄の表示名、選択肢の文言、写す規則である。
  *
  * **タブの状態は同行者とICカード利用枚数まで含めてここにある**（`ReservationState`。#167）。
- * 出力契約に載せず AI にも埋めさせない2欄（#68）も、行の足し引きという判断を持つので
- * 画面の中には置かない。
+ * 同行者の人数は出力契約に載る（#176）が氏名は載らず、利用枚数は行数から導く — どちらも
+ * 行の足し引きという判断を持つので画面の中には置かない。
  */
 
 export type FieldName =
@@ -69,7 +69,11 @@ export const EMPTY_FORM: FormState = {
 };
 
 /**
- * 同行者の行ひとつ。**AI は埋めない**ので `FieldSource` を持たない（#68）。
+ * 同行者の行ひとつ。**氏名は AI が埋めない**ので `FieldSource` を持たない（#176）。
+ *
+ * AI が作れるのは空の行までで、氏名は契約に載らない（参加者名をブラウザに留める
+ * ADR-0008 と同じ種類のデータ）。守る単位が「行の有無」であって欄ではないので、
+ * 出どころの印を行に付けても反映の判断には使えない。
  *
  * `id` は React の key にしか使わない。同姓が並びうるので氏名は識別子にできず、
  * 行の位置も足し引きで動くので使えない。
@@ -80,13 +84,13 @@ export type CompanionRow = { id: string; name: string };
  * 交通ICタブの状態。AI が埋める欄（`fields`）と AI が埋めない欄（同行者・ICカード
  * 利用枚数）を1つに持つ。
  *
- * WHY 同行者と利用枚数を `fields` の中に入れないか: 出力契約に載せず AI にも埋めさせない
- * 欄なので（#68）、中に入れると `applyToForm` の写す規則が掛かる欄に見え、「AI が推測
- * すべき値ではない」という判断がコードから消える。
+ * WHY 同行者と利用枚数を `fields` の中に入れないか: どちらも欄として写す対象ではない。
+ * 同行者は**行の有無**で守り（#176）、利用枚数は行数から**導く**ので、`fields` に
+ * 混ぜると `applyToForm` の写す規則（手入力を守る・同じ値は数えない）が掛かる欄に見える。
  *
- * WHY それでも画面（`.tsx`）から出すか: これから両方に判断が乗る（#165 が「同行者の
- * 人数から行を作る」「利用枚数を行数から導く」を決めた）。画面が状態を持ったままだと、
- * その判断は**画面を描かない限り確かめられない**（#167）。
+ * WHY 画面（`.tsx`）から出すか: 両方に判断が乗っている（#176 が「同行者の人数から行を
+ * 作る」「利用枚数を行数から導く」を実装した）。画面が状態を持ったままだと、その判断は
+ * **画面を描かない限り確かめられない**（#167）。
  */
 export type ReservationState = {
   fields: FormState;
@@ -96,7 +100,16 @@ export type ReservationState = {
    * React から同じものに見え、入力中の氏名が別の行へ移る。
    */
   nextCompanionNumber: number;
-  cardCount: string;
+  /**
+   * 職員が手で入れた利用枚数（#176）。**`null` は「同行者の行数から導く」。**
+   *
+   * WHY 値そのものを持たないか: 導出（行数 + 1）を状態として持つと、行が増えるたびに
+   * 書き戻す場所が要り、書き忘れた経路でだけ食い違う。持たなければ食い違いようがない。
+   *
+   * WHY 空文字と `null` を分けるか: 職員が「消す」で空にしたのは意図なので、行が
+   * 増えても埋め直さない（ADR-0018 が欄に対して決めたことと同じ）。
+   */
+  cardCountOverride: string | null;
 };
 
 /**
@@ -107,12 +120,12 @@ export const EMPTY_RESERVATION: ReservationState = {
   fields: EMPTY_FORM,
   companions: [],
   nextCompanionNumber: 0,
-  cardCount: "",
+  cardCountOverride: null,
 };
 
 /**
  * 「最初からやり直す」（#65）。**AI 由来の欄だけを消す操作ではなく、フォームを初期状態
- * へ戻す操作**なので、手で入れた同行者と利用枚数も消える。
+ * へ戻す操作**なので、同行者の行も消え、利用枚数の手入力の固定も外れる。
  *
  * **行番号だけは持ち越す**（初期状態と違うのはここだけ）。0 に戻すと、消えた行と戻した
  * 後に足した行が React から同じものに見える。戻した直後は行が無いので今は衝突しないが、
@@ -141,23 +154,46 @@ export function setFieldValue(
   };
 }
 
-/** ICカードの利用枚数。**AI は埋めない**ので `FieldSource` を持たない（#68）。 */
+/**
+ * ICカードの利用枚数（#176）。**同行者の行数 + 1**（職員自身のぶん）。
+ *
+ * WHY 導出か: 同じ数を2箇所に入れさせる意味がない。AI が人数から行を作るように
+ * なった以上、独立した手入力欄のままだと**放置すれば必ず食い違う** — 職員は AI が
+ * 2行作ったのを見てから隣の欄に手で3と打つことになる。
+ *
+ * 職員が触れば固定される（`cardCountOverride`）。自分のICカードを持っている同行者が
+ * いる回があるので、導出を上書きできないと詰む。
+ */
+export function cardCount(state: ReservationState): string {
+  return state.cardCountOverride ?? String(state.companions.length + 1);
+}
+
+/** 利用枚数を手で入れる。**以降は行が増えても動かない。** */
 export function setCardCount(
   current: ReservationState,
-  cardCount: string,
+  override: string,
 ): ReservationState {
-  return { ...current, cardCount };
+  return { ...current, cardCountOverride: override };
 }
 
 /** 同行者の行を末尾に足す。何人になるか決まっていないので固定の欄にできない（#68）。 */
 export function addCompanion(current: ReservationState): ReservationState {
+  return addCompanions(current, 1);
+}
+
+/** 空の行を `count` 行足す。番号は続きから配る（消した番号は再利用しない）。 */
+function addCompanions(
+  current: ReservationState,
+  count: number,
+): ReservationState {
+  const added = Array.from({ length: count }, (_, index) => ({
+    id: `companion-${current.nextCompanionNumber + index}`,
+    name: "",
+  }));
   return {
     ...current,
-    companions: [
-      ...current.companions,
-      { id: `companion-${current.nextCompanionNumber}`, name: "" },
-    ],
-    nextCompanionNumber: current.nextCompanionNumber + 1,
+    companions: [...current.companions, ...added],
+    nextCompanionNumber: current.nextCompanionNumber + count,
   };
 }
 
@@ -345,6 +381,31 @@ function previewValue(
   return isChoiceField(name) ? CHOICE_LABELS[name][raw] : raw;
 }
 
+/** 同行者の行の表示名。プレビューと反映の報告が同じ語を引く。 */
+const COMPANIONS_LABEL = "同行者";
+
+/**
+ * 錠の理由（#176）。既定の「手入力のため変更しません」では、職員が同行者の欄の
+ * どこで手入力したのかを探すことになる — 守っているのは欄ではなく行の有無である。
+ *
+ * 0人（「一人で行きます」）にも錠が要る。作る行が無いので押しても何も起きないのに、
+ * 緑のチェックで並べると反映のボタンが生きてしまう（`hasApplicableItems`）。
+ */
+const COMPANIONS_PRESERVED_REASON = "同行者の行が既にあるため変更しません";
+
+const NO_COMPANIONS_TO_ADD_REASON = "作る行はありません";
+
+/**
+ * 同行者の行に触れないか（#176）。**守る単位は欄ではなく行の有無。**
+ *
+ * 欄の `isPreserved` と同じ役割で、プレビューの印と `applyToReservation` の判断を
+ * 1箇所から引く。2箇所に書くと、片方だけ条件が動いたときにプレビューが
+ * 「行が増える」と言って増えない（またはその逆）状態になる。
+ */
+function companionsPreserved(current: ReservationState): boolean {
+  return current.companions.length > 0;
+}
+
 /**
  * 聞き返し（黄）の分母（#168）。**この呼び出しが担う仕事だけを数える。**
  *
@@ -368,15 +429,42 @@ const FARE_SEARCH_FIELDS: readonly FieldName[] = ["route", "transport_cost"];
  */
 export function reservationPreviewItems(
   result: ParseReservationOutput,
-  current: FormState,
+  current: ReservationState,
 ): PreviewItem[] {
-  return FIELD_NAMES.map((name) => ({
+  const items = FIELD_NAMES.map((name) => ({
     key: name,
     label: FIELD_LABELS[name],
     value: previewValue(name, result),
-    preserved: isPreserved(current[name]),
+    preserved: isPreserved(current.fields[name]),
     optional: !FARE_SEARCH_FIELDS.includes(name),
   }));
+
+  /*
+    **人数が読み取れなかったときは行そのものを出さない**（#176）。同行者がいない
+    出張のほうが普通なので、「同行者: （未入力）」が毎回並ぶと、職員は聞き返しの行を
+    読み飛ばすようになる。`optional` で分母から外すだけでは足りない — 行が残る限り
+    「何が足りないのか」の一覧が同行者で埋まる。
+  */
+  const count = result.companion_count;
+  if (count === null) return items;
+  const preservedReason = companionsPreserved(current)
+    ? COMPANIONS_PRESERVED_REASON
+    : count === 0
+      ? NO_COMPANIONS_TO_ADD_REASON
+      : undefined;
+  return [
+    ...items,
+    {
+      key: "companions",
+      label: COMPANIONS_LABEL,
+      value: `${count}人`,
+      preserved: preservedReason !== undefined,
+      preservedReason,
+      // 人数はこの往復で AI が調べてくるものではない（運賃と違い、書いていなければ
+      // 読み取れないのが正しい）ので聞き返しの分母に入れない。
+      optional: true,
+    },
+  ];
 }
 
 /**
@@ -404,7 +492,7 @@ function isPreserved(field: FormState[FieldName]): boolean {
  * source: "manual" }` で、初期状態の `"default"` と区別が付くため。消したのには意図が
  * あるので、報告の「守った」側に出る。
  */
-export function applyToForm(
+function applyToForm(
   current: FormState,
   result: ParseReservationOutput,
 ): { next: FormState; report: ApplyReport } {
@@ -432,4 +520,43 @@ export function applyToForm(
   }
 
   return { next, report: { updated, preserved } };
+}
+
+/**
+ * AI の出力をタブの状態へ写す（#176）。**欄と同行者の行を1回で写す。**
+ *
+ * WHY 1つの関数か: 反映の報告（`ApplyReport`）は欄と行をまたいで1つである。呼ぶ側で
+ * 2つの報告を継ぎ合わせると、その継ぎ方（どちらを先に並べるか・守った行をどちらに
+ * 載せるか）が画面の中の判断になる。
+ *
+ * 同行者の規則は3つ。**人数が読み取れなければ触らない**（同行者がいない出張のほうが
+ * 普通なので、読み取れないことは失敗ではない）。**行が1つでもあれば触らない**（職員が
+ * 名前を書いた行を消さない。守ったことは報告に出る）。**総数に合わせて減らさない。**
+ * 氏名は契約に載らない（ADR-0008 と同じ種類のデータ）ので、作るのは空の行である。
+ */
+export function applyToReservation(
+  current: ReservationState,
+  result: ParseReservationOutput,
+): { next: ReservationState; report: ApplyReport } {
+  const { next: fields, report } = applyToForm(current.fields, result);
+  const withFields = { ...current, fields };
+  const count = result.companion_count;
+
+  if (count === null) return { next: withFields, report };
+  /*
+    行があれば人数によらず守る。「一人で行きます」（0人）と読めた回も同じで、AI の
+    読みとフォームが食い違ったまま行が残るのだから、守ったことを報告に出す。
+  */
+  if (companionsPreserved(current)) {
+    return {
+      next: withFields,
+      report: { ...report, preserved: [...report.preserved, COMPANIONS_LABEL] },
+    };
+  }
+  // 行が無く0人なら作る行が無い。守ったわけでも更新したわけでもないので報告に出ない。
+  if (count === 0) return { next: withFields, report };
+  return {
+    next: addCompanions(withFields, count),
+    report: { ...report, updated: [...report.updated, COMPANIONS_LABEL] },
+  };
 }
