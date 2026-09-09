@@ -52,8 +52,11 @@ function manualAware<T extends z.ZodType>(value: T) {
  * 1つの欄で Guardrail の往復とモデルの文脈をいくらでも太らせられる（`MAX_PROMPT_LENGTH`
  * が `prompt` に掛かっているのと同じ理由）。Runtime も自分の複製で同じ上限を持つ
  * （ADR-0011）が、**画面から来た値を Runtime へ渡す前に見るのは BFF だけである。**
+ *
+ * **1,000字は参照ドキュメントに出どころを持たない、我々が決めた値である**（`prompt` の
+ * 10,000字は 10.1節が出どころ）。
  */
-export const MAX_PLACE_LENGTH = 200
+export const MAX_PLACE_LENGTH = 1_000
 
 /**
  * 出発地または目的地（#170）。**職員がフォームに打った自由文字列。**
