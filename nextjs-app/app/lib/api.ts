@@ -4,12 +4,14 @@ import type { InferResponseType } from "hono/client";
 import type { TaskId, TaskInputMap, TaskOutputMap } from "./contracts/types";
 
 /**
- * SSG なのでビルド時に埋め込まれる。BFF は別オリジンにも置けるので、相対パスでは
- * なく絶対 URL を持てる形にしてある（本番想定は ALB 上の BFF。ADR-0014）。
+ * SSG なのでビルド時に埋め込まれる。絶対 URL を持てる形にしてあるのは、BFF を
+ * 別オリジンに置く構成があるため — ローカル開発は :3000 から :8787 の BFF を
+ * 跨いで叩く（既定値がその宛先）。
  *
- * 空文字を渡すと `hc` は相対パス（`/api/ai/tasks`）を叩く。同一オリジンに BFF を
- * 相乗りさせる構成（#137）はこの挙動に乗る。**`$url()` は使わない** — Hono は
- * 相対ベース URL では `Invalid URL` を投げると明記している。
+ * 空文字を渡すと `hc` は相対パス（`/api/ai/tasks`）を叩く。デプロイ済み検証環境は
+ * CloudFront 単一オリジンで `/api/*` が BFF（Lambda Function URL）に届くので、
+ * この空文字に乗る（ADR-0014、`docs/architecture.md` §8）。**`$url()` は使わない**
+ * — Hono は相対ベース URL では `Invalid URL` を投げると明記している。
  */
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8787";

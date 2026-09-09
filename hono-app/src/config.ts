@@ -11,7 +11,11 @@ export const RUNTIME_TIMEOUT_MS = Number(
   process.env.FORMECHO_RUNTIME_TIMEOUT_MS ?? 60_000,
 )
 
-/** フロントエンドは SSG なので、ブラウザからこの BFF を直接叩く。 */
+/**
+ * CORS の許可オリジン。デプロイ済み検証環境はオリジンが CloudFront 1つなので
+ * **実質効かない**（ADR-0014、`docs/architecture.md` §8）。それでも消さないのは、
+ * ローカルが :3000 → :8787 の2オリジンのままだから。
+ */
 export const ALLOWED_ORIGINS = (
   process.env.FORMECHO_ALLOWED_ORIGINS ?? 'http://localhost:3000'
 ).split(',')

@@ -35,7 +35,8 @@ graph LR
 | --- | --- | --- |
 | `NEXT_PUBLIC_API_BASE_URL` | nextjs-app | BFF の URL（SSG なのでビルド時に埋め込まれる） |
 | `FORMECHO_RUNTIME_URL` | hono-app | Runtime の URL |
-| `FORMECHO_RUNTIME_CLIENT` | hono-app | `local` / `fake` |
+| `FORMECHO_RUNTIME_CLIENT` | hono-app | `local` / `deployed` / `fake` |
+| `FORMECHO_RUNTIME_ARN` | hono-app | デプロイ済み Runtime の ARN（`deployed` のときだけ要る） |
 | `FORMECHO_MODEL` | agent-app | `sonnet` / `haiku` / `fake` |
 
 ## 2. リクエスト1回の流れ
@@ -149,6 +150,7 @@ nextjs-app だけが持つ — 他プロジェクトは使っていないため�
 graph LR
     BFFC["invokeRuntime<br/>（応答の解釈）"] --> TR{"loadRuntimeTransport<br/>FORMECHO_RUNTIME_CLIENT"}
     TR -->|local| L["localTransport → HTTP"]
+    TR -->|deployed| D["deployedTransport<br/>SigV4 InvokeAgentRuntime"]
     TR -->|fake| F["fakeRuntimeTransport"]
 
     AGN["ドメインエージェント"] --> ML{"loadModel<br/>FORMECHO_MODEL"}
@@ -193,12 +195,9 @@ graph LR
     ALB --> ECS["ECS Fargate<br/>BFF（JWT 検証 / 認可 / 監査ログ）"]
     ECS -->|"VPC Endpoint + SigV4<br/>InvokeAgentRuntime"| RT["AgentCore Runtime<br/>microVM"]
     RT --> BR["Bedrock Claude<br/>ap-northeast-1（jp. 推論プロファイル）"]
-    RT -.->|"第3段・交通ICのみ"| GW["AgentCore Gateway → Websearch"]
+    RT -->|"第3段・交通ICのみ"| GW["AgentCore Gateway → Websearch"]
     ECS --> CW["CloudWatch Logs"]
     RT --> CW
-
-    classDef todo stroke-dasharray: 5 5
-    class GW todo
 ```
 
 現状との差分。
@@ -227,7 +226,8 @@ graph LR
 
 本番想定（§7）と違うところ。
 
-- **オリジンは CloudFront 1つ。** `/api/*` がパス透過で BFF に届くので CORS が発生せず、`NEXT_PUBLIC_API_BASE_URL` は空文字（相対パス）でよい。フロントエンドと BFF のコード改修は0行
+- **オリジンは CloudFront 1つ。** `/api/*` がパス透過で BFF に届くので CORS が発生せず、`NEXT_PUBLIC_API_BASE_URL` は空文字（相対パス）でよい。**BFF の `cors`（`FORMECHO_ALLOWED_ORIGINS`）はここでは実質効かない**が、ローカルは :3000 → :8787 の2オリジンのままなので残してある
+- **コード改修0行では済まなかった。** ADR-0014 は「フロントのコード改修は0行」で採ったが、OAC 越しの POST は本文の SHA256 を呼び出し側が `x-amz-content-sha256` に載せる必要があり、`nextjs-app/app/lib/api.ts` が `hc` に渡す `fetch` を包んでいる。BFF 側も Lambda のエントリ `hono-app/src/lambda.ts` が増えた（ルーティングと判断は `src/index.ts` に残る）
 - **Function URL は公開 DNS 名だが公開エンドポイントではない。** `authType` は `AWS_IAM` で、resource policy が principal と `AWS:SourceArn` の両方でこの CloudFront に絞る。**OAC は `Authorization` を自分の署名に差し替えるので、`/api/*` の origin request policy はビューアの `Authorization` を転送しない**（Basic 認証が読むのと同じヘッダ）
 - **BFF は VPC の外にいる。** Runtime を叩くのは VPC Endpoint ではなく Lambda の実行ロール（`bedrock-agentcore:InvokeAgentRuntime` を Runtime の ARN に限定）
 - **時間予算は本番想定と同じ。** Runtime の自己打ち切り55秒（#125）→ BFF 60秒 → 画面60秒。CloudFront の origin response timeout 60秒はこの外側

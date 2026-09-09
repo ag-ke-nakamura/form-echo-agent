@@ -65,7 +65,7 @@ graph TB
 | taskId の許可 | ✕ | ◎ `isTaskId` を呼ぶ | ○ 契約で再検査 |
 | 入力の必須性（自然文／構造化入力） | ○ 表を**引いて**ボタンを出し分ける | ◎ `checkTaskInput` を呼ぶ | ○ 契約で再検査 |
 | 入力サニタイズ（長さ・タグ） | ○ `maxLength` で先回り | ◎ `sanitizePrompt` | — |
-| Guardrail チェック | ✕ | ✕（ADR-0001 で外した） | ◎ 未実装。ここに置く |
+| Guardrail チェック | ✕ | ✕（ADR-0001 で外した） | ◎ 持つ（`guardrail/`。ADR-0001。実装の選択は ADR-0013） |
 | sessionId | ◎ タブごとに保持し、次の指示に添える | ◎ 発行と UUID 検証 | ◎ 会話履歴の帰属先にする |
 | 認証・認可 | — | ◎ `middleware/auth.ts`（現状素通し） | — |
 | プロンプト（`SKILL.md`・system prompt） | ✕ | ✕ | ◎ 単独所有 |
@@ -173,7 +173,7 @@ sequenceDiagram
 | 新しいエラーの種類を出す | 契約（コード追加）→ BFF（写像）→ frontend（文言） | AI agent（Runtime が出す種類なら） |
 | タイムアウトを延ばす | BFF | AI agent（Runtime 側の実測が要る） |
 | 認証を入れる | BFF | frontend（トークンの付与） |
-| Guardrail チェックを入れる | AI agent | 契約（`GUARDRAIL_BLOCKED` 追加）→ BFF → frontend |
+| Guardrail の判定を変える | AI agent | 契約（`GUARDRAIL_BLOCKED` は既にある）→ BFF → frontend |
 | デプロイ済み Runtime を叩く | BFF（`deployed` transport） | AI agent（`aws-targets.json`） |
 | Websearch を足す | AI agent | 契約（`sources` は既にある） |
 | タブを1つ足す | 3チーム同時 | — |
@@ -204,5 +204,4 @@ CI で回すコマンドは `CLAUDE.md`「変更を出す前の確認」の表�
 ## 9. 未確定（決めるのは人）
 
 - **監査ログ** — 参照アーキは BFF の責務としている（職員ID・taskID・入力・出力・トークン数）。現状どのチームも実装していない
-- **Guardrail チェック** — 置き場所は Runtime と決まっている（ADR-0001）が、実装チケットは未着手。`GUARDRAIL_BLOCKED` を契約へ足すところから3チームに波及する
 - **認証** — `middleware/auth.ts` は素通し。JWT を入れると frontend にトークン付与の責務が生まれる
