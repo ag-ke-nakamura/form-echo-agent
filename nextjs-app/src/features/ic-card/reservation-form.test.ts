@@ -2,6 +2,7 @@ import type {
   ParseReservationOutput,
   RouteCandidate,
 } from "@/lib/contracts/types";
+import type { BreakdownSection } from "@/lib/ai-preview";
 import { describe, expect, it } from "vitest";
 import {
   addCompanion,
@@ -42,7 +43,7 @@ function output(
   };
 }
 
-/** 採用済みの経路候補（#100）。`route`/`fare` 以外は反映に使わないので固定値で埋める。 */
+/** 採用移動経路（#100）。内訳が全項目を写すので（#173）すべて固定値で埋める。 */
 function selectedCandidate(
   overrides: Partial<RouteCandidate> = {},
 ): RouteCandidate {
@@ -56,6 +57,13 @@ function selectedCandidate(
     commuter_pass_overlap_sections: null,
     ...overrides,
   };
+}
+
+/** 採用されなかった移動経路候補（#173）。 */
+function otherCandidate(
+  overrides: Partial<RouteCandidate> = {},
+): RouteCandidate {
+  return selectedCandidate({ is_selected: false, ...overrides });
 }
 
 /** 欄だけを埋めたタブの状態。同行者・利用枚数は初期状態のまま。 */
@@ -658,7 +666,26 @@ describe("プレビューの同行者の行", () => {
 });
 
 /**
- * AI提案の内訳（#172。設計書 2.1節）。
+ * 移動経路候補が返った回の出力（#173）。出発地・目的地とその最寄は、契約が移動経路候補と
+ * 揃って要求する（`route_candidates` の `.refine()`）ので毎回埋める。
+ */
+function routeResult(candidates: RouteCandidate[]): ParseReservationOutput {
+  return output({
+    origin: "東京",
+    destination: "大阪",
+    origin_nearest: "東京駅",
+    destination_nearest: "新大阪駅",
+    route_candidates: candidates,
+  });
+}
+
+/** 内訳の区画を `key` で引く。節が増えても添字で壊れない。 */
+function section(sections: BreakdownSection[], key: string) {
+  return sections.find((candidate) => candidate.key === key);
+}
+
+/**
+ * AI提案の内訳（#172・#173。設計書 2節）。
  *
  * WHY テストを持つか: **抽出項目の一覧と分母が違う。** 内訳は欄と対応しない行なので、
  * 一覧に混ぜると聞き返しの判定（`previewTone`）が欄でない行を数える。空のときに
@@ -675,21 +702,19 @@ describe("reservationBreakdown", () => {
         route_candidates: [selectedCandidate()],
       }),
     );
-    expect(sections).toEqual([
-      {
-        key: "search-conditions",
-        label: "検索条件",
-        lines: [
-          "出発地：虎ノ門ヒルズ（最寄：虎ノ門駅）",
-          "目的地：横浜市役所（最寄：桜木町駅）",
-        ],
-      },
-    ]);
+    expect(section(sections, "search-conditions")).toEqual({
+      key: "search-conditions",
+      label: "検索条件",
+      lines: [
+        "出発地：虎ノ門ヒルズ（最寄：虎ノ門駅）",
+        "目的地：横浜市役所（最寄：桜木町駅）",
+      ],
+    });
   });
 
   /* 出る回と出ない回があると、職員は必要な回に出ているかを確かめられない。 */
   it("出発地が既に駅名でも最寄を省かない", () => {
-    const [section] = reservationBreakdown(
+    const sections = reservationBreakdown(
       output({
         origin: "霞ヶ関駅",
         destination: "虎ノ門駅",
@@ -698,7 +723,7 @@ describe("reservationBreakdown", () => {
         route_candidates: [selectedCandidate()],
       }),
     );
-    expect(section?.lines).toEqual([
+    expect(section(sections, "search-conditions")?.lines).toEqual([
       "出発地：霞ヶ関駅（最寄：霞ケ関駅）",
       "目的地：虎ノ門駅（最寄：虎ノ門駅）",
     ]);
@@ -711,5 +736,109 @@ describe("reservationBreakdown", () => {
         output({ origin: "東京", destination: "大阪", route_candidates: [] }),
       ),
     ).toEqual([]);
+  });
+
+  /* 職員が検算できるのは、運賃以外の判断材料（所要時間・乗換回数）と理由が揃うとき。 */
+  it("採用移動経路として経路・運賃・所要時間・乗換回数・採用理由を並べる", () => {
+    const sections = reservationBreakdown(
+      routeResult([
+        selectedCandidate({
+          route: "霞ケ関駅(東京メトロ日比谷線) => 虎ノ門駅",
+          fare: "356円",
+          duration: "12分",
+          transfer_count: 1,
+          reason: "運賃が最も安いため",
+        }),
+      ]),
+    );
+    expect(section(sections, "selected-route")).toEqual({
+      key: "selected-route",
+      label: "採用移動経路",
+      lines: [
+        "経路：霞ケ関駅(東京メトロ日比谷線) => 虎ノ門駅",
+        "1人あたり合計運賃：356円",
+        "所要時間：12分",
+        "乗換回数：1回",
+        "採用理由：運賃が最も安いため",
+      ],
+    });
+  });
+
+  /* 採用理由は採用したものだけ（他候補の `reason` は「なぜ採らなかったか」で、並べると比較の軸が候補ごとに変わる）。 */
+  it("その他の移動経路候補を採用理由なしで番号付きに並べる", () => {
+    const sections = reservationBreakdown(
+      routeResult([
+        selectedCandidate(),
+        otherCandidate({
+          route: "東京 => 名古屋 => 大阪",
+          fare: "15000円",
+          duration: "2時間50分",
+          transfer_count: 1,
+        }),
+        otherCandidate({
+          route: "東京 => 京都 => 大阪",
+          fare: "15200円",
+          duration: "2時間40分",
+          transfer_count: 2,
+        }),
+      ]),
+    );
+    expect(
+      sections.filter((candidate) =>
+        candidate.key.startsWith("route-candidate-"),
+      ),
+    ).toEqual([
+      {
+        key: "route-candidate-1",
+        label: "その他の移動経路候補1",
+        lines: [
+          "経路：東京 => 名古屋 => 大阪",
+          "1人あたり合計運賃：15000円",
+          "所要時間：2時間50分",
+          "乗換回数：1回",
+        ],
+      },
+      {
+        key: "route-candidate-2",
+        label: "その他の移動経路候補2",
+        lines: [
+          "経路：東京 => 京都 => 大阪",
+          "1人あたり合計運賃：15200円",
+          "所要時間：2時間40分",
+          "乗換回数：2回",
+        ],
+      },
+    ]);
+  });
+
+  /* 空欄が並ぶと入れ忘れに見える（職員は定期区間を伝えていない）。 */
+  it("定期区間を伝えていない回は定期重複区間の行を出さない", () => {
+    const sections = reservationBreakdown(
+      routeResult([
+        selectedCandidate({ commuter_pass_overlap_sections: null }),
+        otherCandidate({ commuter_pass_overlap_sections: null }),
+      ]),
+    );
+    expect(
+      sections.flatMap((section) => section.lines).join("\n"),
+    ).not.toContain("定期重複区間");
+  });
+
+  /* null（区間そのものが不明）と空配列（重なっていない）を画面でも分ける。 */
+  it("定期区間を伝えていて重複が無い候補は「重複なし」と出す", () => {
+    const sections = reservationBreakdown(
+      routeResult([
+        selectedCandidate({
+          commuter_pass_overlap_sections: ["新宿 => 渋谷", "渋谷 => 大井町"],
+        }),
+        otherCandidate({ commuter_pass_overlap_sections: [] }),
+      ]),
+    );
+    expect(section(sections, "selected-route")?.lines).toContain(
+      "定期重複区間：新宿 => 渋谷、渋谷 => 大井町",
+    );
+    expect(section(sections, "route-candidate-1")?.lines).toContain(
+      "定期重複区間：重複なし",
+    );
   });
 });
