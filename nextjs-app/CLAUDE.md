@@ -59,12 +59,16 @@ src/
 
 ### 交通IC（`src/features/ic-card/`）
 
-- `reservation-panel.tsx` — 交通IC予約。スカラーの平坦なマップ（状態モデルと写す
-  規則は `reservation-form.ts`）。**同行者とICカード利用枚数だけは `FormState` の
-  外**にタブが持つ — 出力契約に載せず AI にも埋めさせない欄なので（#68）、中に入れると
-  `applyToForm` の写す規則が掛かる欄に見える。同行者は行として足し引きする
-- `reservation-form.ts` — 交通ICタブの組み立て（#38・#65）。欄の表示名・状態モデル・
-  **AI の結果をフォームへ写す `applyToForm`** とプレビューの一覧
+- `reservation-panel.tsx` — 交通IC予約。**状態は `ReservationState` 1つ**で、パネルは
+  描くだけ（#167）
+- `reservation-form.ts` — 交通ICタブの状態と組み立て（#38・#65・#167）。欄の表示名・
+  状態モデル（`ReservationState`。AI が埋める欄はスカラーの平坦なマップ `fields`。
+  **同行者とICカード利用枚数もここにあるが `fields` の外** — 出力契約に載せず AI にも
+  埋めさせない欄なので（#68）、中に入れると `applyToForm` の写す規則が掛かる欄に
+  見える）・**状態の遷移すべて**（手入力 `setFieldValue`・同行者の行の足し引き・
+  利用枚数・初期状態 `EMPTY_RESERVATION` と「最初からやり直す」`resetReservation`。
+  リセットは行番号だけ持ち越す — 消した行の番号を再利用すると、入力中の氏名が別の行へ
+  移る）・**AI の結果をフォームへ写す `applyToForm`** とプレビューの一覧
 
 ### 会議ロジ（`src/features/meeting/`）
 

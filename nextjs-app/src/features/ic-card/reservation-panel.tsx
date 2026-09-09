@@ -2,7 +2,7 @@
 
 import type { ParseReservationOutput } from "@/lib/contracts/types";
 import { Plus, Trash2 } from "lucide-react";
-import { type ChangeEvent, useId, useRef, useState } from "react";
+import { type ChangeEvent, useId, useState } from "react";
 import { AiAssistant } from "@/components/ai-assistant/ai-assistant";
 import {
   AiBadge,
@@ -12,50 +12,34 @@ import {
 import { FormSection } from "@/components/form-section";
 import { RESERVATION_TASK_ID } from "@/lib/api";
 import {
+  addCompanion,
   applyToForm,
-  EMPTY_FORM,
+  type CompanionRow,
+  EMPTY_RESERVATION,
   FIELD_LABELS,
   type FieldName,
-  type FormState,
+  removeCompanion,
   reservationPreviewItems,
+  resetReservation,
   SELECT_LABELS,
   type SelectFieldName,
+  setCardCount,
+  setCompanionName,
+  setFieldValue,
 } from "./reservation-form";
 import { ManualInputDivider, TabHeading } from "@/components/screen-layout";
 
-/** 同行者の行ひとつ。**AI は埋めない**ので `FieldSource` を持たない（#68）。 */
-type CompanionRow = { id: string; name: string };
-
 export function ReservationPanel() {
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
   /*
-    同行者とICカード利用枚数は出力契約に載せず、AI にも埋めさせない（#68）。
-    `FormState` の外に置くのはそのため — 中に入れると `applyToForm` の写す規則が
-    掛かる欄に見え、「AI が推測すべき値ではない」という判断がコードから消える。
+    状態モデルと遷移は `reservation-form.ts`（#167）。同行者とICカード利用枚数も
+    そこにある — 行の足し引きという判断を持つので、画面に置くと画面を描かない限り
+    確かめられない。
   */
-  const [companions, setCompanions] = useState<CompanionRow[]>([]);
-  const [cardCount, setCardCount] = useState("");
-  // 行の識別子は React の key にしか使わないので、画面の中だけで連番を配る。
-  const nextCompanionNumber = useRef(0);
+  const [reservation, setReservation] = useState(EMPTY_RESERVATION);
+  const { fields } = reservation;
 
   function setField(name: FieldName, value: string) {
-    setForm((current) => ({ ...current, [name]: { value, source: "manual" } }));
-  }
-
-  function addCompanion() {
-    const id = `companion-${nextCompanionNumber.current}`;
-    nextCompanionNumber.current += 1;
-    setCompanions((current) => [...current, { id, name: "" }]);
-  }
-
-  function removeCompanion(id: string) {
-    setCompanions((current) => current.filter((row) => row.id !== id));
-  }
-
-  function setCompanionName(id: string, name: string) {
-    setCompanions((current) =>
-      current.map((row) => (row.id === id ? { ...row, name } : row)),
-    );
+    setReservation((current) => setFieldValue(current, name, value));
   }
 
   /**
@@ -64,17 +48,9 @@ export function ReservationPanel() {
    * 純粋に保つ約束があり、実行も後になる）。
    */
   function applyResult(result: ParseReservationOutput): ApplyReport {
-    const { next, report } = applyToForm(form, result);
-    setForm(next);
+    const { next, report } = applyToForm(fields, result);
+    setReservation((current) => ({ ...current, fields: next }));
     return report;
-  }
-
-  function resetForm() {
-    setForm(EMPTY_FORM);
-    // 同行者と利用枚数も戻す。「最初からやり直す」は AI 由来の欄だけを消す操作
-    // ではなく、フォームを初期状態へ戻す操作である（手で入れた欄も消える）。
-    setCompanions([]);
-    setCardCount("");
   }
 
   return (
@@ -108,9 +84,9 @@ export function ReservationPanel() {
           そう出す必要がある（ADR-0006）。描画のたびに呼ばれるので、待っている間の
           手入力もプレビューに映る。
         */
-        previewItems={(result) => reservationPreviewItems(result, form)}
+        previewItems={(result) => reservationPreviewItems(result, fields)}
         onApply={applyResult}
-        onReset={resetForm}
+        onReset={() => setReservation(resetReservation)}
       />
 
       <ManualInputDivider />
@@ -121,25 +97,25 @@ export function ReservationPanel() {
           <Field
             name="borrow_at"
             type="date"
-            state={form.borrow_at}
+            state={fields.borrow_at}
             onChange={setField}
           />
           <Field
             name="return_at"
             type="datetime-local"
-            state={form.return_at}
+            state={fields.return_at}
             onChange={setField}
           />
           <Field
             name="origin"
             type="text"
-            state={form.origin}
+            state={fields.origin}
             onChange={setField}
           />
           <Field
             name="destination"
             type="text"
-            state={form.destination}
+            state={fields.destination}
             onChange={setField}
           />
           {/* 移動経路は区間をまたぐ長い文字列になりうるので、2列ぶん使う（#86）。 */}
@@ -147,32 +123,41 @@ export function ReservationPanel() {
             <Field
               name="route"
               type="textarea"
-              state={form.route}
+              state={fields.route}
               onChange={setField}
             />
           </div>
           <Field
             name="transport_cost"
             type="text"
-            state={form.transport_cost}
+            state={fields.transport_cost}
             onChange={setField}
           />
           <SelectField
             name="purpose"
-            state={form.purpose}
+            state={fields.purpose}
             onChange={setField}
           />
         </div>
 
         <div className="mt-5 grid gap-5 sm:grid-cols-2">
-          <CardCountField value={cardCount} onChange={setCardCount} />
+          <CardCountField
+            value={reservation.cardCount}
+            onChange={(cardCount) =>
+              setReservation((current) => setCardCount(current, cardCount))
+            }
+          />
         </div>
 
         <CompanionRows
-          rows={companions}
-          onAdd={addCompanion}
-          onRemove={removeCompanion}
-          onChangeName={setCompanionName}
+          rows={reservation.companions}
+          onAdd={() => setReservation(addCompanion)}
+          onRemove={(id) =>
+            setReservation((current) => removeCompanion(current, id))
+          }
+          onChangeName={(id, name) =>
+            setReservation((current) => setCompanionName(current, id, name))
+          }
         />
       </FormSection>
     </div>

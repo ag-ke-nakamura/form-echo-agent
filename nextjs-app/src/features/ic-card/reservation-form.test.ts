@@ -4,10 +4,17 @@ import type {
 } from "@/lib/contracts/types";
 import { describe, expect, it } from "vitest";
 import {
+  addCompanion,
   applyToForm,
   EMPTY_FORM,
+  EMPTY_RESERVATION,
   type FormState,
+  removeCompanion,
   reservationPreviewItems,
+  resetReservation,
+  setCardCount,
+  setCompanionName,
+  setFieldValue,
 } from "./reservation-form";
 
 function output(
@@ -206,5 +213,76 @@ describe("applyToForm", () => {
     );
     expect(next.origin).toEqual({ value: "東京", source: "ai" });
     expect(report).toEqual({ updated: ["目的地"], preserved: [] });
+  });
+});
+
+/**
+ * 同行者の行とICカード利用枚数（#68・#167）。
+ *
+ * WHY テストを持つか: 行の識別子は React の key であり、**同時に並ぶ行の間で一意**で
+ * なければ、消した行と新しい行が React から同じものに見えて入力中の氏名が別の行へ
+ * 移る。行を消しても番号を戻さないのがその歯止めで、画面を描かずに確かめられるのは
+ * ここへ出したからである。
+ */
+describe("同行者の行", () => {
+  it("追加すると空の氏名の行が末尾に増える", () => {
+    const state = addCompanion(addCompanion(EMPTY_RESERVATION));
+    expect(state.companions).toEqual([
+      { id: "companion-0", name: "" },
+      { id: "companion-1", name: "" },
+    ]);
+  });
+
+  it("消した行の番号は再利用しない", () => {
+    const two = addCompanion(addCompanion(EMPTY_RESERVATION));
+    const state = addCompanion(removeCompanion(two, "companion-0"));
+    expect(state.companions.map((row) => row.id)).toEqual([
+      "companion-1",
+      "companion-2",
+    ]);
+  });
+
+  it("氏名の変更はその行だけに掛かる", () => {
+    const two = addCompanion(addCompanion(EMPTY_RESERVATION));
+    const state = setCompanionName(two, "companion-1", "田中");
+    expect(state.companions).toEqual([
+      { id: "companion-0", name: "" },
+      { id: "companion-1", name: "田中" },
+    ]);
+  });
+});
+
+/**
+ * 「最初からやり直す」（#65）。**AI 由来の欄だけを消す操作ではなく、フォームを初期状態
+ * へ戻す操作**である。
+ *
+ * WHY テストを持つか: 消す対象が AI の欄・同行者・利用枚数の3箇所に分かれており、
+ * 足したときに戻し忘れやすい。行番号だけは持ち越す（消した行の番号を再利用しない）ので、
+ * 「全部初期値に戻す」で片付けると壊れる。
+ */
+describe("resetReservation", () => {
+  const filled = setCardCount(
+    setCompanionName(
+      addCompanion(setFieldValue(EMPTY_RESERVATION, "origin", "横浜")),
+      "companion-0",
+      "田中",
+    ),
+    "2",
+  );
+
+  it("手で入れた欄・同行者・利用枚数がすべて消える", () => {
+    // 埋める側が空回りしていないこと（戻した後との比較が意味を持つ前提）。
+    expect(filled).not.toEqual(EMPTY_RESERVATION);
+
+    const reset = resetReservation(filled);
+    expect(reset.fields).toEqual(EMPTY_FORM);
+    expect(reset.companions).toEqual([]);
+    expect(reset.cardCount).toBe("");
+  });
+
+  it("行番号は持ち越す", () => {
+    expect(resetReservation(filled).nextCompanionNumber).toBe(
+      filled.nextCompanionNumber,
+    );
   });
 });

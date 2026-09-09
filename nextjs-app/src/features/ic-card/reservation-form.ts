@@ -17,8 +17,9 @@ import type { PreviewItem } from "@/lib/ai-preview";
  * 欄の値域そのものは出力契約が持つ（`contracts/outputs.ts`）。ここに残るのは画面だけが
  * 要るもの — 欄の表示名、選択肢の文言、写す規則である。
  *
- * **同行者とICカード利用枚数はここに無い**（#68）。出力契約に載せず AI にも埋めさせない
- * 欄なので、写す規則の対象にならない。状態は `reservation-panel.tsx` が持つ。
+ * **タブの状態は同行者とICカード利用枚数まで含めてここにある**（`ReservationState`。#167）。
+ * 出力契約に載せず AI にも埋めさせない2欄（#68）も、行の足し引きという判断を持つので
+ * 画面の中には置かない。
  */
 
 export type FieldName =
@@ -48,6 +49,122 @@ export const EMPTY_FORM: FormState = {
   transport_cost: { value: "", source: "manual" },
   purpose: { value: "", source: "manual" },
 };
+
+/**
+ * 同行者の行ひとつ。**AI は埋めない**ので `FieldSource` を持たない（#68）。
+ *
+ * `id` は React の key にしか使わない。同姓が並びうるので氏名は識別子にできず、
+ * 行の位置も足し引きで動くので使えない。
+ */
+export type CompanionRow = { id: string; name: string };
+
+/**
+ * 交通ICタブの状態。AI が埋める欄（`fields`）と AI が埋めない欄（同行者・ICカード
+ * 利用枚数）を1つに持つ。
+ *
+ * WHY 同行者と利用枚数を `fields` の中に入れないか: 出力契約に載せず AI にも埋めさせない
+ * 欄なので（#68）、中に入れると `applyToForm` の写す規則が掛かる欄に見え、「AI が推測
+ * すべき値ではない」という判断がコードから消える。
+ *
+ * WHY それでも画面（`.tsx`）から出すか: これから両方に判断が乗る（#165 が「同行者の
+ * 人数から行を作る」「利用枚数を行数から導く」を決めた）。画面が状態を持ったままだと、
+ * その判断は**画面を描かない限り確かめられない**（#167）。
+ */
+export type ReservationState = {
+  fields: FormState;
+  companions: CompanionRow[];
+  /**
+   * 次の行に配る番号。**行を消しても戻さない。** 戻すと、消した行と新しく足した行が
+   * React から同じものに見え、入力中の氏名が別の行へ移る。
+   */
+  nextCompanionNumber: number;
+  cardCount: string;
+};
+
+/**
+ * 初期状態。同行者の行を1つも持たないのは、同行者がいない出張のほうが普通で、空行が
+ * 1つあると「埋めるべき欄」に見えるため（#68）。
+ */
+export const EMPTY_RESERVATION: ReservationState = {
+  fields: EMPTY_FORM,
+  companions: [],
+  nextCompanionNumber: 0,
+  cardCount: "",
+};
+
+/**
+ * 「最初からやり直す」（#65）。**AI 由来の欄だけを消す操作ではなく、フォームを初期状態
+ * へ戻す操作**なので、手で入れた同行者と利用枚数も消える。
+ *
+ * **行番号だけは持ち越す**（初期状態と違うのはここだけ）。0 に戻すと、消えた行と戻した
+ * 後に足した行が React から同じものに見える。戻した直後は行が無いので今は衝突しないが、
+ * それは「番号を再利用しない」を行数に依存させることであり、依存させる理由が無い。
+ */
+export function resetReservation(current: ReservationState): ReservationState {
+  return {
+    ...EMPTY_RESERVATION,
+    nextCompanionNumber: current.nextCompanionNumber,
+  };
+}
+
+/**
+ * 手で入れた欄（#38）。**`source` を `"manual"` にするのがこの関数の仕事**で、
+ * `applyToForm` が `"ai"` を入れるのと対になる。この印が「反映で上書きされる範囲」と
+ * `isPreserved` の判定の両方を決めるので、画面の中で組み立てない。
+ */
+export function setFieldValue(
+  current: ReservationState,
+  name: FieldName,
+  value: string,
+): ReservationState {
+  return {
+    ...current,
+    fields: { ...current.fields, [name]: { value, source: "manual" } },
+  };
+}
+
+/** ICカードの利用枚数。**AI は埋めない**ので `FieldSource` を持たない（#68）。 */
+export function setCardCount(
+  current: ReservationState,
+  cardCount: string,
+): ReservationState {
+  return { ...current, cardCount };
+}
+
+/** 同行者の行を末尾に足す。何人になるか決まっていないので固定の欄にできない（#68）。 */
+export function addCompanion(current: ReservationState): ReservationState {
+  return {
+    ...current,
+    companions: [
+      ...current.companions,
+      { id: `companion-${current.nextCompanionNumber}`, name: "" },
+    ],
+    nextCompanionNumber: current.nextCompanionNumber + 1,
+  };
+}
+
+export function removeCompanion(
+  current: ReservationState,
+  id: string,
+): ReservationState {
+  return {
+    ...current,
+    companions: current.companions.filter((row) => row.id !== id),
+  };
+}
+
+export function setCompanionName(
+  current: ReservationState,
+  id: string,
+  name: string,
+): ReservationState {
+  return {
+    ...current,
+    companions: current.companions.map((row) =>
+      row.id === id ? { ...row, name } : row,
+    ),
+  };
+}
 
 /**
  * 欄の表示名。JSX・プレビューの一覧・反映の報告の3箇所から引く。
