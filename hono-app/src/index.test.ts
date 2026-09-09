@@ -139,6 +139,7 @@ const VALID_RESULTS = {
         transfer_count: 0,
         is_selected: true,
         reason: '運賃が最安',
+        citation_number: 1,
         commuter_pass_overlap_sections: null,
       },
     ],
@@ -794,6 +795,54 @@ describe('出力契約の再検査', () => {
     })
 
     expect((await expectError(response)).code).toBe('PARSE_FAILED')
+  })
+
+  /*
+    #174（ADR-0019）: 出典番号は1始まりの整数。**上限は BFF では縛れない**（そのリクエスト
+    が取得した出典の件数は応答の外にある）ので、形だけを見る。範囲外の番号は画面が
+    「確認できませんでした」と出し、Runtime が warn ログに残す。
+  */
+  it('出典番号が整数でない出力を通さない', async () => {
+    fakeRuntimeScript.write(
+      runtimeReturns({
+        ...VALID_RESULTS['ic-card.parse-reservation'],
+        route_candidates: VALID_RESULTS[
+          'ic-card.parse-reservation'
+        ].route_candidates.map((candidate) => ({
+          ...candidate,
+          citation_number: 0,
+        })),
+      }),
+    )
+
+    const response = await postTask({
+      ...REQUESTS['ic-card.parse-reservation'],
+      sessionId: SESSION_ID,
+    })
+
+    expect((await expectError(response)).code).toBe('PARSE_FAILED')
+  })
+
+  /*
+    #174: 経路候補が0件の応答は通る。**候補が無ければ出典番号も要らない** — 検索できな
+    かった回と、与件が食い違って聞き返す回がこれで、どちらも正しい応答である。
+    候補ごとに必須の欄が増えたので、境界で見ておく。
+  */
+  it('経路候補が0件の応答を通す', async () => {
+    const noCandidates = {
+      ...VALID_RESULTS['ic-card.parse-reservation'],
+      route_candidates: [],
+    }
+    fakeRuntimeScript.write(runtimeReturns(noCandidates))
+
+    const body = await expectSuccess(
+      await postTask({
+        ...REQUESTS['ic-card.parse-reservation'],
+        sessionId: SESSION_ID,
+      }),
+    )
+
+    expect(body.result).toEqual(noCandidates)
   })
 
   it('返す日時が YYYY-MM-DDTHH:mm でない出力を通さない', async () => {

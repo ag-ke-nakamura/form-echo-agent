@@ -20,6 +20,7 @@ describe("linkableSources", () => {
       linkableSources([citation({ publishedDate: "2026-08-27T00:00:00Z" })]),
     ).toEqual([
       {
+        number: 1,
         url: "https://www.jr-odekake.net/navi/time/?a=1",
         label: "東京から新大阪 時刻表（ＪＲ東海道新幹線）",
         host: "www.jr-odekake.net",
@@ -87,6 +88,19 @@ describe("linkableSources", () => {
         citation({ url: "https://www.jreast.co.jp/", title: "別のタイトル" }),
       ]),
     ).toHaveLength(1);
+  });
+
+  /*
+    #174（ADR-0019）: 経路候補が `citation_number` でこの番号を指す。**落とした出典が
+    あっても振り直さない** — 振り直すと候補が別のページを指す。
+  */
+  it("番号は citations の位置で、落とした出典があっても振り直さない", () => {
+    expect(
+      linkableSources([
+        citation({ url: "javascript:alert(1)" }),
+        citation({ url: "https://www.jreast.co.jp/" }),
+      ]).map((source) => source.number),
+    ).toEqual([2]);
   });
 
   it("並び順は Runtime が返した順のまま", () => {

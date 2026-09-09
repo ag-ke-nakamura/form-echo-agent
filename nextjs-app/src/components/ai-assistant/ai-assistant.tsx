@@ -112,8 +112,14 @@ type AiAssistantProps<TTaskId extends TaskId> = {
    * WHY `previewItems` と分けるか: 一覧に混ぜると、欄でない行が聞き返しの分母に
    * 入って判定が壊れる（`previewTone`）。渡さないタブでは領域そのものが出ない —
    * 調べものをするのは交通ICだけである。
+   *
+   * **出典も渡す** — 経路候補が出典番号でページを指すので（#174、ADR-0019）、その番号を
+   * 引けるかどうかは `citations` を見ないと言えない。
    */
-  breakdown?: (result: TaskOutputs[TTaskId]) => BreakdownSection[];
+  breakdown?: (
+    result: TaskOutputs[TTaskId],
+    citations: readonly WebSearchCitation[],
+  ) => BreakdownSection[];
   /** プレビューの内容をフォームへ写し、何を更新して何を守ったかを返す。 */
   onApply: (result: TaskOutputs[TTaskId]) => ApplyReport;
   /** このタブのフォームを初期状態へ戻す。 */
@@ -383,7 +389,7 @@ export function AiAssistant<TTaskId extends TaskId>({
   const breakdownSections =
     preview === null || breakdown === undefined
       ? []
-      : breakdown(preview.result);
+      : breakdown(preview.result, preview.citations);
 
   /**
    * 読み上げだけに出す一文。**画面には出さない**（見れば分かるものを二重に置かない）。

@@ -2,6 +2,7 @@ import { resolveAgentLoopTimeoutMs } from '../config.js';
 import {
   inspectedInputStrings,
   outputSchemaFor,
+  parseReservationOutputSchema,
   type TaskId,
   type Usage,
 } from '../contracts/index.js';
@@ -9,6 +10,7 @@ import { checkGuardrail } from '../guardrail/load.js';
 import { GuardrailBlockedError } from '../guardrail/types.js';
 import type { WebSearchHit } from '../tools/web-search.js';
 import {
+  toCitations,
   webSearchesUsed,
   webSearchHits,
   withWebSearchBudget,
@@ -132,6 +134,8 @@ export async function invokeTask(
     */
     await blockOrPass(JSON.stringify(invoked.result), 'OUTPUT', sessionId, log);
 
+    warnOnUnresolvableCitations(taskId, invoked.result, log);
+
     // 予算の内側で読む。外へ出ると `AsyncLocalStorage` の文脈が切れて空になる。
     return {
       ...invoked,
@@ -139,6 +143,48 @@ export async function invokeTask(
       webSearchHits: webSearchHits(),
     };
   });
+}
+
+/**
+ * 経路候補が指した出典番号が、このリクエストで取得した出典の範囲に無いことを記録する
+ * （#174、ADR-0019）。**弾かない。**
+ *
+ * WHY 記録するか: 番号方式では範囲外は「モデルが数字を作った」というまれで機械的な
+ * 失敗で、**画面はその候補を「確認できませんでした」と出して残りを描く**（番号1つの
+ * ために応答全体を捨てるのは釣り合わない）。記録が無いと、それが起きていること自体に
+ * 気付けず、Skill の書き方を直す材料も得られない。
+ *
+ * 予算の内側から呼ぶ（`webSearchHits()` が `AsyncLocalStorage` を読む）。
+ *
+ * **見るのは件数の範囲だけ。** 画面は http(s) 以外の出典を落とすので（`linkableSources`）、
+ * そこを指した番号も引けないが、その判定を持ち込むと表示の規則が Runtime にも複製される。
+ * 検索コネクタが http(s) 以外を返す回は無いという前提の側に倒す。
+ */
+function warnOnUnresolvableCitations(
+  taskId: TaskId,
+  result: unknown,
+  log: InvocationLogger,
+): void {
+  /*
+    taskId で分岐するが、この判断を契約の表（`inspectedInputStrings` のような形）に
+    しない。**契約が持つのは「何を受け付け何で検査するか」で、これはログを出すかどうか
+    である。** 出典番号を持つのは Web 検索を持つドメインだけなので、表にしても
+    交通IC以外の行は永久に空になる。
+  */
+  if (taskId !== 'ic-card.parse-reservation') return;
+  // `result` を出力契約でもう一度読む（`invokeWithSchemaRetry` の戻りは `unknown`）。
+  // 契約に適合しない `result` はここへ来ない（作り直しか PARSE_FAILED になる）。
+  const parsed = parseReservationOutputSchema.safeParse(result);
+  if (!parsed.success) return;
+  const available = toCitations(webSearchHits()).length;
+  const unresolvable = parsed.data.route_candidates
+    .map((candidate) => candidate.citation_number)
+    .filter((number) => number > available);
+  if (unresolvable.length === 0) return;
+  log.warn(
+    { citationNumbers: unresolvable, available },
+    '経路候補が取得していない出典番号を指しました',
+  );
 }
 
 /**

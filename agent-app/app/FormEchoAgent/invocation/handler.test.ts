@@ -157,6 +157,7 @@ const VALID_OUTPUTS = {
         transfer_count: 0,
         is_selected: true,
         reason: '運賃が最安',
+        citation_number: 1,
         commuter_pass_overlap_sections: null,
       },
     ],
@@ -571,6 +572,36 @@ describe('Web 検索（#46）', () => {
   });
 });
 
+describe('出典番号（#174、ADR-0019）', () => {
+  it('取得していない番号を指した応答は成功のまま warn ログに残る', async () => {
+    /*
+      台本は検索をしないので、このリクエストが取得した出典は0件。固定値の経路候補は
+      出典1を指しているので、**引けない番号**の回になる。
+    */
+    fakeModelScript.write({
+      kind: 'structuredOutput',
+      output: VALID_OUTPUTS['ic-card.parse-reservation'],
+    });
+    const log = recordingLogger();
+
+    const response = await invokeBoundary(
+      REQUESTS['ic-card.parse-reservation'],
+      newSessionId(),
+      log,
+    );
+
+    // **応答は捨てない**（番号1つのために日付・目的・経路・運賃まで失わない）。
+    // 画面がその候補の行を「確認できませんでした」にする。
+    expect(expectSuccess(response).result).toEqual(
+      VALID_OUTPUTS['ic-card.parse-reservation'],
+    );
+    // 捨てない代わりに、起きたことが残る唯一の場所がこのログである。
+    expect(log.warns).toContainEqual(
+      expect.objectContaining({ citationNumbers: [1], available: 0 }),
+    );
+  });
+});
+
 describe('Structured Output の再試行', () => {
   it('2回続けて Structured Output を返さないと PARSE_FAILED になる', async () => {
     fakeModelScript.write(
@@ -734,6 +765,7 @@ describe('出力契約が弾く形', () => {
       transfer_count: index,
       is_selected: index === 0,
       reason: index === 0 ? '運賃が最安' : '不採用',
+      citation_number: 1,
     }),
   );
 
@@ -798,6 +830,24 @@ describe('出力契約が弾く形', () => {
       output: {
         ...VALID_OUTPUTS['ic-card.parse-reservation'],
         purpose: '打ち合わせ',
+      },
+    },
+    {
+      /*
+        #174（ADR-0019）: 出典番号は1始まりの整数。**範囲の上限は契約では縛れない**
+        （そのリクエストが取得した出典の件数は入力にも出力にも無い）ので、形だけを
+        見る。0 や小数が通ると、画面は出典を引けないまま番号を表示する。
+      */
+      name: '出典番号が1始まりの整数でない',
+      taskId: 'ic-card.parse-reservation',
+      output: {
+        ...VALID_OUTPUTS['ic-card.parse-reservation'],
+        route_candidates: VALID_OUTPUTS[
+          'ic-card.parse-reservation'
+        ].route_candidates.map((candidate) => ({
+          ...candidate,
+          citation_number: 0,
+        })),
       },
     },
     {

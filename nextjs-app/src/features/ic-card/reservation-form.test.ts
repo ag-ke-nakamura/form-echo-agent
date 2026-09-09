@@ -3,6 +3,7 @@ import type {
   RouteCandidate,
 } from "@/lib/contracts/types";
 import type { BreakdownSection } from "@/lib/ai-preview";
+import type { WebSearchCitation } from "@/lib/api";
 import { describe, expect, it } from "vitest";
 import {
   addCompanion,
@@ -50,6 +51,29 @@ function output(
   };
 }
 
+/**
+ * Runtime が取得した出典（#174、ADR-0019）。**経路候補はこの並びの番号を指す。**
+ * 2件あるので、指せる番号は1と2だけになる。
+ */
+const CITATIONS: WebSearchCitation[] = [
+  {
+    title: "霞ケ関駅から虎ノ門駅の乗換案内・運賃",
+    url: "https://www.example-transit.jp/transfer/result",
+  },
+  {
+    title: "都営バス 都01系統 運賃案内",
+    url: "https://www.kotsu.metro.tokyo.jp/bus/fare/to01",
+  },
+];
+
+/** 内訳を組む。出典は `CITATIONS` 固定で、番号を引けない回を見るテストだけが上書きする。 */
+function breakdownOf(
+  result: ParseReservationOutput,
+  citations: readonly WebSearchCitation[] = CITATIONS,
+): BreakdownSection[] {
+  return reservationBreakdown(result, citations);
+}
+
 /** 採用移動経路（#100）。内訳が全項目を写すので（#173）すべて固定値で埋める。 */
 function selectedCandidate(
   overrides: Partial<RouteCandidate> = {},
@@ -61,6 +85,7 @@ function selectedCandidate(
     transfer_count: 0,
     is_selected: true,
     reason: "運賃が最安",
+    citation_number: 1,
     commuter_pass_overlap_sections: null,
     ...overrides,
   };
@@ -740,7 +765,7 @@ function section(sections: BreakdownSection[], key: string) {
  */
 describe("reservationBreakdown", () => {
   it("検索条件として出発地・目的地とその最寄を並べる", () => {
-    const sections = reservationBreakdown(
+    const sections = breakdownOf(
       output({
         origin: "虎ノ門ヒルズ",
         destination: "横浜市役所",
@@ -761,7 +786,7 @@ describe("reservationBreakdown", () => {
 
   /* 出る回と出ない回があると、職員は必要な回に出ているかを確かめられない。 */
   it("出発地が既に駅名でも最寄を省かない", () => {
-    const sections = reservationBreakdown(
+    const sections = breakdownOf(
       output({
         origin: "霞ヶ関駅",
         destination: "虎ノ門駅",
@@ -779,7 +804,7 @@ describe("reservationBreakdown", () => {
   /* 領域そのものを出さない。理由は AI の `message` が言う。 */
   it("経路候補が0件なら内訳を出さない", () => {
     expect(
-      reservationBreakdown(
+      breakdownOf(
         output({ origin: "東京", destination: "大阪", route_candidates: [] }),
       ),
     ).toEqual([]);
@@ -787,7 +812,7 @@ describe("reservationBreakdown", () => {
 
   /* 職員が検算できるのは、運賃以外の判断材料（所要時間・乗換回数）と理由が揃うとき。 */
   it("採用移動経路として経路・運賃・所要時間・乗換回数・採用理由を並べる", () => {
-    const sections = reservationBreakdown(
+    const sections = breakdownOf(
       routeResult([
         selectedCandidate({
           route: "霞ケ関駅(東京メトロ日比谷線) => 虎ノ門駅",
@@ -807,13 +832,14 @@ describe("reservationBreakdown", () => {
         "所要時間：12分",
         "乗換回数：1回",
         "採用理由：運賃が最も安いため",
+        "経路検索結果：出典1",
       ],
     });
   });
 
   /* 採用理由は採用したものだけ（他候補の `reason` は「なぜ採らなかったか」で、並べると比較の軸が候補ごとに変わる）。 */
   it("その他の移動経路候補を採用理由なしで番号付きに並べる", () => {
-    const sections = reservationBreakdown(
+    const sections = breakdownOf(
       routeResult([
         selectedCandidate(),
         otherCandidate({
@@ -843,6 +869,7 @@ describe("reservationBreakdown", () => {
           "1人あたり合計運賃：15000円",
           "所要時間：2時間50分",
           "乗換回数：1回",
+          "経路検索結果：出典1",
         ],
       },
       {
@@ -853,6 +880,7 @@ describe("reservationBreakdown", () => {
           "1人あたり合計運賃：15200円",
           "所要時間：2時間40分",
           "乗換回数：2回",
+          "経路検索結果：出典1",
         ],
       },
     ]);
@@ -860,7 +888,7 @@ describe("reservationBreakdown", () => {
 
   /* 空欄が並ぶと入れ忘れに見える（職員は定期区間を伝えていない）。 */
   it("定期区間を伝えていない回は定期重複区間の行を出さない", () => {
-    const sections = reservationBreakdown(
+    const sections = breakdownOf(
       routeResult([
         selectedCandidate({ commuter_pass_overlap_sections: null }),
         otherCandidate({ commuter_pass_overlap_sections: null }),
@@ -873,7 +901,7 @@ describe("reservationBreakdown", () => {
 
   /* null（区間そのものが不明）と空配列（重なっていない）を画面でも分ける。 */
   it("定期区間を伝えていて重複が無い候補は「重複なし」と出す", () => {
-    const sections = reservationBreakdown(
+    const sections = breakdownOf(
       routeResult([
         selectedCandidate({
           commuter_pass_overlap_sections: ["新宿 => 渋谷", "渋谷 => 大井町"],
@@ -886,6 +914,56 @@ describe("reservationBreakdown", () => {
     );
     expect(section(sections, "route-candidate-1")?.lines).toContain(
       "定期重複区間：重複なし",
+    );
+  });
+
+  /*
+    #174: 「1円でも安い経路を選んだ」を職員が検算できるのは、候補と根拠のページが対に
+    なっているときだけ。採用だけに出すと、比べた相手の運賃をどこで見たのかが消える。
+  */
+  it("採用移動経路とその他の候補の両方に出典番号を出す", () => {
+    const sections = breakdownOf(
+      routeResult([
+        selectedCandidate({ citation_number: 1 }),
+        otherCandidate({ citation_number: 2 }),
+      ]),
+    );
+    expect(section(sections, "selected-route")?.lines).toContain(
+      "経路検索結果：出典1",
+    );
+    expect(section(sections, "route-candidate-1")?.lines).toContain(
+      "経路検索結果：出典2",
+    );
+  });
+
+  /*
+    #174（ADR-0019）: モデルが取得していない番号を書いた回。**その候補の行だけが
+    「確認できませんでした」になり、他の候補と他の欄はそのまま出る** — 番号1つのために
+    応答全体を捨てない（Runtime が warn ログに残す）。
+  */
+  it("引けない出典番号は番号を出さず、他の候補には出す", () => {
+    const sections = breakdownOf(
+      routeResult([
+        selectedCandidate({ citation_number: 9 }),
+        otherCandidate({ citation_number: 2 }),
+      ]),
+    );
+    expect(section(sections, "selected-route")?.lines).toContain(
+      "経路検索結果：確認できませんでした",
+    );
+    expect(section(sections, "selected-route")?.lines).toContain(
+      "1人あたり合計運賃：14720円",
+    );
+    expect(section(sections, "route-candidate-1")?.lines).toContain(
+      "経路検索結果：出典2",
+    );
+  });
+
+  /* 出典の一覧に出ないものは内訳でも指させない（`linkableSources` が落とす URL）。 */
+  it("出典が空の回はすべての候補で確認できませんでしたと出す", () => {
+    const sections = breakdownOf(routeResult([selectedCandidate()]), []);
+    expect(section(sections, "selected-route")?.lines).toContain(
+      "経路検索結果：確認できませんでした",
     );
   });
 });
