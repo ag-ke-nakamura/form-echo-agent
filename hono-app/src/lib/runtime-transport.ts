@@ -55,8 +55,8 @@ function runtimeRequestBody({
 /**
  * `local`: ローカルの `agentcore dev` が立てた Runtime を HTTP で叩く。
  *
- * デプロイ済み Runtime を SigV4 で叩く `deployed` はここに並べる。切り替えは
- * 呼び出し側ではなくこのモジュールの中で行う（BFF の他の部分は宛先を知らない）。
+ * `deployed`（SigV4）と並べて置き、切り替えは呼び出し側ではなくこのモジュールの
+ * 中で行う（BFF の他の部分は宛先を知らない）。
  */
 const localTransport: RuntimeTransport = (invocation) =>
   fetch(`${RUNTIME_URL}/invocations`, {
