@@ -1,5 +1,6 @@
 import {
   type Agent,
+  type AgentResult,
   StructuredOutputError as ModelRefusedToolError,
   type StopReason,
 } from '@strands-agents/sdk';
@@ -28,13 +29,31 @@ const MAX_STRUCTURED_OUTPUT_ATTEMPTS = 2;
  * **`WEB_SEARCH_MAX_CALLS` から式で導かない** — 検索の予算を絞ったときに往復の上限が
  * 黙って縮むし、Web 検索を持たない会議ロジの上限まで一緒に動く。
  *
+ * **素のテキストで返す経路（`plain-text.ts`）もこの上限を共有する**（ADR-0020）。
+ * 経路ごとに別の数を持つと、同じ Web 検索の予算を使いながら片方だけが先に切られる。
+ *
  * **`limits.outputTokens` / `limits.totalTokens` は張らない。** どちらもソフト
  * キャップで、単発の巨大応答は超過したまま返る（SDK の `InvokeOptions` が明記して
  * いる）ので「塞いだつもりで塞げていない」状態になる。加えて上限値を決める根拠
  * （異常系のトークン分布）を我々は持っていない。壁時計（`cancelSignal`）の方が
  * 効き方を言い切れる。
  */
-const MAX_AGENT_TURNS = 10;
+export const MAX_AGENT_TURNS = 10;
+
+/**
+ * この1回の呼び出しが使ったトークン。**素のテキストで返す経路とも共有する。**
+ *
+ * `accumulatedUsage` は Agent の生涯合計で、セッションを跨いで再利用されると
+ * 2ターン目以降が積み上がった値になる。
+ */
+export function usageOf(agentResult: AgentResult): Usage {
+  const usage = agentResult.metrics?.latestAgentInvocation?.usage;
+  return {
+    inputTokens: usage?.inputTokens ?? 0,
+    outputTokens: usage?.outputTokens ?? 0,
+    totalTokens: usage?.totalTokens ?? 0,
+  };
+}
 
 /** 出力契約に適合した結果が得られなかったことを表す。BFF へ PARSE_FAILED を返す。 */
 export class StructuredOutputError extends Error {}
@@ -56,7 +75,7 @@ const PARSE_FAILED_MESSAGE = 'Structured Output が出力契約に適合しま�
  * 「打ち切りではない」に倒す — SDK が理由を増やしたときに、正常な停止理由が
  * 黙って「上限で切った」に化ける方が危ない。
  */
-function limitStopDescription(stopReason: StopReason): string | null {
+export function limitStopDescription(stopReason: StopReason): string | null {
   switch (stopReason) {
     case 'limitTurns':
       return `1回の呼び出しの往復回数の上限（${MAX_AGENT_TURNS}）に達しました`;
@@ -119,17 +138,7 @@ export async function invokeWithSchemaRetry(
       });
       const parsed = schema.safeParse(agentResult.structuredOutput);
       if (parsed.success) {
-        // この1回の呼び出し分だけを返す。accumulatedUsage は Agent の生涯合計で、
-        // セッションを跨いで再利用されると2ターン目以降が積み上がった値になる。
-        const usage = agentResult.metrics?.latestAgentInvocation?.usage;
-        return {
-          result: parsed.data,
-          usage: {
-            inputTokens: usage?.inputTokens ?? 0,
-            outputTokens: usage?.outputTokens ?? 0,
-            totalTokens: usage?.totalTokens ?? 0,
-          },
-        };
+        return { result: parsed.data, usage: usageOf(agentResult) };
       }
       /*
         適合しなかったときだけ停止理由を見る。**この順序は逆にしない** — 上限は

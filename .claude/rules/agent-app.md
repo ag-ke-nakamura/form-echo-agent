@@ -24,9 +24,11 @@ paths:
   `invocation/` にある**（シームは `invocation/invoke-task.ts` の `invokeTask`）
 - **`npm run dev` / `npm start` を直接使わず `agentcore dev` / `agentcore deploy` 経由で操作する**
   （プロセス単体をデバッグする場合を除く）
-- **ツールはドメインごとの表（`tools/load.ts`）から引く。** 交通ICだけが Web 検索
+- **ツールはドメインごとの表（`tools/load.ts`）から引く。** 交通ICと検証ドメインが Web 検索
   （AgentCore Gateway、`FORMECHO_WEB_SEARCH_GATEWAY_URL`）を持ち、**会議ロジには渡さない** —
   後回しではなくそもそも不要（F-22）で、渡さないこと自体が #46 の成果に含まれる。
+  検証ドメインが持つのは ADR-0020（検索を使わせるプロンプトの効きを試せることがあの画面の
+  値打ちの1つ）。
   検索回数の上限はリクエスト単位なので `AsyncLocalStorage`（`tools/web-search.ts`）で持ち、
   `invokeTask` が全体を包む。**`agent.invoke` ごとの `invocationState` では Structured Output の
   作り直しで予算が戻ってしまう**
@@ -61,13 +63,24 @@ paths:
   は守らない** — 片方しか見えないテストでは関係を検査できない。歯止めは `config.ts` のコメント
 - **発火時のエラーコードは `PARSE_FAILED`**（職員の取る行動が作り直しの尽きた場合と同じ）。
   運用側が要る「契約に適合しなかった」と「上限で切った」の区別は `stopReason` の warn ログが担う
+- **素のテキストで返す経路（`invocation/plain-text.ts`、`playground.free-prompt`）だけは
+  `PARSE_FAILED` にせず投げ直す**（ADR-0020）。あのコードが表すのは「出力契約に届かなかった」で、
+  出力契約が `{ text }` 1欄のあの経路には届かない出力が存在しない。投げ直せば handler が 500 にし、
+  BFF が `RUNTIME_UNAVAILABLE` に写す。**返してはいけない** — 途中まで書かれたテキスト（多くは
+  空文字）が成功として画面に出て、職員はそれをプロンプトの効きとして読む。上限の値
+  （`MAX_AGENT_TURNS`・壁時計）と `stopReason` の warn ログは Structured Output の経路と共有する
 
 ## Skill の解決（#42・ADR-0013）
 
 **`taskId` が Skill を一意に決める。** `invocation/system-prompt.ts` の `buildSystemPrompt` が
 `SKILLS[taskId]`（`skills/registry.ts`）の instructions をそのまま system prompt へ埋め込む。
-レジストリは `Record<TaskId, string>` のフラットな表で、**キーが `TaskId` 型なので taskId を
-足したときの登録漏れが型エラーになる。**
+レジストリは `Record<Exclude<TaskId, typeof FREE_PROMPT_TASK_ID>, string>` のフラットな表で、
+**キーが `TaskId` 型なので taskId を足したときの登録漏れが型エラーになる。**
+
+**`playground.free-prompt` だけが Skill を持たない**（ADR-0020）。あの taskId の system prompt は
+職員が `input.system_prompt` で持ち込む文そのもので、我々が足すのは基準時刻の付記1つだけである
+（`systemPromptSource` がこの分岐を持つ）。**除外を `Exclude` で書くので、他4タブの登録漏れは
+引き続き型エラーになる** — レジストリを `Partial` にして緩めないこと。
 
 **Skill の本文は `SKILL.md` ではなく `skills/{domain}/{task}.ts` に TypeScript のデータ
 （instructions の文字列）として直接書く**（ADR-0012）。デプロイ済み Runtime（CodeZip）は
@@ -82,8 +95,9 @@ drift-guard テストも無い。
 `docs/reference-doc-fixes.md` F-09）。**Runtime は `@strands-agents/sdk/vended-plugins/skills`
 に依存しない。**
 
-配線（4つの taskId がそれぞれの instructions を受け取る・他の Skill が混ざらない）は
-`invocation/handler.test.ts` の「taskId の解決」が境界越しに見る。
+配線（Skill を持つ4つの taskId がそれぞれの instructions を受け取る・他の Skill が混ざらない）は
+`invocation/handler.test.ts` の「taskId の解決」が境界越しに見る。`playground.free-prompt` に
+Skill が1つも混ざらないことは同ファイルの「playground.free-prompt（ADR-0020）」が見る。
 
 ## Guardrail（#43）
 

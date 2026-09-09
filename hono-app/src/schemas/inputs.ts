@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { MAX_PROMPT_LENGTH } from './api.js'
 import {
   availabilitySchema,
   candidateFieldsSchema,
@@ -196,6 +197,27 @@ export type RecommendScheduleInput = z.infer<
 >
 
 /**
+ * `playground.free-prompt` の入力（ADR-0020）。**持ち込みシステムプロンプト1つだけ。**
+ *
+ * この欄がそのまま Runtime の system prompt になる。他4タスクの `input` が「画面の
+ * 状態」を運ぶのと違い、ここが運ぶのは**職員が書いた文**そのものである。`prompt` 欄が
+ * 運ぶのは**検証メッセージ**（user message としてモデルへ渡る文）のほうで、そちらは
+ * 空でもよい。
+ *
+ * 空文字を許さないのは、何も指示していない状態の応答を「プロンプトの効き」と
+ * 誤読させないため。上限は `prompt` と同じ（既存の Skill 全文を貼っても収まる）。
+ */
+export const freePromptInputSchema = z.object({
+  system_prompt: z
+    .string()
+    .min(1)
+    .max(MAX_PROMPT_LENGTH)
+    .describe('職員が持ち込む system prompt。そのままモデルへ渡る'),
+})
+
+export type FreePromptInput = z.infer<typeof freePromptInputSchema>
+
+/**
  * taskId から入力契約を引くための表。`OUTPUT_SCHEMAS` と対称に置く（ADR-0004）。
  *
  * `null` は「自然文だけを受け取る」ことを表す。**いまは1つも無い** — 交通ICが
@@ -207,4 +229,5 @@ export const INPUT_SCHEMAS = {
   'meeting.parse-candidates': parseCandidatesInputSchema,
   'meeting.parse-availability': parseAvailabilityInputSchema,
   'meeting.recommend-schedule': recommendScheduleInputSchema,
+  'playground.free-prompt': freePromptInputSchema,
 } satisfies Record<TaskId, z.ZodType | null>

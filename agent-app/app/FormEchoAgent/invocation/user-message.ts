@@ -1,15 +1,20 @@
-import type { INPUT_SCHEMAS, TaskId } from '../contracts/index.js';
+import type { FREE_PROMPT_TASK_ID, TaskId } from '../contracts/index.js';
 
 /**
  * 構造化入力と自然文に付ける見出し。**taskId ごとの表で持つ。**
  *
  * WHY 与件の見出しを taskId ごとにするか: 見出しは「参加可否表」のように中身の名前
  * そのものなので、taskId ごとに違うものを名乗る必要がある。共通の見出し（「入力」など）
- * にすると、モデルの側で何を渡されたのかが読めない。構造化入力を持たない taskId は
- * `null` しか書けないよう型で縛る（`PROMPT_REQUIREMENT` と同じ形）。**いま `null` の
- * taskId は1つも無い**（ADR-0017 で交通ICも与件を持った）ので、`buildUserMessage` は
- * 見出しの無い分岐を持たない。**再び `null` の taskId を足すなら、この表と一緒に
- * あちらの分岐も戻すこと** — 戻さないと `## null` と `null` の JSON がモデルへ流れる。
+ * にすると、モデルの側で何を渡されたのかが読めない。
+ *
+ * **`null` は「見出しを持たない」**、つまり user message を組み立てずに `prompt` を
+ * そのまま渡すことを表す。`playground.free-prompt` がこれで（ADR-0020）、あの taskId の
+ * `input` に載るのは持ち込みシステムプロンプトなので、与件として user message へ
+ * 載せる相手が無い — 載せると職員は自分が書いた文を2回渡されたモデルを見ることになる。
+ *
+ * **`null` を書けるのはその taskId だけ**、と型で縛る。緩めて「どちらの形でもよい」に
+ * すると、交通ICの行を `null` にしても型が通り、**与件の JSON が黙ってモデルへ届かなく
+ * なる**（画面のどこにも症状が出ない）。
  *
  * WHY 自然文の見出しも taskId ごとにするか: **書き手が違う。** 参加可否回答フォームに
  * 自然文を書くのは参加者であって職員ではない（`CONTEXT.md` の用語集はこの2つを
@@ -33,8 +38,10 @@ const HEADINGS = {
     input: '会議情報と参加可否表',
     prompt: '職員からの指示',
   },
+  // 与件の見出しも自然文の見出しも持たない（ADR-0020）。
+  'playground.free-prompt': { input: null, prompt: null },
 } satisfies {
-  [K in TaskId]: (typeof INPUT_SCHEMAS)[K] extends null
+  [K in TaskId]: K extends typeof FREE_PROMPT_TASK_ID
     ? { input: null; prompt: null }
     : { input: string; prompt: string };
 };
@@ -58,6 +65,11 @@ export function buildUserMessage(
   input: unknown,
 ): string {
   const headings = HEADINGS[taskId];
+  /*
+    見出しを持たない taskId は組み立てそのものを行わず、人が書いた文をそのまま渡す。
+    **空なら空のまま投げる** — 我々が足す文はどれもノイズになる（ADR-0020）。
+  */
+  if (headings.input === null) return prompt ?? '';
   const sections = [
     `## ${headings.input}`,
     '',

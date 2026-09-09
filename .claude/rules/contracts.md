@@ -38,8 +38,8 @@ excessively deep and possibly infinite" になる）。
 
 ## リクエストに何が載るか
 
-**4タスクすべてが構造化入力 `input` として画面の状態を受け取る**（ADR-0005 が ADR-0003 を
-撤回し、ADR-0017 が交通ICを加えた）。何を載せるかは taskId ごとに違い、`INPUT_SCHEMAS` が正典。
+**5タスクすべてが構造化入力 `input` を受け取る**（ADR-0005 が ADR-0003 を撤回し、ADR-0017 が
+交通ICを加えた）。何を載せるかは taskId ごとに違い、`INPUT_SCHEMAS` が正典。
 
 | taskId | `input` |
 | --- | --- |
@@ -47,6 +47,13 @@ excessively deep and possibly infinite" になる）。
 | `meeting.parse-candidates` | 所要時間・カレンダーの表示範囲（`calendar_start` / `calendar_end`）。既に選択済みの候補日程は送らない |
 | `meeting.parse-availability` | 参加形式・所要時間・候補日程の一覧 |
 | `meeting.recommend-schedule` | 参加形式・所要時間・参加者の名簿・参加可否表 |
+| `playground.free-prompt` | **持ち込みシステムプロンプト**（`system_prompt`）1欄だけ。ADR-0020 |
+
+**`playground.free-prompt` の `input` だけは画面の状態ではなく、職員が書いた文そのもの**である。
+そのまま system prompt になり（Skill を持たない唯一の taskId）、`prompt` 欄が運ぶのは user message
+としてモデルへ渡る**検証メッセージ**のほうで、そちらは空でもよい。**用語が逆に読める**ので
+`CONTEXT.md` の両方の項がこれを明記している。出力契約も `{ text }`（**回答本文**）1欄だけで、
+**この検証環境で Structured Output を通らない唯一の出力**である。
 
 **検査の境界は「`prompt` か `input` か」ではなく「人が書いた文字列か、システムが組み立てた与件か」**
 （ADR-0017 が ADR-0004 の縛りを引き直した）。**システムが組み立てた与件は Guardrail チェックを

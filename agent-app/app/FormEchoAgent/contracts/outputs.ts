@@ -472,12 +472,32 @@ export type RecommendScheduleOutput = z.infer<
 >;
 
 /**
+ * `playground.free-prompt` の出力（ADR-0020）。**回答本文1欄だけ。**
+ *
+ * `commonOutputFields`（`message` / `sources`）を持たないのは、この taskId が
+ * **Structured Output を通らない**ため — モデルはスキーマを見ておらず、Runtime が
+ * 素のテキストをこの形に包んで返す。包む先が1欄だけなら、モデルが書かなかった欄を
+ * Runtime が捏造する余地が無い。
+ *
+ * 出典（`citations`）は応答封筒の側が運ぶので、ここには載らない。
+ */
+export const freePromptOutputSchema = z.object({
+  text: z.string().describe('モデルが返した回答本文'),
+});
+
+export type FreePromptOutput = z.infer<typeof freePromptOutputSchema>;
+
+/**
  * taskId から出力契約を引くための表。Runtime は Structured Output のスキーマとして、
  * BFF はフロントエンドへ返す前の検査として、同じものを参照する。
+ *
+ * **`playground.free-prompt` だけは Runtime が Structured Output に使わない**
+ * （ADR-0020）。BFF の再検査は他4タスクと同じくここから引く。
  */
 export const OUTPUT_SCHEMAS = {
   'ic-card.parse-reservation': parseReservationOutputSchema,
   'meeting.parse-candidates': parseCandidatesOutputSchema,
   'meeting.parse-availability': parseAvailabilityOutputSchema,
   'meeting.recommend-schedule': recommendScheduleOutputSchema,
+  'playground.free-prompt': freePromptOutputSchema,
 } satisfies Record<TaskId, z.ZodType>;

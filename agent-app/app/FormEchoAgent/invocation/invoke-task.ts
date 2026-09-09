@@ -1,5 +1,7 @@
 import { resolveAgentLoopTimeoutMs } from '../config.js';
 import {
+  FREE_PROMPT_TASK_ID,
+  freePromptOutputSchema,
   inspectedInputStrings,
   outputSchemaFor,
   parseReservationOutputSchema,
@@ -17,6 +19,7 @@ import {
 } from '../tools/web-search.js';
 import { discardSession, getOrCreateDomainAgent } from './domain-agent.js';
 import type { InvocationLogger } from './logger.js';
+import { invokePlainText } from './plain-text.js';
 import { invokeWithSchemaRetry } from './structured-output.js';
 import { buildUserMessage } from './user-message.js';
 
@@ -86,7 +89,7 @@ export async function invokeTask(
   { taskId, prompt, input, sessionId }: TaskInvocation,
   log: InvocationLogger,
 ): Promise<TaskInvocationResult> {
-  const agent = getOrCreateDomainAgent(sessionId, taskId);
+  const agent = getOrCreateDomainAgent(sessionId, taskId, input);
   /*
     実行制限の壁時計をここで1つ作る（#125）。**Web 検索の予算と同じ理由で
     invocation 全体を包む必要がある** — `agent.invoke` ごとに作ると、`limits` の
@@ -115,16 +118,20 @@ export async function invokeTask(
       await blockOrPass(inspected, 'INPUT', sessionId, log);
     }
 
-    // 履歴の巻き戻しは invokeWithSchemaRetry が試行ごとに行うので、ここでは持たない。
-    const invoked = await invokeWithSchemaRetry(
-      agent,
-      buildUserMessage(taskId, prompt, input),
-      // 入力を見ないと言えない不変条件（提案が入力の候補日程と過不足なく対応して
-      // いるか）もここに載せる。値域を外れた評点と同じく作り直しに回す。
-      outputSchemaFor(taskId, input),
-      cancelSignal,
-      log,
-    );
+    const userMessage = buildUserMessage(taskId, prompt, input);
+    // 履歴の巻き戻しはどちらの経路も自分で行うので、ここでは持たない。
+    const invoked =
+      taskId === FREE_PROMPT_TASK_ID
+        ? await invokePlainText(agent, userMessage, cancelSignal, log)
+        : await invokeWithSchemaRetry(
+            agent,
+            userMessage,
+            // 入力を見ないと言えない不変条件（提案が入力の候補日程と過不足なく対応
+            // しているか）もここに載せる。値域を外れた評点と同じく作り直しに回す。
+            outputSchemaFor(taskId, input),
+            cancelSignal,
+            log,
+          );
 
     /*
       出力側の検査（F-16）。Strands の Structured Output はスキーマをツール仕様に
@@ -132,7 +139,12 @@ export async function invokeTask(
       toolUse.input を評価せず、抽出結果に載ったマイナンバー等を見ない。パース
       直後にアプリケーション層でここへ通す。
     */
-    await blockOrPass(JSON.stringify(invoked.result), 'OUTPUT', sessionId, log);
+    await blockOrPass(
+      inspectedOutputText(taskId, invoked.result),
+      'OUTPUT',
+      sessionId,
+      log,
+    );
 
     warnOnUnresolvableCitations(taskId, invoked.result, log);
 
@@ -143,6 +155,20 @@ export async function invokeTask(
       webSearchHits: webSearchHits(),
     };
   });
+}
+
+/**
+ * Guardrail の出力側で検査する1本のテキスト。
+ *
+ * **回答本文はそのまま検査する**（ADR-0020）。JSON 化すると改行が `\n` に、非 ASCII が
+ * エスケープされうるので、Guardrail が見る文字列が職員の読む文と別物になる。他4タスクの
+ * 出力は構造化データなので、欄名込みで1本にする JSON 化が素直な平文化のままである。
+ */
+function inspectedOutputText(taskId: TaskId, result: unknown): string {
+  if (taskId === FREE_PROMPT_TASK_ID) {
+    return freePromptOutputSchema.parse(result).text;
+  }
+  return JSON.stringify(result);
 }
 
 /**

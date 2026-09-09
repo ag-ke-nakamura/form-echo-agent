@@ -1,10 +1,8 @@
 import { z } from 'zod';
 import type { AiErrorCode } from './errors.js';
+import { MAX_PROMPT_LENGTH } from './fields.js';
 import { ALLOWED_TASK_IDS } from './task-ids.js';
 import { checkTaskInput } from './task-input.js';
-
-/** 参照ドキュメント 10.1節の入力サニタイズが課す上限。 */
-export const MAX_PROMPT_LENGTH = 10_000;
 
 /**
  * `POST /api/ai/tasks` のリクエスト（参照ドキュメント 1.3節）。

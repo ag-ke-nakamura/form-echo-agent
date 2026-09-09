@@ -5,8 +5,10 @@ import { resolveAgentLoopTimeoutMs, resolveModelName } from '../config.js';
 import {
   type AiTaskRequest,
   ALLOWED_TASK_IDS,
+  FREE_PROMPT_TASK_ID,
   MAX_CANDIDATES,
   MAX_PLACE_LENGTH,
+  MAX_PROMPT_LENGTH,
   MAX_ROUTE_CANDIDATES,
   type OUTPUT_SCHEMAS,
   type ParseAvailabilityInput,
@@ -49,6 +51,22 @@ const PROMPTS = {
   'meeting.parse-candidates': '来月の午後',
   'meeting.parse-availability': '15日は大丈夫ですが16日は無理です',
 } as const;
+
+/**
+ * Skill を持ち、Structured Output を通る4タスク（ADR-0020 が5つめを例外にした）。
+ *
+ * **`ALLOWED_TASK_IDS` から引き算で作る。** 手で並べ直すと、6つめの taskId を足した
+ * ときにこの表だけが古いまま緑になる。
+ */
+const SKILL_BACKED_TASK_IDS = ALLOWED_TASK_IDS.filter(
+  (taskId) => taskId !== FREE_PROMPT_TASK_ID,
+);
+
+/** 職員が持ち込む system prompt（ADR-0020。`CONTEXT.md`「持ち込みシステムプロンプト」）。 */
+const SYSTEM_PROMPT = 'あなたは俳句だけで答えます。';
+
+/** 検証メッセージ。user message としてそのままモデルへ渡る。 */
+const FREE_PROMPT_MESSAGE = '出張の準備について教えてください';
 
 /**
  * 交通ICの与件（#168・#170）。出発地・目的地・往復区分を職員が「移動の条件」で決める。
@@ -129,6 +147,11 @@ const REQUESTS = {
     taskId: 'meeting.recommend-schedule',
     input: AVAILABILITY_TABLE,
   },
+  'playground.free-prompt': {
+    taskId: 'playground.free-prompt',
+    prompt: FREE_PROMPT_MESSAGE,
+    input: { system_prompt: SYSTEM_PROMPT },
+  },
 } satisfies Record<TaskId, AiTaskRequest>;
 
 /**
@@ -188,6 +211,7 @@ const VALID_OUTPUTS = {
     message: '2件の候補日程の参加可否を読み取りました。',
     sources: [],
   },
+  'playground.free-prompt': { text: '回答本文です。' },
   'meeting.recommend-schedule': {
     evaluations: [
       {
@@ -213,7 +237,7 @@ describe('fake モデルの差し替え', () => {
 });
 
 describe('taskId の解決', () => {
-  it.each(ALLOWED_TASK_IDS)(
+  it.each(SKILL_BACKED_TASK_IDS)(
     '%s は対応する Skill を積んだドメインエージェントに解決される',
     async (taskId) => {
       fakeModelScript.write({
@@ -237,7 +261,7 @@ describe('taskId の解決', () => {
     },
   );
 
-  it.each(ALLOWED_TASK_IDS)(
+  it.each(SKILL_BACKED_TASK_IDS)(
     '%s のドメインエージェントはツールを1つも持たない',
     async (taskId) => {
       fakeModelScript.write({
@@ -556,6 +580,17 @@ describe('Web 検索（#46）', () => {
     // 入力として渡って原因の分からない失敗になる。
     expect(lastCall().toolNames).toContain('web_search');
     expect(lastCall().toolNames).toContain('strands_structured_output');
+  });
+
+  it('検証ドメインにも Web 検索が渡る', async () => {
+    useWebSearchGateway();
+    fakeModelScript.write({ kind: 'text', text: '検索して答えました。' });
+
+    expectSuccess(await invokeBoundary(REQUESTS[FREE_PROMPT_TASK_ID]));
+
+    // 交通ICと同じ Web 検索を持つ（ADR-0020）。**Structured Output のツールは
+    // 渡らない**ので、この経路のツールは検索1つだけになる。
+    expect(lastCall().toolNames).toEqual(['web_search']);
   });
 
   it('会議ロジには Gateway が設定されていてもツールが渡らない', async () => {
@@ -1293,7 +1328,7 @@ describe('セッションと会話履歴', () => {
 });
 
 describe('応答の形', () => {
-  it.each(ALLOWED_TASK_IDS)(
+  it.each(SKILL_BACKED_TASK_IDS)(
     '%s の成功応答は {sessionId, result, usage} で、result は message と sources を持つ',
     async (taskId) => {
       fakeModelScript.write({
@@ -1406,5 +1441,165 @@ describe('決定性', () => {
     };
 
     expect(await run()).toEqual(await run());
+  });
+});
+
+/**
+ * プロンプト検証（#199、ADR-0020）。
+ *
+ * 見るのは**2本目の出力経路が Runtime の invocation 境界越しに通ること**であって、
+ * モデルが持ち込みシステムプロンプトに従うかどうかではない（それは実測の対象）。
+ * 我々が足したもの・足さなかったものは、モデルが受け取った system prompt と
+ * user message にしか現れないので、投げたものの側で見る。
+ */
+describe('playground.free-prompt（ADR-0020）', () => {
+  afterEach(() => {
+    delete process.env.FORMECHO_AGENT_LOOP_TIMEOUT_MS;
+  });
+
+  it('持ち込みシステムプロンプトに基準時刻だけを足したものが system prompt になる', async () => {
+    fakeModelScript.write({ kind: 'text', text: '回答本文です。' });
+
+    expectSuccess(await invokeBoundary(REQUESTS[FREE_PROMPT_TASK_ID]));
+
+    const systemPrompt = systemPromptOf(lastCall());
+    expect(systemPrompt).toContain(SYSTEM_PROMPT);
+    // 基準時刻は残す。他タブとの比較で「基準時刻がある状態のモデル」を揃えるため。
+    expect(systemPrompt).toContain('## 基準時刻');
+    /*
+      **Skill が一切混ざらない。** 混ざった瞬間、職員が見ているのは自分が書いた文の
+      効きではなく「自分が書いた文 + 我々の文」の効きになり、検証画面として壊れる。
+    */
+    for (const taskId of SKILL_BACKED_TASK_IDS) {
+      expect(systemPrompt).not.toContain(`# ${taskId}`);
+    }
+  });
+
+  it('検証メッセージがそのまま user message になる（見出しも与件の JSON も付かない）', async () => {
+    fakeModelScript.write({ kind: 'text', text: '回答本文です。' });
+
+    expectSuccess(await invokeBoundary(REQUESTS[FREE_PROMPT_TASK_ID]));
+
+    expect(userMessagesOf(lastCall())).toEqual([FREE_PROMPT_MESSAGE]);
+    /*
+      持ち込みシステムプロンプトは `input` に載るが、与件として user message へは
+      載せない。載せると職員は自分の書いた文を2回渡されたモデルを見ることになる。
+    */
+    expect(userMessagesOf(lastCall())[0]).not.toContain(SYSTEM_PROMPT);
+  });
+
+  it('検証メッセージが空でも通り、空のまま投げる', async () => {
+    fakeModelScript.write({ kind: 'text', text: '回答本文です。' });
+
+    /*
+      持ち込みシステムプロンプト1本だけの挙動を試すのがこの画面の使い方の1つ
+      （ADR-0020）。**見出しの無い taskId の分岐が戻っていないとここで `## null` と
+      `null` の JSON が流れる。**
+    */
+    expectSuccess(
+      await invokeBoundary({
+        taskId: FREE_PROMPT_TASK_ID,
+        input: { system_prompt: SYSTEM_PROMPT },
+      }),
+    );
+
+    /*
+      **`userMessagesOf` は長さ0のテキストを落とす**ので、あれで空を見ても「送って
+      いない」と区別が付かない。モデルが受け取った生の履歴で見る。
+    */
+    expect(lastCall().messages).toEqual([
+      expect.objectContaining({
+        role: 'user',
+        content: [expect.objectContaining({ text: '' })],
+      }),
+    ]);
+    expect(systemPromptOf(lastCall())).toContain(SYSTEM_PROMPT);
+  });
+
+  it('Structured Output を通らずに回答本文が返る', async () => {
+    fakeModelScript.write({
+      kind: 'text',
+      text: '一行目\n二行目',
+      usage: { inputTokens: 12, outputTokens: 34, totalTokens: 46 },
+    });
+
+    const response = expectSuccess(
+      await invokeBoundary(REQUESTS[FREE_PROMPT_TASK_ID]),
+    );
+
+    // 出力契約は `{ text }` 1欄。`message` も `sources` も持たない。
+    expect(response.result).toEqual({ text: '一行目\n二行目' });
+    expect(usageSchema.parse(response.usage)).toEqual({
+      inputTokens: 12,
+      outputTokens: 34,
+      totalTokens: 46,
+    });
+    /*
+      **モデルは1回しか呼ばれない。** Structured Output を通ると、素のテキストを
+      返した1回目を捨ててツールの使用を強制する往復が必ず1つ増える。
+    */
+    expect(fakeModelScript.calls).toHaveLength(1);
+    expect(lastCall().toolNames).toEqual([]);
+  });
+
+  it.each([
+    {
+      name: '持ち込みシステムプロンプトが無い',
+      payload: { taskId: FREE_PROMPT_TASK_ID, prompt: FREE_PROMPT_MESSAGE },
+    },
+    {
+      // 何も指示していない状態の応答を「プロンプトの効き」と誤読させない。
+      name: '持ち込みシステムプロンプトが空文字',
+      payload: { taskId: FREE_PROMPT_TASK_ID, input: { system_prompt: '' } },
+    },
+    {
+      name: '持ち込みシステムプロンプトが上限を超える',
+      payload: {
+        taskId: FREE_PROMPT_TASK_ID,
+        input: { system_prompt: 'あ'.repeat(MAX_PROMPT_LENGTH + 1) },
+      },
+    },
+  ])(
+    '$name リクエストは INVALID_INPUT になり、モデルを呼ばない',
+    async ({ payload }) => {
+      const response = await invokeBoundary(payload);
+
+      expect(expectError(response).code).toBe('INVALID_INPUT');
+      expect(fakeModelScript.calls).toHaveLength(0);
+    },
+  );
+
+  it('壁時計の期限で打ち切られると、空の回答本文を成功として返さない', async () => {
+    // この設定を足さないと55秒待つテストになる。台本が時間を使わないと発火しない。
+    process.env.FORMECHO_AGENT_LOOP_TIMEOUT_MS = '1';
+    fakeModelScript.write({ kind: 'text', text: '間に合いません', delayMs: 5 });
+    const log = recordingLogger();
+
+    /*
+      **`PARSE_FAILED` にしない**（ADR-0020。この経路には出力契約に届かない出力が
+      存在しない）。投げ直せば handler が 500 にし、BFF が RUNTIME_UNAVAILABLE に写す。
+      返してしまうと、途中まで書かれたテキスト（多くは空文字）が成功として画面に出て、
+      職員はそれをプロンプトの効きとして読む。
+    */
+    await expect(
+      invokeBoundary(REQUESTS[FREE_PROMPT_TASK_ID], newSessionId(), log),
+    ).rejects.toThrow(/タイムアウト/);
+
+    // 運用側が「どの上限で切ったか」を知れるのはこのログだけ。
+    expect(log.warns).toContainEqual(
+      expect.objectContaining({ stopReason: 'cancelled' }),
+    );
+  });
+
+  it(`ちょうど${MAX_PROMPT_LENGTH.toLocaleString()}文字の持ち込みシステムプロンプトは通る`, async () => {
+    // 既存の Skill 全文を貼っても収まる上限（`prompt` と同じ）。
+    fakeModelScript.write({ kind: 'text', text: '回答本文です。' });
+
+    expectSuccess(
+      await invokeBoundary({
+        taskId: FREE_PROMPT_TASK_ID,
+        input: { system_prompt: 'あ'.repeat(MAX_PROMPT_LENGTH) },
+      }),
+    );
   });
 });

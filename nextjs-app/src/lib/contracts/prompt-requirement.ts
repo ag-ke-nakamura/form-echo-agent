@@ -22,6 +22,12 @@ export const PROMPT_REQUIREMENT = {
   "meeting.parse-availability": "required",
   // 参加可否表だけで成立し、「AI提案」ボタンを押すだけで送れる必要がある。
   "meeting.recommend-schedule": "optional",
+  /*
+    検証メッセージは空でもよい（ADR-0020）。持ち込みシステムプロンプト1本だけの
+    挙動を試すのがこの画面の使い方の1つなので、`prompt` を必須にできない。
+    必須なのは `input` 側の持ち込みシステムプロンプトのほうである。
+  */
+  "playground.free-prompt": "optional",
 } satisfies {
   [K in TaskId]: TaskInputMap[K] extends undefined
     ? "required"

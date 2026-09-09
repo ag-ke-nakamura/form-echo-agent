@@ -111,6 +111,15 @@ const REQUESTS = {
     taskId: 'meeting.recommend-schedule',
     input: AVAILABILITY_TABLE,
   },
+  /*
+    プロンプト検証（ADR-0020）。`prompt` が運ぶのは**検証メッセージ**で、
+    system prompt になる**持ち込みシステムプロンプト**は `input` 側に載る。
+  */
+  'playground.free-prompt': {
+    taskId: 'playground.free-prompt',
+    prompt: '出張の準備について教えてください',
+    input: { system_prompt: 'あなたは俳句だけで答えます。' },
+  },
 } satisfies Record<TaskId, { taskId: TaskId; prompt?: string; input?: unknown }>
 
 /**
@@ -167,6 +176,8 @@ const VALID_RESULTS = {
     message: '2件の候補日程の参加可否を読み取りました。',
     sources: [],
   },
+  // 出力契約は回答本文1欄だけ（ADR-0020）。`message` も `sources` も持たない。
+  'playground.free-prompt': { text: '回答本文です。' },
   'meeting.recommend-schedule': {
     evaluations: [
       {
