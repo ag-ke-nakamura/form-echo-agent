@@ -7,7 +7,7 @@ import type {
   ApplyReport,
   FieldSource,
 } from "@/components/ai-assistant/field-source";
-import type { PreviewItem } from "@/lib/ai-preview";
+import type { BreakdownSection, PreviewItem } from "@/lib/ai-preview";
 
 /**
  * 交通ICタブのフォームの組み立て（#38・#65）。
@@ -463,6 +463,58 @@ export function reservationPreviewItems(
       // 人数はこの往復で AI が調べてくるものではない（運賃と違い、書いていなければ
       // 読み取れないのが正しい）ので聞き返しの分母に入れない。
       optional: true,
+    },
+  ];
+}
+
+/**
+ * 出発地・目的地・最寄が特定できなかったときに画面へ出す語（#172）。
+ *
+ * 契約は null で持つが、内訳の行は「出発地：（最寄：）」のように括弧だけ残すと
+ * 読めない。**契約がこの4つを揃って要求するので実際には出ない** — どれかが null の
+ * 回は経路候補も空になり、この内訳そのものが出ない。型のための受け皿である。
+ */
+const UNKNOWN_PLACE = "不明";
+
+/** 検索条件の1行。「出発地：虎ノ門ヒルズ（最寄：虎ノ門駅）」。 */
+function searchConditionLine(
+  label: string,
+  place: string | null,
+  nearest: string | null,
+): string {
+  return `${label}：${place ?? UNKNOWN_PLACE}（最寄：${nearest ?? UNKNOWN_PLACE}）`;
+}
+
+/**
+ * AI提案の内訳（#172。設計書 2節）。**欄の一覧とは別の領域**で、AI が何を調べて
+ * なぜそれを選んだかを見せる。いま持つのは検索条件（出発地・目的地とその最寄）だけ。
+ *
+ * **最寄は値が同じでも省かない**（`出発地：霞ヶ関駅（最寄：霞ケ関駅）`）。出る回と
+ * 出ない回があると、職員は運賃がどの区間の額なのかを必要な回に確かめられない。
+ *
+ * **経路候補が0件なら空を返す。** 何も調べられなかった回に見出しだけが残ると
+ * 「調べたが根拠が無い」に見える。理由は AI の `message` が言う。
+ */
+export function reservationBreakdown(
+  result: ParseReservationOutput,
+): BreakdownSection[] {
+  if (result.route_candidates.length === 0) return [];
+  return [
+    {
+      key: "search-conditions",
+      label: "検索条件",
+      lines: [
+        searchConditionLine(
+          FIELD_LABELS.origin,
+          result.origin,
+          result.origin_nearest,
+        ),
+        searchConditionLine(
+          FIELD_LABELS.destination,
+          result.destination,
+          result.destination_nearest,
+        ),
+      ],
     },
   ];
 }

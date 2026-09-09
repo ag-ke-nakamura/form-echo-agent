@@ -13,6 +13,7 @@ import {
   type FormState,
   removeCompanion,
   type ReservationState,
+  reservationBreakdown,
   reservationInput,
   reservationPreviewItems,
   resetReservation,
@@ -29,6 +30,8 @@ function output(
     return_at: null,
     origin: null,
     destination: null,
+    origin_nearest: null,
+    destination_nearest: null,
     round_trip: null,
     purpose: null,
     companion_count: null,
@@ -204,21 +207,31 @@ describe("applyToReservation", () => {
   it("読み取れた欄だけを AI 由来として入れる", () => {
     const { next, report } = applyToReservation(
       EMPTY_RESERVATION,
+      /*
+        出発地・目的地とその最寄が揃っていないと経路候補は返らない（#172。契約の
+        `.refine()`）ので、経路が入る回のフィクスチャは4つとも埋める。
+      */
       output({
         origin: "東京",
-        route_candidates: [selectedCandidate({ route: "東京 => 大阪" })],
+        destination: "大阪",
+        origin_nearest: "東京駅",
+        destination_nearest: "新大阪駅",
+        route_candidates: [selectedCandidate({ route: "東京駅 => 新大阪駅" })],
       }),
     );
     expect(next.fields.origin).toEqual({ value: "東京", source: "ai" });
-    expect(next.fields.route).toEqual({ value: "東京 => 大阪", source: "ai" });
+    expect(next.fields.route).toEqual({
+      value: "東京駅 => 新大阪駅",
+      source: "ai",
+    });
     expect(next.fields.transport_cost).toEqual({
       value: "14720円",
       source: "ai",
     });
     // 読み取れなかった欄は触らない。
-    expect(next.fields.destination).toEqual(EMPTY_FORM.destination);
+    expect(next.fields.borrow_at).toEqual(EMPTY_FORM.borrow_at);
     expect(report).toEqual({
-      updated: ["出発地", "移動経路", "交通費"],
+      updated: ["出発地", "目的地", "移動経路", "交通費"],
       preserved: [],
     });
   });
@@ -641,5 +654,62 @@ describe("プレビューの同行者の行", () => {
     expect(companions?.preservedReason).toBe(
       "同行者の行が既にあるため変更しません",
     );
+  });
+});
+
+/**
+ * AI提案の内訳（#172。設計書 2.1節）。
+ *
+ * WHY テストを持つか: **抽出項目の一覧と分母が違う。** 内訳は欄と対応しない行なので、
+ * 一覧に混ぜると聞き返しの判定（`previewTone`）が欄でない行を数える。空のときに
+ * 領域ごと消えることも要件で、見出しだけが残ると「調べたが根拠が無い」に読める。
+ */
+describe("reservationBreakdown", () => {
+  it("検索条件として出発地・目的地とその最寄を並べる", () => {
+    const sections = reservationBreakdown(
+      output({
+        origin: "虎ノ門ヒルズ",
+        destination: "横浜市役所",
+        origin_nearest: "虎ノ門駅",
+        destination_nearest: "桜木町駅",
+        route_candidates: [selectedCandidate()],
+      }),
+    );
+    expect(sections).toEqual([
+      {
+        key: "search-conditions",
+        label: "検索条件",
+        lines: [
+          "出発地：虎ノ門ヒルズ（最寄：虎ノ門駅）",
+          "目的地：横浜市役所（最寄：桜木町駅）",
+        ],
+      },
+    ]);
+  });
+
+  /* 出る回と出ない回があると、職員は必要な回に出ているかを確かめられない。 */
+  it("出発地が既に駅名でも最寄を省かない", () => {
+    const [section] = reservationBreakdown(
+      output({
+        origin: "霞ヶ関駅",
+        destination: "虎ノ門駅",
+        origin_nearest: "霞ケ関駅",
+        destination_nearest: "虎ノ門駅",
+        route_candidates: [selectedCandidate()],
+      }),
+    );
+    expect(section?.lines).toEqual([
+      "出発地：霞ヶ関駅（最寄：霞ケ関駅）",
+      "目的地：虎ノ門駅（最寄：虎ノ門駅）",
+    ]);
+  });
+
+  /* 領域そのものを出さない。理由は AI の `message` が言う。 */
+  it("経路候補が0件なら内訳を出さない", () => {
+    expect(
+      reservationBreakdown(
+        output({ origin: "東京", destination: "大阪", route_candidates: [] }),
+      ),
+    ).toEqual([]);
   });
 });

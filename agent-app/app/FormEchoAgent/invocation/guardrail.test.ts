@@ -39,6 +39,8 @@ const VALID_OUTPUT = {
   return_at: '2026-10-18T18:00',
   origin: '東京',
   destination: '大阪',
+  origin_nearest: '東京駅',
+  destination_nearest: '新大阪駅',
   round_trip: 'round',
   purpose: 'business_trip',
   companion_count: null,

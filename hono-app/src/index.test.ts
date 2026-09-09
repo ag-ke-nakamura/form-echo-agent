@@ -125,6 +125,8 @@ const VALID_RESULTS = {
     return_at: '2026-10-18T18:00',
     origin: '東京',
     destination: '大阪',
+    origin_nearest: '東京駅',
+    destination_nearest: '新大阪駅',
     round_trip: 'round',
     purpose: 'business_trip',
     companion_count: null,
@@ -836,6 +838,27 @@ describe('出力契約の再検査', () => {
       runtimeReturns({
         ...VALID_RESULTS['ic-card.parse-reservation'],
         purpose: '打ち合わせ',
+      }),
+    )
+
+    const response = await postTask({
+      ...REQUESTS['ic-card.parse-reservation'],
+      sessionId: SESSION_ID,
+    })
+
+    expect(response.status).toBe(502)
+    expect((await expectError(response)).code).toBe('PARSE_FAILED')
+  })
+
+  /*
+    #172: 最寄が特定できていない（null）のに経路候補がある応答。運賃がどの区間の
+    額なのかを言えないまま画面に出るので、Runtime の作り直しを抜けてきてもここで止める。
+  */
+  it('最寄が不明なのに経路候補がある出力を通さない', async () => {
+    fakeRuntimeScript.write(
+      runtimeReturns({
+        ...VALID_RESULTS['ic-card.parse-reservation'],
+        destination_nearest: null,
       }),
     )
 
