@@ -4,9 +4,14 @@ import { useId, useRef, useState } from "react";
 import {
   AiErrorNotice,
   AiPendingNotice,
+  SourceList,
 } from "@/components/ai-assistant/ai-notice";
 import { TabHeading } from "@/components/screen-layout";
-import { FREE_PROMPT_TASK_ID, requestAiTask } from "@/lib/api";
+import {
+  FREE_PROMPT_TASK_ID,
+  requestAiTask,
+  type WebSearchCitation,
+} from "@/lib/api";
 import { MAX_PROMPT_LENGTH } from "@/lib/contracts/limits";
 import { isPromptRequired } from "@/lib/contracts/prompt-requirement";
 import { type ErrorGuidance, errorGuidanceFor } from "@/lib/error-guidance";
@@ -36,6 +41,14 @@ export function FreePromptPanel() {
    * 分からない）。
    */
   const [effectivePrompt, setEffectivePrompt] = useState<string | null>(null);
+  /**
+   * この往復で Runtime が実際に取得した出典（#202）。**検索を使わせるプロンプトの
+   * 効きを試せることがこの画面の値打ちの1つ**なので、使った回は出典が出る。
+   *
+   * 出典番号は添えない（ADR-0020）。番号で指せと指示する Skill がこの画面には無く、
+   * 番号方式を試したい職員は自分の持ち込みシステムプロンプトにそう書けばよい。
+   */
+  const [citations, setCitations] = useState<readonly WebSearchCitation[]>([]);
   const [failure, setFailure] = useState<ErrorGuidance | null>(null);
   /**
    * 会話の継続（ADR-0020）。**持ち込みシステムプロンプトが変わったかを見るのは
@@ -72,6 +85,7 @@ export function FreePromptPanel() {
     // プロンプトの効きなのか読めない。
     setAnswer(null);
     setEffectivePrompt(null);
+    setCitations([]);
 
     const outcome = await requestAiTask({
       taskId: FREE_PROMPT_TASK_ID,
@@ -84,6 +98,7 @@ export function FreePromptPanel() {
     if (outcome.ok) {
       setAnswer(outcome.result.text);
       setEffectivePrompt(outcome.systemPrompt ?? null);
+      setCitations(outcome.citations);
       setSessionId(outcome.sessionId);
     } else {
       // 書いた2欄はどちらも消さない。書き直して送り直すのがこの画面の使い方である。
@@ -170,6 +185,11 @@ export function FreePromptPanel() {
           <p className="mt-2 whitespace-pre-wrap rounded-md border border-solid-gray-300 bg-white p-4 text-dns-16N-130 text-solid-gray-900">
             {answer}
           </p>
+          {/*
+            出典は**回答本文の下**に置く（ADR-0020）。0件なら `SourceList` が何も
+            描かないので、検索を使わなかった回に見出しだけが残ることはない。
+          */}
+          <SourceList citations={citations} />
         </div>
       )}
 

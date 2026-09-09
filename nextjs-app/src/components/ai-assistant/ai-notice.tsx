@@ -200,6 +200,92 @@ export function AiErrorNotice({
 }
 
 /**
+ * Web 検索の出典の一覧（#46）。**出すのは義務であって装飾ではない** — AWS の Web
+ * Search Tool の「許容される利用方法」が、Search Result を使った出力には出典
+ * （タイトル）とリンクを添えて表示することを求めている。
+ *
+ * 並べるのは **Runtime が実際に取得した結果**（応答封筒の `citations`）であって、
+ * AI が `sources` に書いた URL ではない。モデルの申告漏れで出典が消えないため。
+ *
+ * **空なら何も描かない**（この判断をここ1箇所に置く）。検索を使わなかった往復で
+ * 見出しだけが残ると、職員には「検索したが根拠が無い」ように見える。
+ *
+ * 交通ICのプレビューとプロンプト検証タブの2箇所から引く（ADR-0020、#202）。
+ */
+export function SourceList({
+  citations,
+  numbered = false,
+}: {
+  citations: readonly WebSearchCitation[];
+  /**
+   * 出典番号を添えるか（#174、ADR-0019）。
+   *
+   * **交通ICだけ。** あちらは AI提案の内訳の行が「出典2」と言うので、番号が無いと
+   * 職員がどれを押せばよいか分からない。プロンプト検証タブでは番号方式が成立しない
+   * ので添えない（番号で指せと指示する Skill がこの画面には無い。ADR-0020）— 出すと、
+   * 職員が持ち込んだプロンプトが番号で指すことを我々が支えているように見える。
+   */
+  numbered?: boolean;
+}) {
+  const links = linkableSources(citations);
+  if (links.length === 0) return null;
+
+  return (
+    <section
+      aria-label="AIが参照した検索結果"
+      className="mt-3 border-l-4 border-solid-gray-300 bg-solid-gray-50 p-3"
+    >
+      <p className="text-dns-12N-130 text-solid-gray-600">
+        AI が参照した検索結果
+      </p>
+      <ul className="mt-2 grid gap-2">
+        {links.map((source) => (
+          <li key={source.url}>
+            {/*
+              `<ol>` の `list-style` に任せないのは、番号がリンクの折り返しに
+              巻き込まれてホスト名の行と縦に揃わなくなるため。
+            */}
+            {numbered && (
+              <span className="mr-1 text-dns-14N-130 text-solid-gray-600">
+                {source.number}.
+              </span>
+            )}
+            <a
+              href={source.url}
+              /*
+                別タブで開く。反映前のプレビューを見ている最中なので、同じタブで
+                移ると戻ってきたときにこの往復の結果が消えている。
+                `noreferrer` は `noopener` を含むが、両方書くのが慣例。
+              */
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-start gap-1 text-dns-14N-130 text-solid-blue-700 underline underline-offset-2"
+            >
+              <span>{source.label}</span>
+              <ExternalLink
+                aria-hidden="true"
+                className="mt-0.5 size-4 shrink-0"
+              />
+              <span className="sr-only">（新しいタブで開きます）</span>
+            </a>
+            {/*
+              ホスト名と公開日はリンクの外に出す。どこの情報でいつのものかは
+              裏取りの判断材料になるが、リンクの文字列に混ぜると読み上げが
+              1つの長い文になる。
+            */}
+            <p className="text-dns-12N-130 text-solid-gray-600">
+              {source.host}
+              {source.publishedDate !== undefined &&
+                ` ・ ${source.publishedDate}`}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/**
  * AI の結果を反映する前に見せるプレビュー（ADR-0006、設計書 3.6節）。
  *
  * WHY 別立てのコンポーネントか: これが**フォームの状態が変わる唯一の入口**になった。
@@ -237,12 +323,9 @@ export function AiPreview({
   /**
    * Runtime が取得した Web 検索の出典（#46）。**AI の出力ではない。**
    *
-   * 表示は AWS の Web Search Tool の「許容される利用方法」が課す義務であり、
-   * 出典（タイトル）とリンクの両方を出す。
-   *
-   * **空配列のときは何も出さない。** Web 検索を持つのは交通ICだけで、そこでも
-   * 経路を尋ねられなかった往復では空のまま返る。見出しだけが残ると、職員には
-   * 「検索したが根拠が無い」ように見える。
+   * 描くのは `SourceList`（表示の義務と、空なら出さない判断はそちらが持つ）。
+   * プレビューを使う3タブのうち検索を持つのは交通ICだけで、そこでも経路を
+   * 尋ねられなかった往復では空のまま返る。
    */
   citations: readonly WebSearchCitation[];
   /** 抽出・判定できなかった行に添える文字列。タブごとに違う。 */
@@ -259,7 +342,6 @@ export function AiPreview({
     何が起きたのか分からない。「修正」は残す — そこからが次の一手になる。
   */
   const applicable = hasApplicableItems(items);
-  const links = linkableSources(citations);
 
   return (
     <section
@@ -329,67 +411,7 @@ export function AiPreview({
         </section>
       )}
 
-      {/*
-        Web 検索の出典。**出すのは義務であって装飾ではない**（#46）。AWS の Web
-        Search Tool の「許容される利用方法」が、Search Result を使った出力には
-        出典（タイトル）とリンクを添えて表示することを求めている。
-
-        並べるのは **Runtime が実際に取得した結果**であって、AI が `sources` に
-        書いた URL ではない。モデルの申告漏れで出典が消えないようにするため。
-      */}
-      {links.length > 0 && (
-        <section
-          aria-label="AIが参照した検索結果"
-          className="mt-3 border-l-4 border-solid-gray-300 bg-solid-gray-50 p-3"
-        >
-          <p className="text-dns-12N-130 text-solid-gray-600">
-            AI が参照した検索結果
-          </p>
-          <ul className="mt-2 grid gap-2">
-            {links.map((source) => (
-              <li key={source.url}>
-                {/*
-                  出典番号を出す（#174、ADR-0019）。内訳の行が「出典2」と言うので、
-                  番号が無いと職員がどれを押せばよいか分からない。`<ol>` の
-                  `list-style` に任せないのは、番号がリンクの折り返しに巻き込まれて
-                  ホスト名の行と縦に揃わなくなるため。
-                */}
-                <span className="mr-1 text-dns-14N-130 text-solid-gray-600">
-                  {source.number}.
-                </span>
-                <a
-                  href={source.url}
-                  /*
-                    別タブで開く。反映前のプレビューを見ている最中なので、同じタブで
-                    移ると戻ってきたときにこの往復の結果が消えている。
-                    `noreferrer` は `noopener` を含むが、両方書くのが慣例。
-                  */
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-start gap-1 text-dns-14N-130 text-solid-blue-700 underline underline-offset-2"
-                >
-                  <span>{source.label}</span>
-                  <ExternalLink
-                    aria-hidden="true"
-                    className="mt-0.5 size-4 shrink-0"
-                  />
-                  <span className="sr-only">（新しいタブで開きます）</span>
-                </a>
-                {/*
-                  ホスト名と公開日はリンクの外に出す。どこの情報でいつのものかは
-                  経路の裏取りの判断材料になるが、リンクの文字列に混ぜると
-                  読み上げが1つの長い文になる。
-                */}
-                <p className="text-dns-12N-130 text-solid-gray-600">
-                  {source.host}
-                  {source.publishedDate !== undefined &&
-                    ` ・ ${source.publishedDate}`}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <SourceList citations={citations} numbered />
 
       {/*
         「修正」を先に置く（設計書 3.6.5節「『この内容でフォームに入力』の左隣」）。
