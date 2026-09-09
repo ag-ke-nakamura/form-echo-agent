@@ -13,6 +13,8 @@ import { buildSystemPrompt } from './system-prompt.js';
 const DOMAIN_AGENT_NAMES: Record<Domain, string> = {
   'ic-card': '交通ICドメインエージェント',
   meeting: '会議ロジドメインエージェント',
+  // 業務のドメインではなく、プロンプトの効きを測る道具（`CONTEXT.md`「検証ドメイン」）。
+  playground: '検証ドメインエージェント',
 };
 
 const AGENT_CACHE_LIMIT = 128;
@@ -31,9 +33,14 @@ const AGENT_CACHE_LIMIT = 128;
  */
 const agentCache = new Map<string, Agent>();
 
+/**
+ * `input` を受け取るのは、`playground.free-prompt` の system prompt が職員の持ち込んだ
+ * 文だからである（ADR-0020）。他4タスクでは使われない。
+ */
 export function getOrCreateDomainAgent(
   sessionId: string,
   taskId: TaskId,
+  input: unknown,
 ): Agent {
   const key = `${sessionId}::${taskId}`;
   const existing = agentCache.get(key);
@@ -43,7 +50,7 @@ export function getOrCreateDomainAgent(
     // 基準時刻を貼り直す。system prompt は Agent の生成時に固定されるので、
     // 追加の指示を1時間後に送ると「今から3時間後」が初回の時刻から数えられる。
     // 会話履歴は messages 側に残るため、ここを差し替えても続きとして通る。
-    existing.systemPrompt = buildSystemPrompt(taskId);
+    existing.systemPrompt = buildSystemPrompt(taskId, input);
     return existing;
   }
   if (agentCache.size >= AGENT_CACHE_LIMIT) {
@@ -57,7 +64,7 @@ export function getOrCreateDomainAgent(
     // 空のままである — 渡す・渡さないの判断は `tools/load.ts` に置く。
     tools: loadDomainTools(domain),
     model: loadModel(),
-    systemPrompt: buildSystemPrompt(taskId),
+    systemPrompt: buildSystemPrompt(taskId, input),
     // 既定の printer を切る。モデルのテキストとツールの印を素の stdout へ書くが、
     // Structured Output を一括で受け取る（`stream: false`）この Runtime では逐次
     // テキストが存在せず、残るのはツール名の1行だけ。それが fastify の pino が

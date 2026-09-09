@@ -36,8 +36,9 @@ export type FakeModelTurn =
   /**
    * 素のテキストで答える。Structured Output のスキーマが渡っているときは、
    * Strands がツールの使用を強制して1回だけやり直し、それでもテキストなら例外になる。
+   * スキーマを渡さない経路（`playground.free-prompt`）ではこれがそのまま応答になる。
    */
-  | { kind: 'text'; text: string; usage?: Usage }
+  | { kind: 'text'; text: string; usage?: Usage; delayMs?: number }
   /** モデル呼び出しそのものが失敗する（接続断・スロットリング相当）。 */
   | { kind: 'error'; error: Error };
 
@@ -152,7 +153,7 @@ export class FakeModel extends Model<BaseModelConfig> {
 
     if (turn.kind === 'error') throw turn.error;
 
-    if (turn.kind === 'structuredOutput' && turn.delayMs !== undefined) {
+    if (turn.delayMs !== undefined) {
       const { delayMs } = turn;
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }

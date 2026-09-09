@@ -79,6 +79,13 @@ function inputChecks(): string[] {
     .map((call) => call.text);
 }
 
+/** fake が出力側で検査を頼まれたテキスト。 */
+function outputChecks(): string[] {
+  return fakeGuardrailScript.calls
+    .filter((call) => call.direction === 'OUTPUT')
+    .map((call) => call.text);
+}
+
 describe('Guardrail の検査対象（#170）', () => {
   it('追加指示と出発地・目的地を1本に連結して1回だけ検査する', async () => {
     fakeModelScript.write({ kind: 'structuredOutput', output: VALID_OUTPUT });
@@ -249,5 +256,66 @@ describe('Guardrail', () => {
     const messages = userMessagesOf(fakeModelScript.calls[1]);
     expect(messages).toHaveLength(1);
     expect(messages[0]).toContain(followUp);
+  });
+});
+
+/**
+ * プロンプト検証（#199、ADR-0020）。**検査の掛かり方は他4タブと同じ**で、違うのは
+ * 何が検査対象になるか（持ち込みシステムプロンプト）と、出力側が JSON ではなく
+ * 回答本文そのものを見ることだけである。
+ */
+describe('playground.free-prompt の検査対象（ADR-0020）', () => {
+  const SYSTEM_PROMPT = 'あなたは俳句だけで答えます。';
+  const MESSAGE = '出張の準備について教えてください';
+
+  it('持ち込みシステムプロンプトと検証メッセージを1本に連結して1回だけ検査する', async () => {
+    fakeModelScript.write({ kind: 'text', text: '回答本文です。' });
+
+    expectSuccess(
+      await invokeBoundary({
+        taskId: 'playground.free-prompt',
+        prompt: MESSAGE,
+        input: { system_prompt: SYSTEM_PROMPT },
+      }),
+    );
+
+    /*
+      持ち込みシステムプロンプトは職員が書いた文なので検査対象に入る（ADR-0020）。
+      入らないと、`input` 経由の欄が検査を1度も通らずモデルへ届く — #170 が
+      交通ICの出発地・目的地で塞いだ穴と同じ形である。
+    */
+    expect(inputChecks()).toEqual([`${MESSAGE}\n${SYSTEM_PROMPT}`]);
+  });
+
+  it('出力側は回答本文をそのまま検査する（JSON 化しない）', async () => {
+    fakeModelScript.write({ kind: 'text', text: '一行目\n二行目' });
+
+    expectSuccess(
+      await invokeBoundary({
+        taskId: 'playground.free-prompt',
+        prompt: MESSAGE,
+        input: { system_prompt: SYSTEM_PROMPT },
+      }),
+    );
+
+    /*
+      JSON 化すると改行が `\\n` の2文字になり、Guardrail が見る文字列が職員の読む文と
+      別物になる。他4タブの出力は構造化データなので JSON 化が素直な平文化のままである。
+    */
+    expect(outputChecks()).toEqual(['一行目\n二行目']);
+  });
+
+  it('回答本文がブロックされると GUARDRAIL_BLOCKED になる', async () => {
+    fakeModelScript.write({ kind: 'text', text: '個人情報を含む回答' });
+    // 1手目（入力側）は通し、2手目（出力側）でブロックする。
+    fakeGuardrailScript.write({ blocked: false, findings: [] }, BLOCKED);
+
+    const response = await invokeBoundary({
+      taskId: 'playground.free-prompt',
+      prompt: MESSAGE,
+      input: { system_prompt: SYSTEM_PROMPT },
+    });
+
+    expect(expectError(response).code).toBe('GUARDRAIL_BLOCKED');
   });
 });

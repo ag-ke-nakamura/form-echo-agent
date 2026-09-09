@@ -20,7 +20,17 @@ export type TaskId =
   | "ic-card.parse-reservation"
   | "meeting.parse-candidates"
   | "meeting.parse-availability"
-  | "meeting.recommend-schedule";
+  | "meeting.recommend-schedule"
+  | "playground.free-prompt";
+
+/**
+ * フォームを持つ4タブの taskId。
+ *
+ * AI入力アシスタント（指示 → プレビュー → 反映）はこの4つのためのもので、`message` を
+ * 持つ出力契約と反映先のフォームがあることを前提にしている。**プロンプト検証タブは
+ * どちらも持たない**（ADR-0020）ので、この型で締め出す。
+ */
+export type FormTaskId = Exclude<TaskId, "playground.free-prompt">;
 
 /** 往復区分（#168。`CONTEXT.md`「往復区分」）。 */
 export type RoundTrip = "one_way" | "round";
@@ -148,12 +158,31 @@ export type RecommendScheduleOutput = {
   sources: string[];
 };
 
+/**
+ * `playground.free-prompt` の入力（ADR-0020）。**持ち込みシステムプロンプト1つだけ。**
+ *
+ * この欄がそのまま Runtime の system prompt になる。**リクエストの `prompt` 欄が運ぶのは
+ * 検証メッセージのほう**（user message としてモデルへ渡る文）で、こちらも必須である
+ * （ADR-0022）。用語が逆に読めるので `CONTEXT.md` の両方の項がこれを明記している。
+ */
+export type FreePromptInput = { system_prompt: string };
+
+/**
+ * `playground.free-prompt` の出力（ADR-0020）。**回答本文1欄だけ。**
+ *
+ * この検証環境で Structured Output を通らない唯一の出力なので、`message` も
+ * `sources` も持たない。**画面はこれを HTML として解釈せずに描く**（改行は保つ）—
+ * サニタイズのタグ除去をこの taskId で掛けないことの前提条件である。
+ */
+export type FreePromptOutput = { text: string };
+
 /** taskId から出力の型を引く表。`OUTPUT_SCHEMAS` の型検査版（ADR-0004）。 */
 export type TaskOutputMap = {
   "ic-card.parse-reservation": ParseReservationOutput;
   "meeting.parse-candidates": ParseCandidatesOutput;
   "meeting.parse-availability": ParseAvailabilityOutput;
   "meeting.recommend-schedule": RecommendScheduleOutput;
+  "playground.free-prompt": FreePromptOutput;
 };
 
 /**
@@ -170,4 +199,5 @@ export type TaskInputMap = {
   };
   "meeting.parse-availability": ParseAvailabilityInput;
   "meeting.recommend-schedule": RecommendScheduleInput;
+  "playground.free-prompt": FreePromptInput;
 };

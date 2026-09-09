@@ -23,6 +23,17 @@ export const PROMPT_REQUIREMENT = {
   'meeting.parse-availability': 'required',
   // 参加可否表だけで成立し、「AI提案」ボタンを押すだけで送れる必要がある。
   'meeting.recommend-schedule': 'optional',
+  /*
+    検証メッセージも必須にする（ADR-0022 が ADR-0020 の「空でもよい」を改訂した）。
+
+    WHY: 空だと user message が**空の text ブロック1つ**としてモデルへ飛ぶ。Bedrock の
+    Converse はこれを `ValidationException` で弾くので、職員には原因の分からない失敗に
+    しか見えない。**空でも投げる形は実機で成立しない。** 画面の送信ボタンはこの表から
+    可否を引くので、`required` にすることが「空のときは送信できない」の実体になる。
+
+    持ち込みシステムプロンプト1本だけを試したい回は、検証メッセージに一言書いて送る。
+  */
+  'playground.free-prompt': 'required',
 } satisfies {
   [K in TaskId]: (typeof INPUT_SCHEMAS)[K] extends null
     ? 'required'

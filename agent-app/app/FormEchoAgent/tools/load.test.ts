@@ -38,11 +38,22 @@ describe('loadDomainTools', () => {
     expect(loadDomainTools('meeting')).toEqual([]);
   });
 
-  it('Gateway が未設定なら交通ICも持たない', () => {
+  it('Gateway が設定されていれば検証ドメインも Web 検索を持つ', () => {
+    withGatewayUrl(GATEWAY_URL);
+
+    // 交通ICと同じものを渡す（ADR-0020）。検索を使わせるプロンプトの効きを試せる
+    // ことがプロンプト検証タブの値打ちの1つである。
+    expect(loadDomainTools('playground').map((t) => t.name)).toEqual([
+      'web_search',
+    ]);
+  });
+
+  it('Gateway が未設定なら交通ICも検証ドメインも持たない', () => {
     withGatewayUrl(undefined);
 
     // 実測の Websearch 無効側がこの状態になる。
     expect(loadDomainTools('ic-card')).toEqual([]);
+    expect(loadDomainTools('playground')).toEqual([]);
   });
 
   it('ap-northeast-1 以外の Gateway は受け付けない', () => {

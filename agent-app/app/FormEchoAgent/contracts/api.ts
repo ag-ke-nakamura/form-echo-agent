@@ -1,10 +1,8 @@
 import { z } from 'zod';
 import type { AiErrorCode } from './errors.js';
+import { MAX_PROMPT_LENGTH } from './fields.js';
 import { ALLOWED_TASK_IDS } from './task-ids.js';
 import { checkTaskInput } from './task-input.js';
-
-/** 参照ドキュメント 10.1節の入力サニタイズが課す上限。 */
-export const MAX_PROMPT_LENGTH = 10_000;
 
 /**
  * `POST /api/ai/tasks` のリクエスト（参照ドキュメント 1.3節）。
@@ -27,8 +25,31 @@ export const aiTaskRequestSchema = z
     /**
      * 職員が書いた自然文。**必須かどうかは taskId ごとに違う**（ADR-0004）。
      * 推薦系は参加可否表だけで成立するため、省略できる。
+     *
+     * **空白だけなら「書かれなかった」として扱う**（ADR-0022）。BFF が画面から来る値に
+     * 対して同じ正規化を持つが、**Runtime は curl で直接叩かれる**（`agentcore dev` の
+     * 備え付け UI からこの Runtime を動かせないので、プロンプトを試す手段が画面か curl の
+     * 2つしかない）ので、BFF を通らない経路にも同じ判断が要る。
+     *
+     * WHY 弾かずに無かったことにするか: 空白だけの `prompt` が通ると、必須の taskId では
+     * 空白1文字の user message が Bedrock へ飛んで `ValidationException` になり、任意の
+     * taskId では `## 職員からの追加指示` の見出しだけが立った本文ができる（`user-message.ts`
+     * が「見出しだけが立つと、モデルは書かれていない指示を探す」と警告している状態）。
+     * どちらも「書かれなかった」に倒せば消える。**弾く**と、今まで通っていた任意の
+     * taskId の回まで `INVALID_INPUT` にすることになり、必要以上に振る舞いを変える。
+     *
+     * 値そのものは trim しない。前後の空白を落とすかどうかは職員が書いた文の改変であって、
+     * 「書かれたかどうか」の判定とは別の話である（BFF の `sanitizePrompt` も trim しない）。
      */
-    prompt: z.string().min(1).max(MAX_PROMPT_LENGTH).nullish(),
+    prompt: z
+      .string()
+      .max(MAX_PROMPT_LENGTH)
+      .nullish()
+      .transform((prompt) =>
+        prompt == null || prompt.trim() === '' ? undefined : prompt,
+      )
+      // 変換を挟むと欄そのものが必須に推論されるので、省略できることを明示し直す。
+      .optional(),
     /** 初回は null または省略。 */
     sessionId: sessionIdSchema.nullish(),
     /**

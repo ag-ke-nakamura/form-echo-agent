@@ -172,3 +172,16 @@ export type RoundTrip = (typeof ROUND_TRIP_VALUES)[number];
 export const roundTripSchema = z
   .enum(ROUND_TRIP_VALUES)
   .describe('往復区分。one_way=片道 / round=往復');
+
+/**
+ * 職員が書いた1つの文の長さの上限（参照ドキュメント 10.1節の入力サニタイズ）。
+ *
+ * `prompt`（自然文の指示）と、プロンプト検証の**持ち込みシステムプロンプト**の
+ * 両方が同じ上限を持つ（ADR-0020。既存の Skill 全文を貼っても収まる）。
+ *
+ * WHY リクエストのスキーマ（`api.ts`）ではなくここに置くか: `api.ts` は
+ * `task-input.ts` 経由で `inputs.ts` を引くので、`inputs.ts` からこの値を引くと
+ * 循環 import になり、モジュールの評価順で TDZ に落ちる。値域の定義を置く
+ * このファイルなら両方から素直に引ける。
+ */
+export const MAX_PROMPT_LENGTH = 10_000;

@@ -1,4 +1,8 @@
-import type { TaskId } from '../contracts/index.js';
+import {
+  FREE_PROMPT_TASK_ID,
+  freePromptInputSchema,
+  type TaskId,
+} from '../contracts/index.js';
 import { SKILLS } from '../skills/registry.js';
 
 /**
@@ -23,14 +27,32 @@ function nowInJst(): string {
 }
 
 /**
- * taskId が Skill を一意に決め、その instructions を system prompt へ直接注入する
- * （ADR-0013 で `explicit` に畳んだ）。
+ * system prompt の素材。**taskId が Skill を一意に決める**（ADR-0013 で `explicit` に
+ * 畳んだ）。
  *
  * `skills/{domain}/{task}.ts` のデータを直接使う（ADR-0012）。以前は `SKILL.md` を
  * fs 経由で読んでいたが、デプロイ済み Runtime（CodeZip）は esbuild が import
  * グラフだけを束ねるため非コードのアセットは zip に含まれず起動時に落ちた（#45）。
  * TypeScript のデータとして直接書けば import グラフに乗るので、この問題は起きない。
+ *
+ * **`playground.free-prompt` だけは Skill を持たず、職員が持ち込んだ文が素材になる**
+ * （ADR-0020）。我々が足すのは下の基準時刻の付記1つだけで、**Skill を一切混ぜない**
+ * — 混ぜた瞬間、職員が見ているのは自分が書いた文の効きではなくなる。
  */
-export function buildSystemPrompt(taskId: TaskId): string {
-  return `${SKILLS[taskId]}\n\n## 基準時刻\n\n現在は ${nowInJst()}（JST）です。相対的な日付・時刻表現はこの時点を基準に解決してください。`;
+function systemPromptSource(taskId: TaskId, input: unknown): string {
+  if (taskId === FREE_PROMPT_TASK_ID) {
+    // 検査済みの `input` しか渡らない（`inspectedInputStrings` と同じく `parse`）。
+    return freePromptInputSchema.parse(input).system_prompt;
+  }
+  return SKILLS[taskId];
+}
+
+/**
+ * モデルへ渡す system prompt の全文（**実効システムプロンプト**）。
+ *
+ * 基準時刻の付記はどの taskId にも足す。プロンプト検証でも足すのは、他タブとの比較で
+ * 「基準時刻がある状態のモデル」を揃えるため（ADR-0020）。足したことは隠さない。
+ */
+export function buildSystemPrompt(taskId: TaskId, input: unknown): string {
+  return `${systemPromptSource(taskId, input)}\n\n## 基準時刻\n\n現在は ${nowInJst()}（JST）です。相対的な日付・時刻表現はこの時点を基準に解決してください。`;
 }

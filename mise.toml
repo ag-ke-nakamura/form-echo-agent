@@ -20,6 +20,16 @@ jq = "latest"
 # 各プロジェクトの devDependency として持たせ、lefthook からは npm exec / pnpm exec
 # 経由で node_modules/.bin を引くこと。整形結果はロックファイルで再現可能になる。
 
+# 手元の `.env` を読む（git 管理外）。**AWS の認証情報そのものは置かない** —
+# 置くのは `AWS_PROFILE` のような「どれを使うか」だけで、キーを書くと失効した
+# ときに同じ場所で詰まる（`InvalidClientTokenId`）。認証は `aws login` で取る。
+#
+# WHY リポジトリ側で固定しないか: 開発機には他案件のプロファイルが並んでいるので、
+# `mise.toml` に profile 名を書くと全員が同じ名前で取ることになる。`.env` なら
+# 開発者ごとに違う名前を指せて、ファイル自体はコミットされない。
+[env]
+_.file = ".env"
+
 # 検証環境の3プロセスを1コマンドで並行起動する。
 #
 # ルートの package.json は pnpm workspace の宣言専用でスクリプトを持たない（ADR-0015）ため、

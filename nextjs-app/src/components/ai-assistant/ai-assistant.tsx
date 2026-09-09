@@ -1,6 +1,6 @@
 "use client";
 
-import type { TaskId } from "@/lib/contracts/types";
+import type { FormTaskId } from "@/lib/contracts/types";
 import { isPromptRequired } from "@/lib/contracts/prompt-requirement";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
@@ -35,7 +35,7 @@ import { type ErrorGuidance, errorGuidanceFor } from "@/lib/error-guidance";
  * 送った指示も一緒に持つ。書き直すときに前の指示が読めないと、何をどう変えたのかが
  * 手元に残らない（成功したときは入力欄を空にするため）。
  */
-type Preview<TTaskId extends TaskId> = {
+type Preview<TTaskId extends FormTaskId> = {
   prompt: string;
   result: TaskOutputs[TTaskId];
   /**
@@ -47,7 +47,7 @@ type Preview<TTaskId extends TaskId> = {
   citations: WebSearchCitation[];
 };
 
-type AiAssistantProps<TTaskId extends TaskId> = {
+type AiAssistantProps<TTaskId extends FormTaskId> = {
   taskId: TTaskId;
   /**
    * このタブが Runtime へ渡す画面の状態（ADR-0005）。
@@ -146,7 +146,7 @@ type AiAssistantProps<TTaskId extends TaskId> = {
  * **候補日提案タブはこれを使わない。** 設計書がそこを「AI の提案は叩き台であって
  * 対話相手ではない」と位置づけており、自然文入力欄も折りたたみも持たない。
  */
-export function AiAssistant<TTaskId extends TaskId>({
+export function AiAssistant<TTaskId extends FormTaskId>({
   taskId,
   input,
   submitBlockedReason = null,
