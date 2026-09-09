@@ -2,6 +2,7 @@
 
 - **Status**: accepted
 - **Date**: 2026-09-05
+- ADR-0021 が `playground.free-prompt`（プロンプト検証タブ）の1点に限ってこれを改訂した
 
 Guardrail がブロックしたとき（`GUARDRAIL_BLOCKED`）、画面へ出す文言は**どのチェック種別
 （プロンプトインジェクション・content filter・個人情報）が反応したか、どのスコアだったかを
