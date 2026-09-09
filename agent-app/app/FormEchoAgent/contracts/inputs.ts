@@ -221,7 +221,7 @@ export type RecommendScheduleInput = z.infer<
  * 状態」を運ぶのと違い、ここが運ぶのは**職員が書いた文**そのものである。
  *
  * WHY `prompt` ではなく `input` に載せるか: `prompt` 欄が運ぶのは**検証メッセージ**
- * （user message としてモデルへ渡る文）で、そちらは空でもよい。逆に載せると、
+ * （user message としてモデルへ渡る文）である。逆に載せると、
  * `prompt` の中身がモデルへ user message として渡らない唯一の taskId になり、
  * 契約の欄名と実体が食い違う（ADR-0020 が却下した案）。
  *

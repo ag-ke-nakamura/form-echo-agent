@@ -30,7 +30,7 @@ export const PROMPT_REQUIREMENT = {
   // 参加可否表だけで成立し、「AI提案」ボタンを押すだけで送れる必要がある。
   'meeting.recommend-schedule': 'optional',
   /*
-    検証メッセージも必須にする（#199 で ADR-0020 の「空でもよい」を狭めた）。
+    検証メッセージも必須にする（ADR-0022 が ADR-0020 の「空でもよい」を改訂した）。
 
     WHY: 空だと user message が**空の text ブロック1つ**としてモデルへ飛ぶ。Bedrock の
     Converse はこれを `ValidationException` で弾くので、職員には原因の分からない失敗に

@@ -51,7 +51,7 @@ excessively deep and possibly infinite" になる）。
 
 **`playground.free-prompt` の `input` だけは画面の状態ではなく、職員が書いた文そのもの**である。
 そのまま system prompt になり（Skill を持たない唯一の taskId）、`prompt` 欄が運ぶのは user message
-としてモデルへ渡る**検証メッセージ**のほうで、そちらは空でもよい。**用語が逆に読める**ので
+としてモデルへ渡る**検証メッセージ**のほうである（こちらも必須。ADR-0022）。**用語が逆に読める**ので
 `CONTEXT.md` の両方の項がこれを明記している。出力契約も `{ text }`（**回答本文**）1欄だけで、
 **この検証環境で Structured Output を通らない唯一の出力**である。
 

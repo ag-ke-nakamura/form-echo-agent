@@ -389,6 +389,30 @@ describe('構造化入力', () => {
     },
   );
 
+  it('空白だけの追加指示は「指示なし」として通り、見出しだけが立たない', async () => {
+    /*
+      ADR-0022 の正規化は5タスクすべてに掛かる。ここを弾く側に倒すと、いままで通って
+      いた回を `INVALID_INPUT` にすることになる（必須なのは playground だけ）。通した
+      うえで見出しを立てないのが、`prompt` が無い回と同じ扱いという意味である。
+    */
+    fakeModelScript.write({
+      kind: 'structuredOutput',
+      output: VALID_OUTPUTS['ic-card.parse-reservation'],
+    });
+
+    expectSuccess(
+      await invokeBoundary({
+        taskId: 'ic-card.parse-reservation',
+        prompt: '   ',
+        input: RESERVATION_INPUT,
+      }),
+    );
+
+    const [message] = userMessagesOf(lastCall());
+    expect(message).toContain('## フォームの入力内容');
+    expect(message).not.toContain('## 職員からの追加指示');
+  });
+
   it('ic-card.parse-reservation は追加指示が無くても与件だけで通る', async () => {
     /*
       ADR-0017 でフォーム主導になった。出発地・目的地・往復区分だけで経路と運賃を
@@ -1486,6 +1510,23 @@ describe('playground.free-prompt（ADR-0020）', () => {
       載せない。載せると職員は自分の書いた文を2回渡されたモデルを見ることになる。
     */
     expect(userMessagesOf(lastCall())[0]).not.toContain(SYSTEM_PROMPT);
+  });
+
+  it('空白だけの検証メッセージも「書かれなかった」扱いで弾かれる', async () => {
+    /*
+      Bedrock の Converse は空文字も**空白だけも同じ「blank」**として弾く（ADR-0022）。
+      `z.string().min(1)` は空白1文字を素通しするので、それだけでは curl で直接叩かれた
+      経路が塞がらない。**画面は BFF の正規化で塞がっているが、Runtime はこの経路も
+      自分で持つ必要がある。**
+    */
+    const response = await invokeBoundary({
+      taskId: FREE_PROMPT_TASK_ID,
+      prompt: '   \n  ',
+      input: { system_prompt: SYSTEM_PROMPT },
+    });
+
+    expect(expectError(response).code).toBe('INVALID_INPUT');
+    expect(fakeModelScript.calls).toHaveLength(0);
   });
 
   it('検証メッセージが無いと INVALID_INPUT になり、モデルを呼ばない', async () => {

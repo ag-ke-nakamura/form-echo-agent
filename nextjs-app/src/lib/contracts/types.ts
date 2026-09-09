@@ -162,8 +162,8 @@ export type RecommendScheduleOutput = {
  * `playground.free-prompt` の入力（ADR-0020）。**持ち込みシステムプロンプト1つだけ。**
  *
  * この欄がそのまま Runtime の system prompt になる。**リクエストの `prompt` 欄が運ぶのは
- * 検証メッセージのほう**（user message としてモデルへ渡る文）で、そちらは空でもよい。
- * 用語が逆に読めるので `CONTEXT.md` の両方の項がこれを明記している。
+ * 検証メッセージのほう**（user message としてモデルへ渡る文）で、こちらも必須である
+ * （ADR-0022）。用語が逆に読めるので `CONTEXT.md` の両方の項がこれを明記している。
  */
 export type FreePromptInput = { system_prompt: string };
 
