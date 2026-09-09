@@ -12,6 +12,14 @@ paths:
 出力スキーマ（Zod）・リクエスト型・エラーコード・`taskId` 許可リストの定義。**共有ディレクトリは
 無く、`agent-app/app/FormEchoAgent/contracts/`・`hono-app/src/schemas/`・
 `nextjs-app/app/lib/contracts/` にそれぞれ自己完結の複製として存在する**（ADR-0011）。
+
+**ただし応答封筒と `AiErrorCode` は例外で、`nextjs-app` は複製を持たない**（ADR-0015）。
+`nextjs-app/app/lib/api.ts` が `hono-app` の `AppType` から `InferResponseType` で導出しており、
+BFF が封筒の欄やエラーコードを変えると `nextjs-app` の型検査が落ちる。**この2つを
+`nextjs-app/app/lib/contracts/types.ts` へ書き戻さないこと** — 書き戻すとドリフト検知が消える。
+`AppType` 越しに届く `result` は `unknown` で、出力契約と `TaskId` の複製は3プロジェクトに
+残っている。**`hono` のバージョンは両プロジェクトで揃える**（ずれると "Type instantiation is
+excessively deep and possibly infinite" になる）。
 複製元は同じなので現状は内容が一致しているが、3者間のドリフトを検知する自動テストは無い
 （意図的。ADR-0011）。以下は3プロジェクトに共通する判断内容の説明で、実体は複製先ごとに別のコード。
 

@@ -40,7 +40,11 @@ app.use('/api/*', authenticate)
 
 app.get('/', (c) => c.text('FormEcho BFF'))
 
-app.post('/api/ai/tasks', async (c) => {
+/**
+ * RPC が型を運ぶのは**チェーンした戻り値**だけ。`app.post(...)` を文として並べると
+ * `app` の型にルートが載らず、`nextjs-app` 側の `hc<AppType>` が空になる（ADR-0015）。
+ */
+const routes = app.post('/api/ai/tasks', async (c) => {
   const body: unknown = await c.req.json().catch(() => null)
   if (typeof body !== 'object' || body === null) {
     return fail(c, 'INVALID_INPUT', 'リクエストボディが JSON ではありません。')
@@ -139,5 +143,8 @@ function fail(c: Context, code: AiErrorCode, message: string) {
   const payload: AiErrorResponse = { error: { code, message } }
   return c.json(payload, STATUS_BY_CODE[code])
 }
+
+/** `nextjs-app` が応答封筒と `AiErrorCode` を引く先（ADR-0015）。 */
+export type AppType = typeof routes
 
 export default { port: PORT, fetch: app.fetch }

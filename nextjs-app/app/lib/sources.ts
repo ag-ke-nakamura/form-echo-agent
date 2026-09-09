@@ -1,4 +1,4 @@
-import type { WebSearchCitation } from "./contracts/types";
+import type { WebSearchCitation } from "./api";
 
 /**
  * Web 検索の出典を画面に出せる形に直す（#46）。

@@ -1,9 +1,13 @@
 import type { Availability, DurationMinutes, MeetingFormat } from "./meeting";
 
 /**
- * 画面が送る `input` の組み立てと、Runtime/BFF の応答を読むのに要る型。#109（ADR-0011）で
- * `contracts/` の出力・入力スキーマ（`inputs.ts` / `outputs.ts` / `api.ts` / `errors.ts` /
- * `task-ids.ts`）から、nextjs-app が実際に使う形だけを複製した。
+ * 画面が送る `input` の組み立てと、AI の出力を読むのに要る型。#109（ADR-0011）で
+ * `contracts/` の出力・入力スキーマ（`inputs.ts` / `outputs.ts` / `task-ids.ts`）から、
+ * nextjs-app が実際に使う形だけを複製した。
+ *
+ * **応答封筒（`sessionId` / `usage` / `citations` / エラーの `code`・`message`）はここに
+ * 無い。** #136（ADR-0015）で BFF の `AppType` から型で引くようにしたので、複製は
+ * `lib/api.ts` 側の導出型に置き換わった。ドリフトするのは出力契約だけである。
  *
  * WHY zod のスキーマではなく素の型か: nextjs-app はこれらの形をリクエストの組み立てと
  * 応答の型付けにしか使わず、自分で受け取った JSON を検証しない（検証するのは BFF と
@@ -17,43 +21,6 @@ export type TaskId =
   | "meeting.parse-candidates"
   | "meeting.parse-availability"
   | "meeting.recommend-schedule";
-
-/** BFF がフロントエンドへ返すエラーコード（表示語彙は `error-guidance.ts`）。 */
-export type AiErrorCode =
-  | "INVALID_INPUT"
-  | "INVALID_TASK_ID"
-  | "PARSE_FAILED"
-  | "TIMEOUT"
-  | "RUNTIME_UNAVAILABLE"
-  | "GUARDRAIL_BLOCKED"
-  | "INTERNAL_ERROR";
-
-/** Web 検索の Search Result 1件の出典（#46）。 */
-export type WebSearchCitation = {
-  title: string;
-  url: string;
-  publishedDate?: string;
-};
-
-export type Usage = {
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-};
-
-export type AiTaskSuccessResponse<TResult = unknown> = {
-  sessionId: string;
-  result: TResult;
-  usage: Usage;
-  citations: WebSearchCitation[];
-};
-
-export type AiErrorResponse = {
-  error: {
-    code: AiErrorCode;
-    message: string;
-  };
-};
 
 /** 交通ICの利用目的（#68）。 */
 type Purpose =
