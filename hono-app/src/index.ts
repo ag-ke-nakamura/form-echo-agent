@@ -11,7 +11,12 @@ import type {
   AiErrorResponse,
   TaskInputProblem,
 } from './schemas/index.js'
-import { checkTaskInput, isTaskId, sessionIdSchema } from './schemas/index.js'
+import {
+  checkTaskInput,
+  isTaskId,
+  sessionIdSchema,
+  stripsPromptTags,
+} from './schemas/index.js'
 
 // 設定が指す Runtime クライアントが存在することを起動時に確かめる。ここで確かめないと、
 // 綴りを間違えた `FORMECHO_RUNTIME_CLIENT` に気付けるのが最初のリクエストの時で、
@@ -100,7 +105,9 @@ const routes = app.post('/api/ai/tasks', async (c) => {
   let sanitized: string | undefined
   if (promptGiven) {
     try {
-      sanitized = sanitizePrompt(prompt)
+      sanitized = sanitizePrompt(prompt, {
+        stripTags: stripsPromptTags(taskId),
+      })
     } catch (error) {
       if (error instanceof PromptTooLongError) {
         return fail(c, 'INVALID_INPUT', error.message)

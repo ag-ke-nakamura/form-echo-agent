@@ -98,6 +98,8 @@ export const CANDIDATES_TASK_ID = "meeting.parse-candidates" satisfies TaskId;
 export const AVAILABILITY_TASK_ID =
   "meeting.parse-availability" satisfies TaskId;
 export const RECOMMEND_TASK_ID = "meeting.recommend-schedule" satisfies TaskId;
+/** プロンプト検証タブ（ADR-0020）。**フォームを持たない唯一の taskId。** */
+export const FREE_PROMPT_TASK_ID = "playground.free-prompt" satisfies TaskId;
 
 /**
  * taskId から出力の型を引く表。AI入力アシスタントはこの表を通してタブに紐づく。

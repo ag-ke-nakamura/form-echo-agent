@@ -49,6 +49,10 @@ excessively deep and possibly infinite" になる）。
 | `meeting.recommend-schedule` | 参加形式・所要時間・参加者の名簿・参加可否表 |
 | `playground.free-prompt` | **持ち込みシステムプロンプト**（`system_prompt`）1欄だけ。ADR-0020 |
 
+**空白だけの `system_prompt` は BFF も Runtime も弾く**（`INVALID_INPUT`）。必須の欄なので
+ADR-0022 の「書かれなかったことにして通す」が使えない — 通すと何も指示していない状態の応答が
+「プロンプトの効き」として返る。`min(1)` は空文字しか見ないので `refine` で足している。
+
 **`playground.free-prompt` の `input` だけは画面の状態ではなく、職員が書いた文そのもの**である。
 そのまま system prompt になり（Skill を持たない唯一の taskId）、`prompt` 欄が運ぶのは user message
 としてモデルへ渡る**検証メッセージ**のほうである（こちらも必須。ADR-0022）。**用語が逆に読める**ので
@@ -78,6 +82,10 @@ Guardrail チェックに通す**（ADR-0017）。交通ICの出発地・目的�
   掛けない — あの2欄は `prompt` と違って**フォームに残る値**で、BFF が書き換えると職員が打った
   文字列と AI に届いた与件が食い違う（画面のどこにも出ない食い違いになる）。長さは上の契約が、
   内容は Guardrail が受け持ち、表示側は React が escape する
+- **その `prompt` の中でも、タグ除去を掛けるかは taskId ごとに違う**（`PROMPT_TAG_HANDLING`。
+  ADR-0020）。`playground.free-prompt` では掛けない — 持ち込みシステムプロンプトが `input` 経由で
+  サニタイズを通らないので、掛けると**検証メッセージからだけ**タグが消える非対称になる。
+  **画面が回答本文をエスケープして描くことがこの決定の前提条件**である。長さの上限は掛かる
 
 **`is_manual` は値と一緒に運ぶ**（ADR-0018）。画面の `isPreserved` が手入力の欄を守るので、印が
 無いと AI が直した欄が反映されず、フォームの値と運賃の計算根拠が食い違う。**食い違ったときに

@@ -23,6 +23,7 @@ import {
   type TaskOutputs,
   type WebSearchCitation,
 } from "@/lib/api";
+import { MAX_PROMPT_LENGTH } from "@/lib/contracts/limits";
 import { type ErrorGuidance, errorGuidanceFor } from "@/lib/error-guidance";
 
 /**
@@ -303,7 +304,9 @@ export function AiAssistant<TTaskId extends FormTaskId>({
         許容する: 良い結果なら反映しているはずで、そこから3回作り直したということは
         その結果は職員が採らなかったものである。
       */
-      setFailure(errorGuidanceFor(outcome.code));
+      // このアシスタントが載るのはフォームを持つ4タブだけ（`FormTaskId`）なので、
+      // 非AI経路は必ずある。
+      setFailure(errorGuidanceFor(outcome.code, { hasNonAiPath: true }));
       failureStreak.current += 1;
       if (failureStreak.current >= MAX_CONSECUTIVE_FAILURES) {
         setExhausted(true);
@@ -465,7 +468,7 @@ export function AiAssistant<TTaskId extends FormTaskId>({
             onChange={(event) => setPrompt(event.target.value)}
             rows={4}
             /* 設計書 3.4節。BFF も同じ上限で弾くが、打ち切ってから弾かれるより短い。 */
-            maxLength={10000}
+            maxLength={MAX_PROMPT_LENGTH}
             placeholder={continuing ? followUpPlaceholder : placeholder}
             className="w-full rounded-md border border-solid-gray-600 bg-white p-3 text-dns-16N-130 text-solid-gray-900 focus:outline-none focus:ring-2 focus:ring-solid-blue-700"
           />
