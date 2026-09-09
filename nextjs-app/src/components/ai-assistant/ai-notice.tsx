@@ -11,6 +11,7 @@ import {
 import type { ApplyReport } from "./field-source";
 import { formSectionId } from "../form-section";
 import {
+  type BreakdownSection,
   hasApplicableItems,
   MAX_CONSECUTIVE_FAILURES,
   type PreviewItem,
@@ -210,6 +211,7 @@ export function AiErrorNotice({
 export function AiPreview({
   items,
   message,
+  breakdown = [],
   citations,
   emptyItemText,
   applyLabel,
@@ -219,6 +221,14 @@ export function AiPreview({
   items: readonly PreviewItem[];
   /** AI が書いた文（出力契約の `message`）。聞き返しもここに入る。 */
   message: string;
+  /**
+   * AI提案の内訳（#172）。**欄と対応しない行**で、AI が何を調べてなぜそれを選んだかを
+   * 見せる。渡すのは交通ICだけ。
+   *
+   * **空のときは領域ごと出さない。** 経路を引けなかった回に見出しだけが残ると
+   * 「調べたが根拠が無い」に見える。理由は `message` が言う。
+   */
+  breakdown?: readonly BreakdownSection[];
   /**
    * Runtime が取得した Web 検索の出典（#46）。**AI の出力ではない。**
    *
@@ -279,6 +289,39 @@ export function AiPreview({
           />
           <p className="text-dns-14N-130 text-solid-gray-900">{message}</p>
         </div>
+      )}
+
+      {/*
+        AI提案の内訳（#172。設計書 2節）。**抽出項目の一覧とは別の領域**で、押したら
+        何が入るかではなく、AI が何を調べてなぜそれを選んだかを言う。一覧に混ぜると
+        欄でない行が聞き返しの分母に入る（`previewTone`）。
+      */}
+      {breakdown.length > 0 && (
+        <section
+          aria-label="AI提案の内訳"
+          className="mt-3 border-l-4 border-solid-blue-500 bg-solid-gray-50 p-3"
+        >
+          <p className="text-dns-12N-130 text-solid-gray-600">AI提案の内訳</p>
+          <div className="mt-2 grid gap-3">
+            {breakdown.map((section) => (
+              <div key={section.key}>
+                <p className="text-dns-14M-130 text-solid-gray-700">
+                  {section.label}
+                </p>
+                <ul className="mt-1 grid gap-1">
+                  {section.lines.map((line) => (
+                    <li
+                      key={line}
+                      className="text-dns-14N-130 text-solid-gray-900"
+                    >
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {/*

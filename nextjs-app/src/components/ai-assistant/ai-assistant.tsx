@@ -12,7 +12,11 @@ import {
 } from "./ai-notice";
 import type { ApplyReport } from "./field-source";
 import { formSectionId } from "../form-section";
-import { MAX_CONSECUTIVE_FAILURES, type PreviewItem } from "@/lib/ai-preview";
+import {
+  type BreakdownSection,
+  MAX_CONSECUTIVE_FAILURES,
+  type PreviewItem,
+} from "@/lib/ai-preview";
 import {
   requestAiTask,
   type TaskInputs,
@@ -101,6 +105,15 @@ type AiAssistantProps<TTaskId extends TaskId> = {
    * 一覧）を見た一覧になる。
    */
   previewItems: (result: TaskOutputs[TTaskId]) => PreviewItem[];
+  /**
+   * AI提案の内訳（#172）。**欄と対応しない行**を出す領域で、AI が何を調べてなぜ
+   * それを選んだかを見せる。
+   *
+   * WHY `previewItems` と分けるか: 一覧に混ぜると、欄でない行が聞き返しの分母に
+   * 入って判定が壊れる（`previewTone`）。渡さないタブでは領域そのものが出ない —
+   * 調べものをするのは交通ICだけである。
+   */
+  breakdown?: (result: TaskOutputs[TTaskId]) => BreakdownSection[];
   /** プレビューの内容をフォームへ写し、何を更新して何を守ったかを返す。 */
   onApply: (result: TaskOutputs[TTaskId]) => ApplyReport;
   /** このタブのフォームを初期状態へ戻す。 */
@@ -141,6 +154,7 @@ export function AiAssistant<TTaskId extends TaskId>({
   applyLabel,
   emptyItemText,
   previewItems,
+  breakdown,
   onApply,
   onReset,
 }: AiAssistantProps<TTaskId>) {
@@ -365,6 +379,11 @@ export function AiAssistant<TTaskId extends TaskId>({
     画面（フォームの値・候補日程の一覧）で固まり、待っている間の手入力が映らない。
   */
   const items = preview === null ? [] : previewItems(preview.result);
+  /* 内訳も同じ理由で描画のたびに組み直す。渡されなければ領域ごと出ない。 */
+  const breakdownSections =
+    preview === null || breakdown === undefined
+      ? []
+      : breakdown(preview.result);
 
   /**
    * 読み上げだけに出す一文。**画面には出さない**（見れば分かるものを二重に置かない）。
@@ -487,6 +506,7 @@ export function AiAssistant<TTaskId extends TaskId>({
             <AiPreview
               items={items}
               message={preview.result.message}
+              breakdown={breakdownSections}
               citations={preview.citations}
               emptyItemText={emptyItemText}
               applyLabel={applyLabel}

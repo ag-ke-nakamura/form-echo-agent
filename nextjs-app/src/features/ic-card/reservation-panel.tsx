@@ -23,6 +23,7 @@ import {
   type FieldName,
   type FormState,
   removeCompanion,
+  reservationBreakdown,
   reservationInput,
   reservationPreviewItems,
   resetReservation,
@@ -93,6 +94,11 @@ export function ReservationPanel() {
           手入力もプレビューに映る。
         */
         previewItems={(result) => reservationPreviewItems(result, reservation)}
+        /*
+          AI提案の内訳（#172）。欄と対応しない行なので一覧とは別に渡す。いまの
+          フォームは見ない — 何が入るかではなく AI が何を調べたかを言う領域である。
+        */
+        breakdown={reservationBreakdown}
         onApply={applyResult}
         onReset={() => setReservation(resetReservation)}
       />

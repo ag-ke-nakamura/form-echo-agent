@@ -69,7 +69,7 @@ const routeCandidateSchema = z.object({
   route: z
     .string()
     .describe(
-      '出発地から目的地までの移動経路。区間ごとに利用交通機関を添えた1本の文字列（例:「新宿(東京メトロ丸ノ内線) => 霞ケ関(東京メトロ日比谷線) => 虎ノ門ヒルズ」）',
+      '最寄から最寄までの移動経路。区間ごとに利用交通機関を添えた1本の文字列（例:「新宿駅(東京メトロ丸ノ内線) => 霞ケ関駅(東京メトロ日比谷線) => 虎ノ門駅」）。端に建物名・施設名・地名を置かず、駅名またはバス停名で始めて終える',
     ),
   /** IC運賃前提の運賃（#100）。グリーン車・特急料金は含まない。 */
   fare: z
@@ -131,6 +131,32 @@ export const parseReservationOutputSchema = z
       .nullable()
       .describe('目的地。読み取れない場合は null'),
     /**
+     * 最寄（#172、CONTEXT.md「最寄」）。出発地・目的地それぞれを、運賃計算の起点・
+     * 終点として解決した駅またはバス停。
+     *
+     * **入力が既に駅名でも返す。** 出る回と出ない回があると、職員は必要な回に
+     * 出ているかを確かめられない — 運賃がどの区間の額なのかは常に画面から
+     * 読めている必要がある。
+     *
+     * **特定できなければ null。このとき経路候補は空になる**（下の `.refine()` が
+     * 見る）。起点・終点が決まらないまま引いた経路は、どこからどこまでの額なのかを
+     * 言えない。**出発地・目的地そのものが null の回も同じ**で、片方だけが欠けた
+     * 検索条件（`出発地：不明（最寄：虎ノ門駅）`）を画面に出さないために、4つを
+     * まとめて縛る。
+     */
+    origin_nearest: z
+      .string()
+      .nullable()
+      .describe(
+        '出発地の最寄（運賃計算の起点として解決した駅またはバス停）。入力が既に駅名の場合もその駅名を返す。特定できない場合は null',
+      ),
+    destination_nearest: z
+      .string()
+      .nullable()
+      .describe(
+        '目的地の最寄（運賃計算の終点として解決した駅またはバス停）。入力が既に駅名の場合もその駅名を返す。特定できない場合は null',
+      ),
+    /**
      * 往復区分（#168）。**与件にも載る**（`parseReservationInputSchema`）。
      *
      * 出力にも置くのは、追加指示で「片道で」と言われたときに AI が直せる必要が
@@ -185,6 +211,21 @@ export const parseReservationOutputSchema = z
     {
       error:
         '採用フラグ（is_selected）は、経路候補があるときはちょうど1件、無いときは0件にする必要があります',
+      path: ['route_candidates'],
+    },
+  )
+  .refine(
+    (output) =>
+      output.route_candidates.length === 0 ||
+      [
+        output.origin,
+        output.destination,
+        output.origin_nearest,
+        output.destination_nearest,
+      ].every((place) => place !== null),
+    {
+      error:
+        '出発地・目的地とその最寄が揃っていないときは、経路候補を空にする必要があります',
       path: ['route_candidates'],
     },
   )

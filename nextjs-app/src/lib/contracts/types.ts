@@ -69,6 +69,13 @@ export type ParseReservationOutput = {
   return_at: string | null;
   origin: string | null;
   destination: string | null;
+  /**
+   * 最寄（#172。CONTEXT.md「最寄」）。運賃計算の起点・終点として解決した駅または
+   * バス停で、**入力が既に駅名でも返る。** 特定できなければ null（画面は「不明」）で、
+   * そのとき経路候補は空になる。
+   */
+  origin_nearest: string | null;
+  destination_nearest: string | null;
   round_trip: RoundTrip | null;
   purpose: Purpose | null;
   /** 同行者の人数（#176）。**職員自身を含まない。** null は読み取れなかった回。 */

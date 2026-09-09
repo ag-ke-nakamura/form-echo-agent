@@ -143,6 +143,8 @@ const VALID_OUTPUTS = {
     return_at: '2026-10-18T18:00',
     origin: '東京',
     destination: '大阪',
+    origin_nearest: '東京駅',
+    destination_nearest: '新大阪駅',
     round_trip: 'round',
     purpose: 'business_trip',
     companion_count: null,
@@ -827,6 +829,26 @@ describe('出力契約が弾く形', () => {
             reason: '不採用（比較用の別候補）',
           },
         ],
+      },
+    },
+    {
+      // #172: 最寄が特定できていないのに経路候補がある。運賃がどの区間の額なのかを
+      // 言えないまま画面に出るので、契約の段で作り直しに回す。
+      name: '最寄が不明なのに経路候補がある',
+      taskId: 'ic-card.parse-reservation',
+      output: {
+        ...VALID_OUTPUTS['ic-card.parse-reservation'],
+        destination_nearest: null,
+      },
+    },
+    {
+      // 同じ理由で出発地・目的地そのものが欠けた回も弾く。片方だけが欠けた検索条件
+      // （「出発地：不明（最寄：東京駅）」）を画面に出さないため。
+      name: '出発地が読み取れていないのに経路候補がある',
+      taskId: 'ic-card.parse-reservation',
+      output: {
+        ...VALID_OUTPUTS['ic-card.parse-reservation'],
+        origin: null,
       },
     },
     {
