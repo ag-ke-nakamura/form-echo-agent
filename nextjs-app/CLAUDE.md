@@ -32,8 +32,19 @@ src/
 
 **feature の境界を跨ぐ import は `@/` 始まり、feature 内は相対。** `@/*` は `tsconfig.json` と
 `vitest.config.mts` の**両方**が `src` を指す — 片方だけ直すと tsc は解決するのに vitest が
-「Cannot find module」で落ちる。この線を `no-restricted-imports` で機械的に止めるのは別チケット
-（#158）で、いまは規約だけである。
+「Cannot find module」で落ちる。
+
+**この線は `eslint.config.mjs` の `no-restricted-imports` が止める**（#158 / ADR-0016）。
+`@/features/...` を禁じるだけでは足りない — 隣の feature へ相対で登った `../../ic-card/x` は
+文字列に `features` を持たないので、**feature の外へ登ること自体**も禁じてある。何段で外に
+出るかは深さ次第なのでブロックが深さごとに分かれており、**1段掘り足すとどのブロックにも
+当たらなくなる**ため、`src/features/**` 全体に底を張ってある。ここを触るときは
+`eslint.config.mjs` のコメントを読むこと。
+
+**glob を打ち間違えたルールは何にもマッチせず静かに通る**ので、発火することを
+`eslint.config.test.mts` が確かめる（`pnpm run test` に含まれる。ESLint を直接呼ぶだけで
+ツールは増えない）。**glob を1つ潰したら必ずどれかが落ちる**状態を保つ — 落ちない glob は
+効いていないか、テストが見ていない。
 
 ### ルート（`src/app/`）
 
