@@ -116,6 +116,8 @@ export async function invokeRuntime(
       result: result.data,
       usage: parsed.usage,
       citations: parsed.citations,
+      // プロンプト検証のときだけ載る（ADR-0020）。他4タブでは undefined のまま。
+      systemPrompt: parsed.systemPrompt,
     },
   }
 }
@@ -167,6 +169,16 @@ function runtimeSuccessShape(body: unknown): AiTaskSuccessResponse | null {
     .array(webSearchCitationSchema)
     .safeParse(candidate.citations ?? [])
   if (!citations.success) return null
+  /*
+    実効システムプロンプトも見る（#201）。**黙って落とさない** — 落とすと、我々が
+    基準時刻を足したことを職員に見せないまま画面が成功として描く（ADR-0020）。
+    欄ごと無い応答はそのまま通す（他4タブと、この欄を持たない版の Runtime）。
+  */
+  if (
+    candidate.systemPrompt !== undefined &&
+    typeof candidate.systemPrompt !== 'string'
+  )
+    return null
   return {
     ...candidate,
     usage: usage.data,

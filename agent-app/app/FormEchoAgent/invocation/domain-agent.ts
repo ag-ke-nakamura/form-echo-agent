@@ -36,12 +36,18 @@ const agentCache = new Map<string, Agent>();
 /**
  * `input` を受け取るのは、`playground.free-prompt` の system prompt が職員の持ち込んだ
  * 文だからである（ADR-0020）。他4タスクでは使われない。
+ *
+ * **組み立てた system prompt を Agent と一緒に返す。** `agent.systemPrompt` を後から
+ * 読み直す形にはしない — あれはキャッシュヒットのたびに上書きされる可変の欄なので、
+ * 読む時点によっては別のリクエストが貼った文が返る。実効システムプロンプトとして
+ * 職員へ返すのは**この呼び出しが渡したもの**でなければならない（ADR-0020）。
  */
 export function getOrCreateDomainAgent(
   sessionId: string,
   taskId: TaskId,
   input: unknown,
-): Agent {
+): { agent: Agent; systemPrompt: string } {
+  const systemPrompt = buildSystemPrompt(taskId, input);
   const key = `${sessionId}::${taskId}`;
   const existing = agentCache.get(key);
   if (existing) {
@@ -50,8 +56,8 @@ export function getOrCreateDomainAgent(
     // 基準時刻を貼り直す。system prompt は Agent の生成時に固定されるので、
     // 追加の指示を1時間後に送ると「今から3時間後」が初回の時刻から数えられる。
     // 会話履歴は messages 側に残るため、ここを差し替えても続きとして通る。
-    existing.systemPrompt = buildSystemPrompt(taskId, input);
-    return existing;
+    existing.systemPrompt = systemPrompt;
+    return { agent: existing, systemPrompt };
   }
   if (agentCache.size >= AGENT_CACHE_LIMIT) {
     const oldest = agentCache.keys().next().value;
@@ -64,7 +70,7 @@ export function getOrCreateDomainAgent(
     // 空のままである — 渡す・渡さないの判断は `tools/load.ts` に置く。
     tools: loadDomainTools(domain),
     model: loadModel(),
-    systemPrompt: buildSystemPrompt(taskId, input),
+    systemPrompt,
     // 既定の printer を切る。モデルのテキストとツールの印を素の stdout へ書くが、
     // Structured Output を一括で受け取る（`stream: false`）この Runtime では逐次
     // テキストが存在せず、残るのはツール名の1行だけ。それが fastify の pino が
@@ -72,7 +78,7 @@ export function getOrCreateDomainAgent(
     printer: false,
   });
   agentCache.set(key, agent);
-  return agent;
+  return { agent, systemPrompt };
 }
 
 /**

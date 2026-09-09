@@ -1641,6 +1641,39 @@ describe('playground.free-prompt（ADR-0020）', () => {
     );
   });
 
+  it('実効システムプロンプトが応答に載り、我々が足した付記まで読める', async () => {
+    fakeModelScript.write({ kind: 'text', text: '回答本文です。' });
+
+    const response = expectSuccess(
+      await invokeBoundary(REQUESTS[FREE_PROMPT_TASK_ID]),
+    );
+
+    /*
+      **渡したものが読めない検証画面は成立しない**（ADR-0020）。基準時刻を黙って
+      足しているので、職員が書いた文と我々が足した分の**両方**が読めることまで見る
+      — 持ち込みシステムプロンプトの再掲だけなら職員は自分の入力欄を見れば済む。
+    */
+    expect(response.systemPrompt).toBe(systemPromptOf(lastCall()));
+    expect(response.systemPrompt).toContain(SYSTEM_PROMPT);
+    expect(response.systemPrompt).toContain('## 基準時刻');
+  });
+
+  it.each(SKILL_BACKED_TASK_IDS)(
+    '%s の応答には実効システムプロンプトが載らない',
+    async (taskId) => {
+      // Skill 全文が毎回ネットワークに乗るのを避ける（ADR-0020）。業務4タブでは
+      // 職員が system prompt を書いていないので、読める必要もない。
+      fakeModelScript.write({
+        kind: 'structuredOutput',
+        output: VALID_OUTPUTS[taskId],
+      });
+
+      const response = expectSuccess(await invokeBoundary(REQUESTS[taskId]));
+
+      expect(response.systemPrompt).toBeUndefined();
+    },
+  );
+
   it(`ちょうど${MAX_PROMPT_LENGTH.toLocaleString()}文字の持ち込みシステムプロンプトは通る`, async () => {
     // 既存の Skill 全文を貼っても収まる上限（`prompt` と同じ）。
     fakeModelScript.write({ kind: 'text', text: '回答本文です。' });

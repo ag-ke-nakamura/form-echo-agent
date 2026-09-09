@@ -142,6 +142,16 @@ export interface AiTaskSuccessResponse<TResult = unknown> {
    * Web 検索を使わなかった応答では空配列。持たないドメイン（会議ロジ）でも空配列。
    */
   citations: WebSearchCitation[];
+  /**
+   * モデルへ実際に渡した system prompt の全文（**実効システムプロンプト**。ADR-0020）。
+   *
+   * **`playground.free-prompt` のときだけ値が入る。** 職員が書いた文に我々が基準時刻の
+   * 付記を足していることを隠さないための欄で、渡したものが読めない検証画面は成立しない。
+   *
+   * **他4タブでは省略する。** あちらの素材は Skill なので、載せると Skill 全文が毎回
+   * ネットワークに乗るだけで、職員が読む理由も無い。
+   */
+  systemPrompt?: string;
 }
 
 export interface AiErrorResponse {

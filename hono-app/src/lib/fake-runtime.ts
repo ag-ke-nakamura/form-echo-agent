@@ -33,6 +33,11 @@ export type FakeRuntimeTurn =
       usage?: Usage
       /** Web 検索の出典（#46）。省略すると検索を使わなかった応答になる。 */
       citations?: WebSearchCitation[]
+      /**
+       * 実効システムプロンプト（#201）。省略すると、この欄を載せない他4タブの
+       * 応答になる（ADR-0020）。
+       */
+      systemPrompt?: string
     }
   /** 本文と状態コードを直に指定する。成功の形をしていない応答はこちらで書く。 */
   | { kind: 'respond'; status?: number; body: unknown }
@@ -111,6 +116,7 @@ export const fakeRuntimeTransport: RuntimeTransport = async (invocation) => {
         result: turn.result,
         usage: turn.usage ?? NO_USAGE,
         citations: turn.citations ?? [],
+        systemPrompt: turn.systemPrompt,
       })
     case 'respond':
       return jsonResponse(turn.status ?? 200, turn.body)

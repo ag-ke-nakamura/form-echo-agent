@@ -72,7 +72,7 @@ export async function handleInvocation(
   const { taskId, prompt, input } = parsedRequest.data;
 
   try {
-    const { result, usage, webSearchHits } = await invokeTask(
+    const { result, usage, webSearchHits, systemPrompt } = await invokeTask(
       { taskId, prompt, input, sessionId: context.sessionId },
       context.log,
     );
@@ -81,6 +81,8 @@ export async function handleInvocation(
       result,
       usage,
       citations: toCitations(webSearchHits),
+      // 他4タブでは undefined。JSON 化の時点で欄ごと消える（ADR-0020）。
+      systemPrompt,
     };
   } catch (error) {
     context.log.error({ err: error }, 'invocation に失敗しました');
