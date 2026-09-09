@@ -46,6 +46,17 @@ export type PreviewItem = {
    */
   preserved?: boolean;
   /**
+   * この行が空でも**聞き返しに数えない**（#168）。
+   *
+   * WHY 要るか: 聞き返しの分母は「この呼び出しが担う仕事」であって、タブの全欄では
+   * ない。交通ICがフォーム主導になり（ADR-0017）、追加指示を空にしてフォームだけで
+   * 生成できるようになると、借りる日・返す日時・利用目的は**言及が無いので読み取れ
+   * ないのが正しい**。分母に入れたままだと、経路と運賃がきちんと返った成功の回が
+   * 毎回黄の聞き返しとして出て、職員は何を足せばよいのか分からないまま書き直しを
+   * 促される。**行そのものは残す** — 何が埋まらなかったかは見えている必要がある。
+   */
+  optional?: boolean;
+  /**
    * 錠の行に添える理由。既定は「手入力のため変更しません」。
    *
    * WHY 差し替えられるようにするか: 反映が加算になったタブ（候補日程）では、入らない
@@ -77,10 +88,15 @@ export type PreviewTone =
  * 一覧はモデルの申告ではなく画面が結果から組んだものなので、こちらを見るほうが確か。
  *
  * 空（1行も無い）を聞き返しに含めるのは、候補日程タブが0件の応答をそう表すため。
+ *
+ * 分母から外れる行は `optional` が持つ（#168）。分母をタブごとの関数に持たせないのは、
+ * どの行を数えるかは**行を組んだ側**にしか分からないため。
  */
 export function previewTone(items: readonly PreviewItem[]): PreviewTone {
   if (items.length === 0) return "incomplete";
-  return items.some((item) => item.value === null) ? "incomplete" : "filled";
+  return items.some((item) => item.value === null && item.optional !== true)
+    ? "incomplete"
+    : "filled";
 }
 
 /**

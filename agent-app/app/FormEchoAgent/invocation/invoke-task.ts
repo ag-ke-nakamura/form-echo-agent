@@ -100,9 +100,11 @@ export async function invokeTask(
   */
   return withWebSearchBudget(async () => {
     /*
-      Guardrail は自然文（prompt）だけを見る。`input`（構造化入力）はサニタイズも
-      Guardrail チェックも通さない契約（.claude/rules/contracts.md）なので、
-      ここでは検査対象に含めない。
+      検査するのは**人が書いた文字列**であって `prompt` か `input` かではない
+      （ADR-0017）。いま `input` に載るのはシステムが組み立てた与件だけ
+      （会議3タブの識別子と交通ICの往復区分）なので、検査対象は `prompt` に尽きる。
+      **職員がフォームに打った自由文字列を `input` に載せるときは、ここで `prompt` と
+      1本に連結して検査する**（#170。欄ごとに検査すると欄を跨いだ注入が素通りする）。
 
       モデル呼び出しの前に検査する（ADR-0001）。ブロック時にモデルのトークンを
       消費しない。

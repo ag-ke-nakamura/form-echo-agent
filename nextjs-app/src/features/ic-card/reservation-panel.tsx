@@ -14,15 +14,17 @@ import { RESERVATION_TASK_ID } from "@/lib/api";
 import {
   addCompanion,
   applyToForm,
+  CHOICE_LABELS,
+  type ChoiceFieldName,
   type CompanionRow,
   EMPTY_RESERVATION,
   FIELD_LABELS,
   type FieldName,
+  type FormState,
   removeCompanion,
+  reservationInput,
   reservationPreviewItems,
   resetReservation,
-  SELECT_LABELS,
-  type SelectFieldName,
   setCardCount,
   setCompanionName,
   setFieldValue,
@@ -57,19 +59,24 @@ export function ReservationPanel() {
     <div className="mx-auto max-w-3xl">
       <TabHeading>交通ICカード予約申請</TabHeading>
 
+      <TravelConditionFields
+        state={fields.round_trip}
+        onChange={(value) => setField("round_trip", value)}
+      />
+
       <AiAssistant
         taskId={RESERVATION_TASK_ID}
         /*
-          このタブだけは構造化入力を持たない（ADR-0005 の表）。送るべき画面状態が
-          無く、相対的な日付を解決する基準時刻は Runtime の system prompt が持つ。
-          省略ではなく `undefined` を書くのは `INPUT_SCHEMAS` の `null` と同じ理由で、
-          まだ足していないのか足さないと決めたのかを区別するため。
+          運賃の額を決める与件を毎回渡す（ADR-0017）。値だけでなく「職員が手で
+          入れたか」も一緒に渡すのは ADR-0018 — 印が無いと、AI が手入力の欄を
+          直しても画面が守り、フォームの値と運賃の計算根拠が食い違う。
         */
-        input={undefined}
+        input={reservationInput(fields)}
         nonAiPathHint="AI を使わなくても、すべての項目を手で埋められます。"
         description={
           "自然な言葉で予約内容を入力すると、AIが自動的にフォームに入力します。\n" +
           "例: 「来月15日から3泊4日で大阪出張、新幹線で往復」\n" +
+          "追加指示は任意です。\n" +
           "同行者とICカード利用枚数は対象外です。手で入力してください。"
         }
         placeholder="予約内容を自然な言葉で入力してください..."
@@ -161,6 +168,66 @@ export function ReservationPanel() {
         />
       </FormSection>
     </div>
+  );
+}
+
+/**
+ * 移動の条件（#168）。**AI入力アシスタントより上に置く。**
+ *
+ * WHY 上か: 往復区分は運賃の額を決める与件で、AI が走る前に決まっていないといけない
+ * （会議タブ2の `MeetingInfoFields` と同じ形）。下に置くと、AI が返した運賃を後から
+ * 倍にするかどうかという話になり、それは画面の仕事ではない。
+ *
+ * ラジオにするのは2択だから（会議の参加形式と同じ）。「未選択」を足さないのは、
+ * 職員が選んでいない状態と片道を選んだ状態が同じ見た目になるため — 手を触れて
+ * いないことは `source` が覚えていて、そちらは AI に届く（ADR-0018）。
+ */
+function TravelConditionFields({
+  state,
+  onChange,
+}: {
+  state: FormState["round_trip"];
+  onChange: (value: string) => void;
+}) {
+  const headingId = useId();
+  const groupName = useId();
+  return (
+    <section
+      aria-labelledby={headingId}
+      className="mb-6 rounded-lg border border-solid-gray-300 p-6"
+    >
+      {/* AI入力アシスタントと同じ節の重さ。あちらの見出しと同じトークンを使う。 */}
+      <h3 id={headingId} className="text-std-20M-150 text-solid-gray-900">
+        移動の条件
+      </h3>
+      <p className="mt-2 text-dns-14N-130 text-solid-gray-700">
+        往復区分が、AIが調べる運賃を片道分にするか往復分にするかを決めます。
+      </p>
+
+      <fieldset className="mt-4">
+        <legend className="flex items-center gap-2 text-dns-14M-130 text-solid-gray-900">
+          往復区分
+          {state.source === "ai" && <AiBadge />}
+        </legend>
+        <div className="mt-1.5 flex flex-wrap gap-4 py-1">
+          {Object.entries(CHOICE_LABELS.round_trip).map(([value, label]) => (
+            <label
+              key={value}
+              className="flex items-center gap-2 text-dns-16N-130 text-solid-gray-900"
+            >
+              <input
+                type="radio"
+                name={groupName}
+                value={value}
+                checked={state.value === value}
+                onChange={() => onChange(value)}
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+    </section>
   );
 }
 
@@ -268,7 +335,7 @@ function SelectField({
   name,
   state,
   onChange,
-}: Omit<FieldProps, "name"> & { name: SelectFieldName }) {
+}: Omit<FieldProps, "name"> & { name: ChoiceFieldName }) {
   const id = useId();
   return (
     <div>
@@ -285,7 +352,7 @@ function SelectField({
         className={`mt-1.5 ${INPUT_CLASS}`}
       >
         <option value="">未選択</option>
-        {Object.entries(SELECT_LABELS[name]).map(([value, label]) => (
+        {Object.entries(CHOICE_LABELS[name]).map(([value, label]) => (
           <option key={value} value={value}>
             {label}
           </option>

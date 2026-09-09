@@ -22,6 +22,22 @@ export type TaskId =
   | "meeting.parse-availability"
   | "meeting.recommend-schedule";
 
+/** 往復区分（#168。`CONTEXT.md`「往復区分」）。 */
+export type RoundTrip = "one_way" | "round";
+
+/**
+ * 職員が手で入れたかどうかを添えた与件（ADR-0018）。
+ *
+ * 値だけを渡すと、AI が手入力の欄を直しても画面が守って反映しないので、フォームの値と
+ * 運賃の計算根拠が食い違う。手入力かどうかを知っているのは画面だけなので画面が渡す。
+ */
+type ManualAware<T> = { value: T; is_manual: boolean };
+
+/** `ic-card.parse-reservation` の入力（往復区分。ADR-0017）。 */
+export type ParseReservationInput = {
+  round_trip: ManualAware<RoundTrip>;
+};
+
 /** 交通ICの利用目的（#68）。 */
 type Purpose =
   | "discussion"
@@ -46,6 +62,7 @@ export type ParseReservationOutput = {
   return_at: string | null;
   origin: string | null;
   destination: string | null;
+  round_trip: RoundTrip | null;
   purpose: Purpose | null;
   route_candidates: RouteCandidate[];
   message: string;
@@ -106,10 +123,11 @@ export type TaskOutputMap = {
 
 /**
  * taskId から構造化入力の型を引く表（ADR-0005）。`INPUT_SCHEMAS` の型検査版。
- * 構造化入力を持たない taskId（交通IC）は `undefined`。
+ * **`undefined`（構造化入力を持たない）はいま1つも無い** — 交通ICもフォーム主導に
+ * なった（ADR-0017）。型は `undefined` を許したまま残す。
  */
 export type TaskInputMap = {
-  "ic-card.parse-reservation": undefined;
+  "ic-card.parse-reservation": ParseReservationInput;
   "meeting.parse-candidates": {
     duration_minutes: DurationMinutes;
     calendar_start: string;

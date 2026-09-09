@@ -4,6 +4,7 @@ import {
   candidateIdSchema,
   isoDateSchema,
   isoDateTimeSchema,
+  roundTripSchema,
   timeOfDaySchema,
 } from './fields.js';
 import { MAX_INPUT_CANDIDATES } from './meeting.js';
@@ -75,7 +76,11 @@ const routeCandidateSchema = z.object({
       '出発地から目的地までの移動経路。区間ごとに利用交通機関を添えた1本の文字列（例:「新宿(東京メトロ丸ノ内線) => 霞ケ関(東京メトロ日比谷線) => 虎ノ門ヒルズ」）',
     ),
   /** IC運賃前提の運賃（#100）。グリーン車・特急料金は含まない。 */
-  fare: z.string().describe('IC運賃（例:「1980円」）。往復なら往復分の合計'),
+  fare: z
+    .string()
+    .describe(
+      'IC運賃（例:「1980円」）。与件の往復区分が round なら往復分（片道の2倍）',
+    ),
   duration: z.string().describe('所要時間（例:「2時間30分」）'),
   transfer_count: z.number().int().min(0).describe('乗換回数。乗り換えなしは0'),
   is_selected: z
@@ -89,7 +94,7 @@ const routeCandidateSchema = z.object({
   /**
    * 定期重複区間（#101、CONTEXT.md「定期重複区間」）。
    *
-   * 定期区間は自由文でしか渡らない（`ic-card.parse-reservation` は構造化入力を持たない）。
+   * 定期区間は自由文でしか渡らない（構造化入力に載るのは運賃の額を決める与件だけ）。
    * **自由文に定期区間の言及が無ければ全候補で null のまま。** 言及があるのに重複が
    * 無い候補は空配列にする — null は「定期区間そのものが不明」、空配列は
    * 「定期区間は分かったがこの候補とは重ならない」を表し、この2つを同じ値で潰すと
@@ -122,6 +127,19 @@ export const parseReservationOutputSchema = z
       .string()
       .nullable()
       .describe('目的地。読み取れない場合は null'),
+    /**
+     * 往復区分（#168）。**与件にも載る**（`parseReservationInputSchema`）。
+     *
+     * 出力にも置くのは、追加指示で「片道で」と言われたときに AI が直せる必要が
+     * あるため。直せない値を与件だけで持つと、職員は画面へ戻って選び直すことになる。
+     * 与件が既定値のままなら AI が勝ち、職員が手で選んでいたら AI は直さず聞き返す
+     * （ADR-0018。規則は Skill が持つ）。
+     */
+    round_trip: roundTripSchema
+      .nullable()
+      .describe(
+        '往復区分。one_way=片道 / round=往復。与件の値をそのまま返すか、追加指示で明示されていればその値。判断できない場合は null',
+      ),
     purpose: z
       .enum(PURPOSE_VALUES)
       .nullable()

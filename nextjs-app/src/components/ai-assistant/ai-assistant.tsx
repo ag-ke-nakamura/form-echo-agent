@@ -50,8 +50,8 @@ type AiAssistantProps<TTaskId extends TaskId> = {
    *
    * **毎回そのまま送る。** Runtime 側の会話履歴はコールドスタートで消えるので、
    * 初回だけ送ると2回目が「与件の無いリクエスト」になる。省略できないよう必須の
-   * prop にしてある — 交通ICのように構造化入力を持たない taskId では型が
-   * `undefined` になるので、書き忘れと「送らないと決めた」が型で区別される。
+   * prop にしてある — 構造化入力を持たない taskId では型が `undefined` になるので、
+   * 書き忘れと「送らないと決めた」が型で区別される（いまはどの taskId も持つ）。
    */
   input: TaskInputs[TTaskId];
   /**

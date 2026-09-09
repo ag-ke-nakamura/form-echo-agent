@@ -33,7 +33,7 @@ async function callFetch(
     taskId: RESERVATION_TASK_ID,
     prompt: "x",
     sessionId: null,
-    input: undefined,
+    input: { round_trip: { value: "round", is_manual: false } },
   });
   return { fetchMock };
 }
@@ -62,8 +62,7 @@ it("ベース URL が絶対 URL ならそこへ足す", async () => {
 /**
  * 入力の門が素の `c.req.json()` のままなので、`$post` に渡す `json` は `AppType` に
  * 載らず型検査されない（ADR-0015）。**送られていること自体は型が保証しないので**
- * ここで見る。`input` が `undefined` のタスク（交通IC）では欄ごと落ちるが、BFF は
- * 欄の不在を「構造化入力なし」として読むので従来と同じ。
+ * ここで見る。構造化入力もこの経路で運ばれる — 落ちると BFF の門が弾く。
  */
 it("BFF が読む欄をそのまま本文に載せる", async () => {
   const { fetchMock } = await callFetch("");
@@ -72,6 +71,7 @@ it("BFF が読む欄をそのまま本文に載せる", async () => {
     taskId: RESERVATION_TASK_ID,
     prompt: "x",
     sessionId: null,
+    input: { round_trip: { value: "round", is_manual: false } },
   });
 });
 

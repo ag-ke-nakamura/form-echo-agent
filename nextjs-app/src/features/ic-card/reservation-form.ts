@@ -1,4 +1,8 @@
-import type { ParseReservationOutput } from "@/lib/contracts/types";
+import type {
+  ParseReservationInput,
+  ParseReservationOutput,
+  RoundTrip,
+} from "@/lib/contracts/types";
 import type {
   ApplyReport,
   FieldSource,
@@ -23,6 +27,7 @@ import type { PreviewItem } from "@/lib/ai-preview";
  */
 
 export type FieldName =
+  | "round_trip"
   | "borrow_at"
   | "return_at"
   | "origin"
@@ -40,11 +45,20 @@ export type FormState = Record<
   { value: string; source: FieldSource }
 >;
 
+/** 往復区分の既定値（#168）。出張はほとんど往復なので指南書がこれをプレプリントする。 */
+export const DEFAULT_ROUND_TRIP: RoundTrip = "round";
+
 /**
  * 初期状態は「既定値」（ADR-0018）。**`"manual"` と書くと AI が一切上書きできない** —
  * 手を触れていない欄が「手入力だから」という理由で守られてしまう。
  */
 export const EMPTY_FORM: FormState = {
+  /*
+    往復区分だけは空で始まらない。出張はほとんど往復なので指南書が往復のプレプリントを
+    求めており、2択のラジオに「未選択」を足すと、職員が選んでいない状態と片道を選んだ
+    状態が同じ見た目になる（#168）。
+  */
+  round_trip: { value: DEFAULT_ROUND_TRIP, source: "default" },
   borrow_at: { value: "", source: "default" },
   return_at: { value: "", source: "default" },
   origin: { value: "", source: "default" },
@@ -177,6 +191,7 @@ export function setCompanionName(
  * 画面のラベルと「更新: 出発日」の言い方が食い違う。
  */
 export const FIELD_LABELS: Record<FieldName, string> = {
+  round_trip: "往復区分",
   // 日付のみになった（#86）ので「日時」ではなく「日」と呼ぶ。返す日時と区別が付く。
   borrow_at: "借りる日",
   return_at: "返す日時",
@@ -198,7 +213,7 @@ export const FIELD_NAMES = Object.keys(FIELD_LABELS) as FieldName[];
  * 選択肢の欄の、契約の値から職員が読む語への対応。
  *
  * `Record<...>` で受けるのは網羅を型に見てもらうため。契約に選択肢が増えたときに
- * ここが漏れると、`<select>` にその選択肢が出ないまま AI だけが返せる値になる。
+ * ここが漏れると、選択肢に出ないまま AI だけが返せる値になる。
  */
 type Purpose = NonNullable<ParseReservationOutput["purpose"]>;
 
@@ -210,22 +225,68 @@ const PURPOSE_LABELS: Record<Purpose, string> = {
   other: "その他",
 };
 
-/** 選択肢を持つ欄。`<select>` で描く欄と、表示名に写す欄はいつも同じ。 */
-export type SelectFieldName = "purpose";
-
-/**
- * 選択肢の欄の表示名の表。**プレビューと `<select>` が同じ表を引く。**
- *
- * WHY 欄名で引けるようにするか: 欄ごとに表を渡していると、`<select>` に別の欄の
- * 表を渡しながらラベルは利用目的、という組を型が通してしまう。欄が増えても
- * `previewValue` の分岐は増えない。
- */
-export const SELECT_LABELS: Record<SelectFieldName, Record<string, string>> = {
-  purpose: PURPOSE_LABELS,
+/** 往復区分の表示名。**ラジオに並ぶ順もこの表の順**（片道 → 往復）。 */
+const ROUND_TRIP_LABELS: Record<RoundTrip, string> = {
+  one_way: "片道",
+  round: "往復",
 };
 
-function isSelectField(name: FieldName): name is SelectFieldName {
-  return name in SELECT_LABELS;
+/** 往復区分の値域。表示名の表から引く（`FIELD_NAMES` と同じ形）。 */
+const ROUND_TRIP_VALUES = Object.keys(ROUND_TRIP_LABELS) as RoundTrip[];
+
+/**
+ * 選択肢から選ぶ欄。**描き方は欄ごとに違う**（利用目的は `<select>`、往復区分は
+ * 2択なのでラジオ）が、契約の値から職員が読む語へ写す必要は同じ。
+ */
+export type ChoiceFieldName = "purpose" | "round_trip";
+
+/**
+ * 選択肢の欄の表示名の表。**プレビューと入力欄が同じ表を引く。**
+ *
+ * WHY 欄名で引けるようにするか: 欄ごとに表を渡していると、入力欄に別の欄の表を
+ * 渡しながらラベルは利用目的、という組を型が通してしまう。欄が増えても
+ * `previewValue` の分岐は増えない。
+ */
+export const CHOICE_LABELS: Record<ChoiceFieldName, Record<string, string>> = {
+  purpose: PURPOSE_LABELS,
+  round_trip: ROUND_TRIP_LABELS,
+};
+
+function isChoiceField(name: FieldName): name is ChoiceFieldName {
+  return name in CHOICE_LABELS;
+}
+
+/**
+ * フォームの文字列を往復区分の値域へ戻す。
+ *
+ * WHY 要るか: `FormState` はどの欄も文字列で持つ（欄ごとに型を割ると、写す規則が
+ * 欄ごとに分かれる）。与件は値域を持つので、Runtime へ渡す手前で1度だけ戻す。
+ * 書き手はラジオと `applyToForm` しかいないので実際には外れないが、外れた値を
+ * そのまま送ると BFF の門が 400 を返し、その理由は画面のどこにも出ない。
+ */
+function toRoundTrip(value: string): RoundTrip {
+  return (
+    ROUND_TRIP_VALUES.find((candidate) => candidate === value) ??
+    DEFAULT_ROUND_TRIP
+  );
+}
+
+/**
+ * Runtime へ渡す与件（ADR-0017）。**値と「職員が手で入れたか」の組で渡す**（ADR-0018）。
+ *
+ * WHY 画面（`.tsx`）で組み立てないか: `is_manual` の導出（`source === "manual"`）は
+ * 判断である。AI が入れた値（`"ai"`）と既定値（`"default"`）がどちらも `false` に
+ * なるのは、**AI バッジが「再生成で上書きされる範囲」の印でもある**から（#38）で、
+ * この対応が崩れると AI が直せる欄と画面が守る欄が食い違う。
+ */
+export function reservationInput(fields: FormState): ParseReservationInput {
+  const roundTrip = fields.round_trip;
+  return {
+    round_trip: {
+      value: toRoundTrip(roundTrip.value),
+      is_manual: roundTrip.source === "manual",
+    },
+  };
 }
 
 /**
@@ -263,8 +324,18 @@ function previewValue(
 ): string | null {
   const raw = rawValue(name, result);
   if (raw === null) return null;
-  return isSelectField(name) ? SELECT_LABELS[name][raw] : raw;
+  return isChoiceField(name) ? CHOICE_LABELS[name][raw] : raw;
 }
+
+/**
+ * 聞き返し（黄）の分母（#168）。**この呼び出しが担う仕事だけを数える。**
+ *
+ * フォーム主導になった（ADR-0017）ので、追加指示を空にして生成を押すのが主な流れに
+ * なる。その回は借りる日・返す日時・利用目的に言及が無く、**読み取れないのが正しい**
+ * — 分母に入れたままだと、経路と運賃が返った成功の回が毎回聞き返しとして出る。
+ * 残るこの2欄は AI がこの往復で調べてくるもので、欠けていれば本当に聞き返すべき回。
+ */
+const FARE_SEARCH_FIELDS: readonly FieldName[] = ["route", "transport_cost"];
 
 /**
  * AI の結果をプレビューの一覧へ写す（ADR-0006）。
@@ -286,6 +357,7 @@ export function reservationPreviewItems(
     label: FIELD_LABELS[name],
     value: previewValue(name, result),
     preserved: isPreserved(current[name]),
+    optional: !FARE_SEARCH_FIELDS.includes(name),
   }));
 }
 

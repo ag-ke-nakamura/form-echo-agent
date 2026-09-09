@@ -38,19 +38,29 @@ excessively deep and possibly infinite" になる）。
 
 ## リクエストに何が載るか
 
-**交通ICを除く3タスクが構造化入力 `input` として画面の状態を受け取る**（ADR-0005 が ADR-0003 を
-撤回した）。何を載せるかは taskId ごとに違い、`INPUT_SCHEMAS` が正典。
+**4タスクすべてが構造化入力 `input` として画面の状態を受け取る**（ADR-0005 が ADR-0003 を
+撤回し、ADR-0017 が交通ICを加えた）。何を載せるかは taskId ごとに違い、`INPUT_SCHEMAS` が正典。
 
 | taskId | `input` |
 | --- | --- |
-| `ic-card.parse-reservation` | `null`（送るべき画面状態が無い。基準時刻は system prompt が持つ） |
+| `ic-card.parse-reservation` | 往復区分。**値と「職員が手で入れたか」（`is_manual`）の組**で載る（ADR-0018） |
 | `meeting.parse-candidates` | 所要時間・カレンダーの表示範囲（`calendar_start` / `calendar_end`）。既に選択済みの候補日程は送らない |
 | `meeting.parse-availability` | 参加形式・所要時間・候補日程の一覧 |
 | `meeting.recommend-schedule` | 参加形式・所要時間・参加者の名簿・参加可否表 |
 
-**`input` はサニタイズも Guardrail チェックも通さないので自由文字列を置かない**（ADR-0004 の制約が
-3タスクへ広がった）。候補日程は `/^candidate-\d{1,6}$/`、参加者は `/^参加者[A-Z]$/`。参加者の実名を
-送らないのは ADR-0008。
+**検査の境界は「`prompt` か `input` か」ではなく「人が書いた文字列か、システムが組み立てた与件か」**
+（ADR-0017 が ADR-0004 の縛りを引き直した）。**システムが組み立てた与件はサニタイズも Guardrail
+チェックも通さないので、そこに自由文字列を置かない。** 候補日程は `/^candidate-\d{1,6}$/`、参加者は
+`/^参加者[A-Z]$/`、往復区分は2値の列挙で、いずれも形で縛れる。参加者の実名を送らないのは ADR-0008。
+
+**職員がフォームに打った自由文字列を `input` に載せるなら、それは「利用者が書いた文」なので
+Guardrail チェックに通す**（ADR-0017。`invoke-task.ts` の入力側で `prompt` と1本に連結して1回
+検査する。欄ごとに検査すると欄を跨いだ注入が素通りする）。交通ICの出発地・目的地がこれに当たる（載せるのは #170）。
+
+**`is_manual` は値と一緒に運ぶ**（ADR-0018）。画面の `isPreserved` が手入力の欄を守るので、印が
+無いと AI が直した欄が反映されず、フォームの値と運賃の計算根拠が食い違う。**食い違ったときに
+どちらが勝つかの規則は Skill が持つ** — `buildUserMessage` で印を付け直さない（振る舞いの規則が
+2ファイルに散る）。
 
 **識別子はフロントエンドが発番し、AI は自分では作らない。** 候補日程を選ぶ2つの出力
 （`meeting.parse-availability` / `meeting.recommend-schedule`）は `candidate_id` だけを返し、日付や
