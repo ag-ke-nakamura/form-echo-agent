@@ -49,6 +49,42 @@ export type FormState = Record<
 export const DEFAULT_ROUND_TRIP: RoundTrip = "round";
 
 /**
+ * 出発地の既定値（#171）。ほとんどの申請がここから始まる。
+ *
+ * **都道府県を添えるのは霞ヶ関駅が全国に1つではないため**（埼玉県川越市にもある）。
+ * この文字列は与件としてそのまま AI へ渡る（ADR-0017）ので、曖昧なまま渡すと
+ * 経路検索が別の駅を引きうる。
+ */
+export const DEFAULT_ORIGIN = "霞ヶ関駅（東京都）";
+
+/**
+ * 出発地・目的地の入力候補（#171）。よく使う7駅。
+ *
+ * **値域ではない。** 訪問先は建物名・会社名で伝えられることが多く、駅すぱあとではなく
+ * AI を使う理由がそこにあるので、同じ欄に自由記述もできる（`<datalist>`）。契約に
+ * 載せると、載っていない目的地を職員が打てなくなる。
+ *
+ * 選択肢から選んだ値は `setFieldValue` を通るので `"manual"` に落ちる — 7駅から
+ * 選んだ意思は追加指示より重く、食い違えば AI が聞き返す側に回る（ADR-0018）。
+ * **だから霞ヶ関は一覧でも `DEFAULT_ORIGIN` と同じ都道府県付きの表記にする。** 選ぶと
+ * `is_manual: true` で渡り、AI が都道府県を補えなくなるので、曖昧さは既定値より
+ * 一覧の側でこそ重い。表記が割れていると副作用がもう1つある — `<datalist>` は
+ * **いまの入力値で候補を絞る**ので、プレプリントの入った出発地欄では7駅が1件も出ない。
+ */
+export const PLACE_SUGGESTIONS: readonly string[] = [
+  DEFAULT_ORIGIN,
+  "国会議事堂前駅",
+  "永田町駅",
+  "虎ノ門駅",
+  "赤坂見附駅",
+  "桜田門駅",
+  "溜池山王駅",
+];
+
+/** 出発地・目的地のプレースホルダ（#171）。駅名に限らないことを職員に言う。 */
+export const PLACE_PLACEHOLDER = "駅名・地名・建物名など";
+
+/**
  * 初期状態は「既定値」（ADR-0018）。**`"manual"` と書くと AI が一切上書きできない** —
  * 手を触れていない欄が「手入力だから」という理由で守られてしまう。
  */
@@ -61,7 +97,12 @@ export const EMPTY_FORM: FormState = {
   round_trip: { value: DEFAULT_ROUND_TRIP, source: "default" },
   borrow_at: { value: "", source: "default" },
   return_at: { value: "", source: "default" },
-  origin: { value: "", source: "default" },
+  /*
+    出発地だけプレプリントする（#171）。目的地は申請ごとに違うので、置くと毎回
+    消してから打つことになる。`"default"` なので AI が追加指示（「新宿から行きます」）で
+    直せる — `"manual"` だと職員が手を触れていない値が守られてしまう（ADR-0018）。
+  */
+  origin: { value: DEFAULT_ORIGIN, source: "default" },
   destination: { value: "", source: "default" },
   route: { value: "", source: "default" },
   transport_cost: { value: "", source: "default" },
