@@ -4,19 +4,19 @@ paths:
   - "agent-app/app/FormEchoAgent/invocation/**/*"
   - "hono-app/src/schemas/**/*"
   - "hono-app/src/lib/**/*"
-  - "nextjs-app/app/lib/**/*"
+  - "nextjs-app/src/**/*"
 ---
 
 # 入出力契約
 
 出力スキーマ（Zod）・リクエスト型・エラーコード・`taskId` 許可リストの定義。**共有ディレクトリは
 無く、`agent-app/app/FormEchoAgent/contracts/`・`hono-app/src/schemas/`・
-`nextjs-app/app/lib/contracts/` にそれぞれ自己完結の複製として存在する**（ADR-0011）。
+`nextjs-app/src/lib/contracts/` にそれぞれ自己完結の複製として存在する**（ADR-0011）。
 
 **ただし応答封筒と `AiErrorCode` は例外で、`nextjs-app` は複製を持たない**（ADR-0015）。
-`nextjs-app/app/lib/api.ts` が `hono-app` の `AppType` から `InferResponseType` で導出しており、
+`nextjs-app/src/lib/api.ts` が `hono-app` の `AppType` から `InferResponseType` で導出しており、
 BFF が封筒の欄やエラーコードを変えると `nextjs-app` の型検査が落ちる。**この2つを
-`nextjs-app/app/lib/contracts/types.ts` へ書き戻さないこと** — 書き戻すとドリフト検知が消える。
+`nextjs-app/src/lib/contracts/types.ts` へ書き戻さないこと** — 書き戻すとドリフト検知が消える。
 `AppType` 越しに届く `result` は `unknown` で、出力契約と `TaskId` の複製は3プロジェクトに
 残っている。**`hono` のバージョンは両プロジェクトで揃える**（ずれると "Type instantiation is
 excessively deep and possibly infinite" になる）。
@@ -63,7 +63,7 @@ excessively deep and possibly infinite" になる）。
 持たないことで表す（`null` を返させない）ので、抜けは失敗ではなく画面が聞き返す材料になる。
 
 **候補日程は終了時刻を持たない。** 終わる時刻は会議の所要時間から導く。導出が要るのは画面だけ
-なので、関数は `nextjs-app/app/lib/meeting-info.ts` にある（誰も引かない関数を契約に置かない）。
+なので、関数は `nextjs-app/src/features/meeting/shared/meeting-info.ts` にある（誰も引かない関数を契約に置かない）。
 
 自然文の必須性は `PROMPT_REQUIREMENT`（`prompt-requirement.ts`）が taskId ごとに持つ
 （`OUTPUT_SCHEMAS` / `INPUT_SCHEMAS` と対称）。「毎回送り直す」理由は ADR-0004 にある。
@@ -95,7 +95,7 @@ BFF は壊れた出典を**黙って落とさず** `PARSE_FAILED` にする。�
 
 **zod を import しない。** スキーマと同じモジュールに置くと SSG のバンドルに zod が丸ごと乗る。
 
-**`nextjs-app/app/lib/contracts/` の他のモジュールも値として import しない。** 引けるのは `import type` だけである。
+**`nextjs-app/src/lib/contracts/` の他のモジュールも値として import しない。** 引けるのは `import type` だけである。
 相対 import の `.js` は Runtime の NodeNext が要求する形だが、フロントエンドのバンドラ
 （Turbopack / webpack）はそれを `.ts` に読み替えない — `moduleResolution: bundler` の読み替えは
 tsc の中だけの話で、`next.config.ts` から効かせる手も無い（`resolveAlias` も `resolveExtensions` も
@@ -118,7 +118,7 @@ tsc の中だけの話で、`next.config.ts` から効かせる手も無い（`r
   として相対 import する。`agent-app` 自身の `node_modules` から `zod` を解決するので、
   `paths` エイリアスも symlink も要らない
 - `hono-app/src/schemas/` — 同様に `hono-app` 自身のパッケージ内から相対 import する
-- `nextjs-app/app/lib/contracts/` — `nextjs-app` 自身のパッケージ内から相対 import する
+- `nextjs-app/src/lib/contracts/` — `nextjs-app` 自身のパッケージ内から相対 import する
 
 3箇所とも自分のプロジェクトの通常の依存解決（各自の `node_modules`）で完結し、他プロジェクトの
 ファイルは一切参照しない。**Zod は3プロジェクトとも v4 に揃える。**

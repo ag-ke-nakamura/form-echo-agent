@@ -12,7 +12,7 @@ ADR-0002 が採った「リポジトリルートの `contracts/` を symlink（`
 
 - `agent-app/app/FormEchoAgent/contracts/` — リクエスト検証・出力検査と作り直し判定（`outputSchemaFor`）・taskId 許可リストとドメイン解決・エラーコード・値域の一部・自然文必須性判定
 - `hono-app/src/schemas/` — 入力ゲート（`checkTaskInput`）・Runtime 応答の再検査（`outputSchemaFor`）・taskId 許可リスト・エラーコード・`sessionId` 検証・usage/citations の型
-- `nextjs-app/app/lib/contracts/` — 画面が送る `input` に要る値域全体・候補日提案の導出集計（`recommendation.ts`。他プロジェクトは使っていないためここにしか無い）・自然文必須性判定・エラーコードの表示語彙
+- `nextjs-app/src/lib/contracts/` — 画面が送る `input` に要る値域全体・候補日提案の導出集計（`recommendation.ts`。他プロジェクトは使っていないためここにしか無い）・自然文必須性判定・エラーコードの表示語彙
 
 `outputSchemaFor`・`checkTaskInput` 相当の判定ロジックを `agent-app` と `hono-app` が独立に持つ二重実装は、正式な設計として受け入れる。
 
