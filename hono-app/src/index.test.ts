@@ -134,7 +134,7 @@ const VALID_RESULTS = {
     route_candidates: [
       {
         route: '東京(東海道新幹線) => 大阪',
-        fare: '14720円',
+        fare: 14720,
         duration: '2時間30分',
         transfer_count: 0,
         is_selected: true,
@@ -867,6 +867,33 @@ describe('出力契約の再検査', () => {
       runtimeReturns({
         ...VALID_RESULTS['ic-card.parse-reservation'],
         borrow_at: '2026-10-15T09:00',
+      }),
+    )
+
+    const response = await postTask({
+      ...REQUESTS['ic-card.parse-reservation'],
+      sessionId: SESSION_ID,
+    })
+
+    expect(response.status).toBe(502)
+    expect((await expectError(response)).code).toBe('PARSE_FAILED')
+  })
+
+  /*
+    #169: 運賃は数値（0以上の整数）。文字列のままだと「約2000円」「1980円（往復）」が
+    画面の数値入力へ届き、往復区分が往復なのに片道の額が入っていることを職員が
+    目で確かめられない。
+  */
+  it('運賃が数値でない出力を通さない', async () => {
+    fakeRuntimeScript.write(
+      runtimeReturns({
+        ...VALID_RESULTS['ic-card.parse-reservation'],
+        route_candidates: VALID_RESULTS[
+          'ic-card.parse-reservation'
+        ].route_candidates.map((candidate) => ({
+          ...candidate,
+          fare: '14720円',
+        })),
       }),
     )
 

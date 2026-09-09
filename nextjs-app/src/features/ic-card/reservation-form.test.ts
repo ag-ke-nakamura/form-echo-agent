@@ -80,7 +80,7 @@ function selectedCandidate(
 ): RouteCandidate {
   return {
     route: "東京 => 大阪",
-    fare: "14720円",
+    fare: 14720,
     duration: "2時間30分",
     transfer_count: 0,
     is_selected: true,
@@ -214,6 +214,21 @@ describe("reservationPreviewItems", () => {
   });
 
   /*
+    #169: 契約の運賃が数値になったので、素通しだと「14720」だけが並ぶ。プレビューは
+    行を「欄名: 値」で読ませるだけで単位を持てないので、額として読める形にする
+    （欄の側は「（円）」をラベルが持ち、欄の値は数値のまま）。
+  */
+  it("運賃は額として読める形に写す", () => {
+    const items = reservationPreviewItems(
+      routeResult([selectedCandidate({ fare: 356 })]),
+      EMPTY_RESERVATION,
+    );
+    expect(items.find((item) => item.key === "transport_cost")?.value).toBe(
+      "356円",
+    );
+  });
+
+  /*
     プレビューが「押したら入る」と偽らないことの検査（ADR-0006）。判定は
     `applyToReservation` と同じ条件を引いているので、片方だけ動けばここが落ちる。
   */
@@ -272,7 +287,7 @@ describe("applyToReservation", () => {
       source: "ai",
     });
     expect(next.fields.transport_cost).toEqual({
-      value: "14720円",
+      value: "14720",
       source: "ai",
     });
     // 読み取れなかった欄は触らない。
@@ -816,7 +831,7 @@ describe("reservationBreakdown", () => {
       routeResult([
         selectedCandidate({
           route: "霞ケ関駅(東京メトロ日比谷線) => 虎ノ門駅",
-          fare: "356円",
+          fare: 356,
           duration: "12分",
           transfer_count: 1,
           reason: "運賃が最も安いため",
@@ -844,13 +859,13 @@ describe("reservationBreakdown", () => {
         selectedCandidate(),
         otherCandidate({
           route: "東京 => 名古屋 => 大阪",
-          fare: "15000円",
+          fare: 15000,
           duration: "2時間50分",
           transfer_count: 1,
         }),
         otherCandidate({
           route: "東京 => 京都 => 大阪",
-          fare: "15200円",
+          fare: 15200,
           duration: "2時間40分",
           transfer_count: 2,
         }),
