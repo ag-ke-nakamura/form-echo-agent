@@ -72,6 +72,33 @@ jobs:
       - run: npm run build
       - run: npm run test
 
+  front-door-infra:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+        with:
+          minimum_release_age: 24h
+      - run: npm ci
+      - run: npx prettier --check .
+      - run: npm run build
+      - run: npm run test
+      # cdk synth はフロントエンドのビルド成果物（nextjs-app/out）をアセットとして
+      # 貼るので、先にビルドしないと「成果物が無い」で落ちる。CDK から Next の
+      # ビルドを呼ばない代わりに、ここでは人が打つのと同じ mise のタスクを踏む
+      # （`NEXT_PUBLIC_API_BASE_URL=""` をここに書き写すと2箇所に並ぶ）。
+      # install はリポジトリルートで打つ（ADR-0015）。
+      - run: pnpm install --frozen-lockfile
+        working-directory: .
+      - run: mise run deploy:web
+        working-directory: .
+      # AWS 資格情報は要らない。account/region はテンプレートに埋め込むだけで、
+      # synth 自体は AWS を呼ばない。
+      - run: npx cdk synth
+
   formecho-agent:
     runs-on: ubuntu-latest
     defaults:
