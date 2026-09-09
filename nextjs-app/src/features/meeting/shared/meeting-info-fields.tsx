@@ -2,7 +2,7 @@
 
 /*
   会議情報の React 側。入力欄（`MeetingInfoFields`。タブ2）とヘッダー（`MeetingInfoHeader`。
-  タブ3）と状態（`useMeetingInfo`。実体は `FormEchoTabs` が持つ）をまとめて置く。
+  タブ3）と状態（`useMeetingInfo`。実体は `MeetingProvider` が持つ）をまとめて置く。
 
   表示文字列と導出は隣の `meeting-info.ts`。**同じ名前で `.ts` と `.tsx` を並べると
   `./meeting-info` の解決が `.ts` に寄ってしまう**ので、こちらだけ名前を分けている。
@@ -30,8 +30,8 @@ export type MeetingInfoApi = {
 };
 
 /**
- * 会議情報の状態。実体は `FormEchoTabs` が持つ（候補日程と同じ理由 — タブ3・
- * タブ4が読むので、タブ2の内側に置くと相手から見えない）。
+ * 会議情報の状態。実体は会議 feature の `MeetingProvider` が持つ（候補日程と同じ
+ * 理由 — タブ3・タブ4が読むので、タブ2の内側に置くと相手から見えない。#159）。
  */
 export function useMeetingInfo(): MeetingInfoApi {
   const [info, setInfo] = useState<MeetingInfo>(INITIAL_MEETING_INFO);

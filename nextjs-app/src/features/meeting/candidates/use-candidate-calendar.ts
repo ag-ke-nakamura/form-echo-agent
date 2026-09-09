@@ -21,7 +21,8 @@ import { applyAiCandidates } from "./candidates-form";
  * 候補日程タブの状態を外から持てるようにしたもの。
  *
  * WHY: 参加可否タブが答える対象は、このタブが持っている候補日程である。どちらかの
- * タブの内側に状態を置くと相手から見えないので、状態の持ち主を `FormEchoTabs` に上げる。
+ * タブの内側に状態を置くと相手から見えないので、状態の持ち主を会議 feature の
+ * `MeetingProvider` に上げる（#159。それまではルート層の `FormEchoTabs` だった）。
  *
  * **状態モデル（`CalendarCandidate`）は `candidate-calendar.ts` にある**（#69）。行のフォームだった
  * 頃はタブのファイルに置いていたが、カレンダーになった今は純関数がすべてその形を受けて

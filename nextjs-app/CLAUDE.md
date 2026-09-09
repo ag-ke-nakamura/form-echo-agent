@@ -16,6 +16,7 @@ src/
   app/                    layout / page / globals.css と form-echo-tabs.tsx（組み立て）
   features/ic-card/       交通IC予約
   features/meeting/
+    meeting-provider.tsx  3画面が読む会議の共有状態（会議情報・候補日程）
     candidates/           会議候補日設定
     availability/         参加可否回答
     recommend/            候補日提案
@@ -52,8 +53,9 @@ src/
 上から「見出し → AI入力アシスタント（折りたたみ、初期は展開）→ 区切り線 → 非AI経路のフォーム」の
 順に並ぶ（#73。設計書 `temp/design/` の共通レイアウト）。
 タブ4だけはこの構造を採らない — 自然文入力欄も区切り線も持たない。
-`form-echo-tabs.tsx` は会議情報（`useMeetingInfo`）と候補日程（`useCandidateCalendar`）の
-**置き場所**でもある（タブ2〜4 が同じものを読むため。状態モデルの定義は feature 側に残る）。
+**`form-echo-tabs.tsx` が持つのはタブの並びと「いまどれが選ばれているか」だけ**で、会議の
+共有状態は `MeetingProvider` で包むだけである（#159）。ここから会議の状態を prop で配らない。
+例外は候補日提案タブの `active` — タブ層しか知らないことなので prop のまま渡す。
 
 ### 交通IC（`src/features/ic-card/`）
 
@@ -66,16 +68,26 @@ src/
 
 ### 会議ロジ（`src/features/meeting/`）
 
+- `meeting-provider.tsx` — 3画面が跨いで読む状態の実体（`MeetingProvider` + `useMeeting`）。
+  **会議情報（`useMeetingInfo`）と候補日程（`useCandidateCalendar`）をここで呼ぶだけ**で、
+  状態モデルと遷移は元の置き場所（`shared/` と `candidates/`）に残る。実体がルート層に
+  あった形を #159 で feature の中へ閉じた — 上げ先がルート層だと「Next.js のルーティングの
+  話」であるはずの層が会議の状態モデルを握り、画面を足すたびに配る prop が増える。
+  既定値を置かず `null` から始め、Provider の外の `useMeeting` は throw する（既定値を
+  置くと3画面が別々の状態を持ち、「タブを切り替えると入力が消える」形で実行時にしか
+  気付けない）
+
 `candidates/` — 会議候補日設定。
 
 - `candidates-panel.tsx` — 非AI経路は**2週間 × 9:00–18:00 の30分カレンダー**（#69）
 - `use-candidate-calendar.ts` — カレンダーの状態そのもの。**`useCandidateCalendar(所要時間)`
-  として切り出してあり、実体は `FormEchoTabs` が持つ**（参加可否タブが同じ候補日程を読むため）。
+  として切り出してあり、実体は `meeting-provider.tsx` が持つ**（参加可否タブが同じ候補日程を
+  読むため）。
   所要時間を要るのは、クリックの受け付けが所要時間抜きには決まらないから。カレンダーの起点
   （今日）は `useSyncExternalStore` を使いブラウザ側だけで決める — SSG なのでビルド機の
   「今日」で描けない（決まるまで `days` は `null`。その間は升目を描かず、AI へも送らせない）。
   **表示範囲は AI への与件に載る**（`calendar_start` / `calendar_end`。ADR-0005 の表）。
-  **コンポーネントファイルには置かない** — 状態の持ち主はタブ層で、パネルは描くだけである
+  **コンポーネントファイルには置かない** — 状態の持ち主は Provider で、パネルは描くだけである
 - `candidate-calendar.ts` — カレンダーのスロット⇔候補日程の変換（#69）。
   **状態モデル（`CalendarCandidate`）もここ**（純関数がすべてこの形を受けて返す）。
   日付列（`calendarDays`）・升目の時刻（`SLOT_START_TIMES`）・被覆（`candidateSlots`。
@@ -95,7 +107,7 @@ src/
 `availability/` — 参加可否回答。
 
 - `availability-panel.tsx` — 候補日程（識別子・日付・開始時刻）を
-  受け取って与件として送り、**候補日程ごとに4状態の参加可否と備考**を持つ（#70）。
+  `useMeeting` から読んで与件として送り、**候補日程ごとに4状態の参加可否と備考**を持つ（#70）。
   候補日程は日付で束ねて並べる
 - `availability-form.ts` — 参加可否回答フォームの組み立て（#70）。参加形式ごとの
   選択肢と AI 出力の寄せ、日付でのグループ化、**AI の結果を回答へ写す
@@ -132,7 +144,8 @@ src/
   **値域（参加形式・参加可否・所要時間の選択肢・候補日程の識別子）は
   `@/lib/contracts/meeting.ts`**（#109）
 - `meeting-info-fields.tsx` — 会議情報の入力欄（タブ2）とヘッダー（タブ3）、状態を持つ
-  `useMeetingInfo`。表示文字列そのものは `meeting-info.ts` が決める
+  `useMeetingInfo`（呼ぶのは `meeting-provider.tsx`）。表示文字列そのものは
+  `meeting-info.ts` が決める
 - `candidate-limit.ts` — 候補日程の件数が入力契約の上限に収まるか。足す側（タブ2）と
   送る側（タブ3）の両方が引く
 
