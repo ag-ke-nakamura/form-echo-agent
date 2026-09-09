@@ -1,5 +1,6 @@
 import { resolveAgentLoopTimeoutMs } from '../config.js';
 import {
+  inspectedInputStrings,
   outputSchemaFor,
   type TaskId,
   type Usage,
@@ -101,16 +102,15 @@ export async function invokeTask(
   return withWebSearchBudget(async () => {
     /*
       検査するのは**人が書いた文字列**であって `prompt` か `input` かではない
-      （ADR-0017）。いま `input` に載るのはシステムが組み立てた与件だけ
-      （会議3タブの識別子と交通ICの往復区分）なので、検査対象は `prompt` に尽きる。
-      **職員がフォームに打った自由文字列を `input` に載せるときは、ここで `prompt` と
-      1本に連結して検査する**（#170。欄ごとに検査すると欄を跨いだ注入が素通りする）。
+      （ADR-0017）。どれが人の書いた文かは `inspectedInputStrings` が taskId ごとに
+      持つ — 交通ICの出発地・目的地が対象で、会議3タブの与件は対象外である。
 
       モデル呼び出しの前に検査する（ADR-0001）。ブロック時にモデルのトークンを
       消費しない。
     */
-    if (prompt !== undefined && prompt !== null) {
-      await blockOrPass(prompt, 'INPUT', sessionId, log);
+    const inspected = inspectedInputText(taskId, prompt, input);
+    if (inspected !== '') {
+      await blockOrPass(inspected, 'INPUT', sessionId, log);
     }
 
     // 履歴の巻き戻しは invokeWithSchemaRetry が試行ごとに行うので、ここでは持たない。
@@ -139,6 +139,31 @@ export async function invokeTask(
       webSearchHits: webSearchHits(),
     };
   });
+}
+
+/**
+ * Guardrail の入力側で検査する1本のテキスト（#170）。
+ *
+ * **欄ごとに検査せず連結して1回**にする（ADR-0017）。呼ぶ回数が増えないだけでなく、
+ * **欄を跨いだ注入**（出発地に前半・追加指示に後半を書く）が捕まる — 欄ごとに
+ * 検査すると、どちらの断片も単体では判定に届かず素通りする。ブロック時の文言は
+ * 欄名を含まないので（ADR-0009）、どの欄が原因かを分ける必要は無い。
+ *
+ * **`buildUserMessage` が組んだ本文は検査しない。** あれには我々が書いた足場の文言と
+ * 与件の JSON まで入るので、検査対象に「システムが組み立てたもの」が混ざり、会議3タブ
+ * まで巻き込む（ADR-0004 が避けた「何を検査しているのか曖昧になる」状態そのもの）。
+ *
+ * 空の欄は落とす。全部空なら空文字列を返し、呼び出し側は検査そのものを省く —
+ * 検査すべき人の文が1文字も無い回に、Guardrail の往復を1つ増やす理由が無い。
+ */
+function inspectedInputText(
+  taskId: TaskId,
+  prompt: string | null | undefined,
+  input: unknown,
+): string {
+  return [prompt ?? '', ...inspectedInputStrings(taskId, input)]
+    .filter((text) => text.trim() !== '')
+    .join('\n');
 }
 
 /**

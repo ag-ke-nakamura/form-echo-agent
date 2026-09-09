@@ -3,6 +3,7 @@ paths:
   - "agent-app/app/FormEchoAgent/**/*.test.ts"
   - "agent-app/app/FormEchoAgent/tests/**/*.ts"
   - "agent-app/app/FormEchoAgent/model/fake.ts"
+  - "agent-app/app/FormEchoAgent/guardrail/fake.ts"
 ---
 
 # Runtime のテストの書き方
@@ -18,6 +19,14 @@ paths:
 ## モデルが受け取ったものは assert してよい
 
 `fakeModelScript.calls` に残る system prompt と会話履歴を検証してよい。これは内部の呼び出し順ではなく **Runtime が Bedrock へ何を投げたか**であり、Skill の解決と会話履歴の巻き戻しはそこにしか現れない。
+
+## Guardrail が検査したものも同じく assert してよい（#170）
+
+`fakeGuardrailScript.calls` に残る「検査を頼まれたテキストと向き」を検証してよい。**新しいシームは作っていない** — モデルの fake が受け取ったものを記録しているのと同じ形で、`FORMECHO_GUARDRAIL_STRATEGY=fake` という既存の設定の差し替え先に記録を足しただけである。
+
+**なぜ記録が要るか: 境界の応答に現れるのはブロックの1ビットだけだから。** 検査対象が黙って消えても・狭まっても、応答は成功のまま何も変わらないのでテストは緑になる。実際にその穴が開いていた — #168 で追加指示が任意になった結果、**フォームだけで生成した回は入力側の検査が1度も走らない**状態が、既存のテストを1つも落とさずに成立した。連結が落ちる（出発地が検査されない）・空の追加指示で検査を省く、といった回帰も同じく1ビットには出ない。
+
+検査対象そのものの判断（どの欄が「人が書いた文」か）は契約側（`contracts/inputs.ts` の `inspectedInputStrings`）にあり、それを `prompt` と連結して1回検査する配線が `invoke-task.ts` にある。どちらも invocation 境界の内側なので、境界越しに確かめる手段はこの記録しかない。
 
 ## 例外はここに書く（黙って作らない）
 

@@ -48,14 +48,49 @@ function manualAware<T extends z.ZodType>(value: T) {
 }
 
 /**
- * `ic-card.parse-reservation` の入力（往復区分。#168）。
+ * 出発地・目的地の長さの上限（#170）。
+ *
+ * WHY 縛るか: この2欄は形で縛れない（駅名・建物名・組織名を許す）ので、`input` に
+ * 自由文字列を置かないという ADR-0004 の縛りが使えない。代わりに Guardrail チェックへ
+ * 通す（ADR-0017）が、それは内容の検査であって長さは見ない。上限が無いと1つの欄で
+ * Guardrail の往復とモデルの文脈をいくらでも太らせられる（`MAX_PROMPT_LENGTH` が
+ * `prompt` に掛かっているのと同じ理由）。
+ *
+ * **1,000字は参照ドキュメントに出どころを持たない、我々が決めた値である**（`prompt` の
+ * 10,000字は 10.1節が出どころ）。駅名・建物名・組織名に要る長さの見積もりではなく、
+ * 「職員が手で打つ欄としてこれを超えたら入力ではない」という線である。
+ */
+export const MAX_PLACE_LENGTH = 1_000;
+
+/**
+ * 出発地または目的地（#170）。**職員がフォームに打った自由文字列。**
+ *
+ * **空文字列は未入力**を表す。フォームの欄が空のまま生成を押す回があるので、
+ * 「打っていない」をそのまま渡せる必要がある — `null` にしないのは、画面の
+ * `FormState` がどの欄も文字列で持っており、渡す手前で形を変える理由が無いため。
+ */
+const placeSchema = z.string().max(MAX_PLACE_LENGTH);
+
+/**
+ * `ic-card.parse-reservation` の入力（出発地・目的地・往復区分。#168・#170）。
  *
  * **運賃の額を決める与件だけを載せる**（ADR-0017）。往復区分が無かった間、Skill の
  * 「往復なら往復分」と `fare` の `describe` は AI が往復かどうかを知る手段が無く
- * 死んでいた。借りる日・返す日時・利用目的は運賃を決めないので、引き続き自然文から
- * 読み取る側に置く。
+ * 死んでいた。出発地・目的地が無かった間は、**追加指示を空にして生成を押すと AI に
+ * 材料が何も無く経路が空で返った**（#170）。借りる日・返す日時・利用目的は運賃を
+ * 決めないので、引き続き自然文から読み取る側に置く。
  */
 export const parseReservationInputSchema = z.object({
+  origin: manualAware(
+    placeSchema.describe(
+      '出発地。駅名・建物名・組織名など。職員が入れていなければ空文字列',
+    ),
+  ),
+  destination: manualAware(
+    placeSchema.describe(
+      '目的地。駅名・建物名・組織名など。職員が入れていなければ空文字列',
+    ),
+  ),
   round_trip: manualAware(roundTripSchema),
 });
 
@@ -192,3 +227,39 @@ export const INPUT_SCHEMAS = {
   'meeting.parse-availability': parseAvailabilityInputSchema,
   'meeting.recommend-schedule': recommendScheduleInputSchema,
 } satisfies Record<TaskId, z.ZodType | null>;
+
+/**
+ * 構造化入力のうち、Guardrail の入力側で検査する文字列（#170）。
+ *
+ * **検査の境界は「`prompt` か `input` か」ではなく「人が書いた文字列か、システムが
+ * 組み立てた与件か」**（ADR-0017 が ADR-0004 の縛りを引き直した）。交通ICの出発地・
+ * 目的地は職員がフォームに打った文なので検査に通し、会議3タブの `input`（参加者と
+ * 候補日程の識別子・所要時間・参加可否）はシステムが組み立てた与件なので通さない。
+ *
+ * **taskId を `switch` で網羅する**（`default` を置かない）。`input` に自由文字列を
+ * 足すタスクが増えたとき、ここに足し忘れるとその文字列は検査を1度も通らずモデルへ
+ * 届く — #168 で追加指示が任意になった結果、フォームだけで生成した回に入力側の検査が
+ * 1度も走らなくなっていたのと同じ穴である。網羅を型に見てもらえば、足し忘れは
+ * コンパイルエラーになる。
+ *
+ * 検査済みの `input` しか渡らないので `parse` で受ける。**`outputSchemaFor` が
+ * 同じ状況で `safeParse` とフォールバックを採っているのと向きが逆なのは、外し方が
+ * 逆だから** — あちらは入力を読めなくても出力契約そのものは効くので安全側に倒れるが、
+ * ここで黙って空を返すと検査そのものが消える。
+ */
+export function inspectedInputStrings(
+  taskId: TaskId,
+  input: unknown,
+): readonly string[] {
+  switch (taskId) {
+    case 'ic-card.parse-reservation': {
+      const { origin, destination } = parseReservationInputSchema.parse(input);
+      return [origin.value, destination.value];
+    }
+    // 会議3タブの与件（識別子・所要時間・参加可否・表示範囲）はシステムが組み立てた。
+    case 'meeting.parse-candidates':
+    case 'meeting.parse-availability':
+    case 'meeting.recommend-schedule':
+      return [];
+  }
+}

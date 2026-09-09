@@ -6,6 +6,7 @@ import {
   type AiTaskRequest,
   ALLOWED_TASK_IDS,
   MAX_CANDIDATES,
+  MAX_PLACE_LENGTH,
   MAX_ROUTE_CANDIDATES,
   type OUTPUT_SCHEMAS,
   type ParseAvailabilityInput,
@@ -50,10 +51,12 @@ const PROMPTS = {
 } as const;
 
 /**
- * 交通ICの与件。往復区分は職員が「移動の条件」で選ぶもので、既定値は往復（#168）。
- * `is_manual` は職員が手で選んだかどうか（ADR-0018）。
+ * 交通ICの与件（#168・#170）。出発地・目的地・往復区分を職員が「移動の条件」で決める。
+ * `is_manual` は職員が手で入れたかどうか（ADR-0018）。
  */
 const RESERVATION_INPUT: ParseReservationInput = {
+  origin: { value: '霞ヶ関駅（東京都）', is_manual: false },
+  destination: { value: '虎ノ門ヒルズ', is_manual: true },
   round_trip: { value: 'round', is_manual: false },
 };
 
@@ -394,7 +397,10 @@ describe('構造化入力', () => {
       name: '往復区分が値域の外',
       payload: {
         taskId: 'ic-card.parse-reservation',
-        input: { round_trip: { value: 'one', is_manual: false } },
+        input: {
+          ...RESERVATION_INPUT,
+          round_trip: { value: 'one', is_manual: false },
+        },
       },
     },
     {
@@ -402,7 +408,35 @@ describe('構造化入力', () => {
       name: '往復区分に手入力かどうかが無い',
       payload: {
         taskId: 'ic-card.parse-reservation',
-        input: { round_trip: { value: 'round' } },
+        input: { ...RESERVATION_INPUT, round_trip: { value: 'round' } },
+      },
+    },
+    {
+      // #170: 出発地が無いと、AI は与件の欄が空なのか届いていないのか区別できない。
+      name: '出発地そのものが無い',
+      payload: {
+        taskId: 'ic-card.parse-reservation',
+        input: {
+          destination: RESERVATION_INPUT.destination,
+          round_trip: RESERVATION_INPUT.round_trip,
+        },
+      },
+    },
+    {
+      /*
+        #170: 上限が無いと、1つの欄で Guardrail の往復とモデルの文脈をいくらでも
+        太らせられる。長さは Guardrail が見ないので契約で縛るしかない。
+      */
+      name: '目的地が長すぎる',
+      payload: {
+        taskId: 'ic-card.parse-reservation',
+        input: {
+          ...RESERVATION_INPUT,
+          destination: {
+            value: 'あ'.repeat(MAX_PLACE_LENGTH + 1),
+            is_manual: true,
+          },
+        },
       },
     },
     {

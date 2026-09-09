@@ -140,6 +140,15 @@ export const parseReservationOutputSchema = z
       .describe(
         'ICカードを返す日時。YYYY-MM-DDTHH:mm 形式。読み取れない場合は null',
       ),
+    /**
+     * 出発地・目的地（#170）。**与件にも載る**（`parseReservationInputSchema`）ので、
+     * 往復区分と同じ規則が掛かる — 与件が既定値のまま（または前回 AI が入れた値）なら
+     * 追加指示の場所で AI が書き換え、職員が手で入れた値と食い違うなら書き換えずに
+     * 聞き返す（ADR-0018。規則は Skill が持つ）。
+     *
+     * **与件が空でも `null` を返せる。** 職員がどちらの欄も埋めず追加指示も書かずに
+     * 押した回は、読み取る材料が無いのが正しい姿である。
+     */
     origin: z.string().nullable().describe('出発地。読み取れない場合は null'),
     destination: z
       .string()

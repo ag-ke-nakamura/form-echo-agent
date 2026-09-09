@@ -33,8 +33,15 @@ export type RoundTrip = "one_way" | "round";
  */
 type ManualAware<T> = { value: T; is_manual: boolean };
 
-/** `ic-card.parse-reservation` の入力（往復区分。ADR-0017）。 */
+/**
+ * `ic-card.parse-reservation` の入力（出発地・目的地・往復区分。ADR-0017）。
+ *
+ * 出発地・目的地は空文字列が未入力を表す（#170）。欄が空のまま生成を押す回があり、
+ * 画面の `FormState` はどの欄も文字列で持つので、渡す手前で形を変えない。
+ */
 export type ParseReservationInput = {
+  origin: ManualAware<string>;
+  destination: ManualAware<string>;
   round_trip: ManualAware<RoundTrip>;
 };
 

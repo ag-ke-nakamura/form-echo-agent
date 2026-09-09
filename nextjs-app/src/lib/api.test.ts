@@ -33,7 +33,11 @@ async function callFetch(
     taskId: RESERVATION_TASK_ID,
     prompt: "x",
     sessionId: null,
-    input: { round_trip: { value: "round", is_manual: false } },
+    input: {
+      origin: { value: "", is_manual: false },
+      destination: { value: "", is_manual: false },
+      round_trip: { value: "round", is_manual: false },
+    },
   });
   return { fetchMock };
 }
@@ -71,7 +75,11 @@ it("BFF が読む欄をそのまま本文に載せる", async () => {
     taskId: RESERVATION_TASK_ID,
     prompt: "x",
     sessionId: null,
-    input: { round_trip: { value: "round", is_manual: false } },
+    input: {
+      origin: { value: "", is_manual: false },
+      destination: { value: "", is_manual: false },
+      round_trip: { value: "round", is_manual: false },
+    },
   });
 });
 

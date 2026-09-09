@@ -316,14 +316,36 @@ describe("applyToReservation", () => {
 describe("reservationInput", () => {
   it("既定値のままなら手入力ではない（AI が直せる）", () => {
     expect(reservationInput(EMPTY_FORM)).toEqual({
+      // 空欄も与件として渡す（#170）。渡さないと AI は古いフォームを最後の与件と読む。
+      origin: { value: "", is_manual: false },
+      destination: { value: "", is_manual: false },
       round_trip: { value: DEFAULT_ROUND_TRIP, is_manual: false },
     });
   });
 
   it("職員が選ぶと手入力になる", () => {
     const state = setFieldValue(EMPTY_RESERVATION, "round_trip", "one_way");
-    expect(reservationInput(state.fields)).toEqual({
-      round_trip: { value: "one_way", is_manual: true },
+    expect(reservationInput(state.fields).round_trip).toEqual({
+      value: "one_way",
+      is_manual: true,
+    });
+  });
+
+  /*
+    #170: 手入力の出発地は AI が黙って書き換えられない側に回る（追加指示と食い違えば
+    聞き返す）。印が落ちると、出発地は霞ヶ関のまま経路だけ新宿から始まるフォームができる。
+  */
+  it("職員が打った出発地・目的地は手入力になる", () => {
+    const typed = setFieldValue(
+      setFieldValue(EMPTY_RESERVATION, "origin", "霞ヶ関"),
+      "destination",
+      "虎ノ門ヒルズ",
+    );
+    const input = reservationInput(typed.fields);
+    expect(input.origin).toEqual({ value: "霞ヶ関", is_manual: true });
+    expect(input.destination).toEqual({
+      value: "虎ノ門ヒルズ",
+      is_manual: true,
     });
   });
 
@@ -331,10 +353,20 @@ describe("reservationInput", () => {
   it("前回 AI が入れた値は手入力ではない", () => {
     const { next } = applyToReservation(
       EMPTY_RESERVATION,
-      output({ round_trip: "one_way" }),
+      output({ round_trip: "one_way", origin: "新宿" }),
     );
-    expect(reservationInput(next.fields)).toEqual({
-      round_trip: { value: "one_way", is_manual: false },
+    const input = reservationInput(next.fields);
+    expect(input.round_trip).toEqual({ value: "one_way", is_manual: false });
+    expect(input.origin).toEqual({ value: "新宿", is_manual: false });
+  });
+
+  /* 「消す」で空にした欄は手入力である（ADR-0018）。空欄でも印は落ちない。 */
+  it("職員が消した出発地は空でも手入力のまま", () => {
+    const typed = setFieldValue(EMPTY_RESERVATION, "origin", "霞ヶ関");
+    const cleared = setFieldValue(typed, "origin", "");
+    expect(reservationInput(cleared.fields).origin).toEqual({
+      value: "",
+      is_manual: true,
     });
   });
 });
