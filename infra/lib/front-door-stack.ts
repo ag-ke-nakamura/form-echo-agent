@@ -256,5 +256,11 @@ export class FormEchoFrontDoorStack extends Stack {
     });
 
     new CfnOutput(this, 'FrontDoorUrl', { value: `https://${distribution.distributionDomainName}` });
+
+    // 受入条件の「Function URL を直接（署名なしで）叩くと 403」を人が確かめるために出す。
+    // 出さないと URL を知る手立てが CLI での掘り出しだけになり、確認そのものが飛ぶ。
+    // 秘密ではない — `authType` が `AWS_IAM` なので URL を知っているだけでは叩けない
+    // （`agentcore` の Gateway URL を mise.toml に置いているのと同じ扱い）。
+    new CfnOutput(this, 'BffFunctionUrl', { value: bffFunctionUrl.url });
   }
 }
