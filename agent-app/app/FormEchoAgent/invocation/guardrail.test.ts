@@ -287,25 +287,13 @@ describe('playground.free-prompt の検査対象（ADR-0020）', () => {
     expect(inputChecks()).toEqual([`${MESSAGE}\n${SYSTEM_PROMPT}`]);
   });
 
-  it('検証メッセージが空でも持ち込みシステムプロンプトを検査する', async () => {
-    fakeModelScript.write({ kind: 'text', text: '回答本文です。' });
-
-    expectSuccess(
-      await invokeBoundary({
-        taskId: 'playground.free-prompt',
-        input: { system_prompt: SYSTEM_PROMPT },
-      }),
-    );
-
-    expect(inputChecks()).toEqual([SYSTEM_PROMPT]);
-  });
-
   it('出力側は回答本文をそのまま検査する（JSON 化しない）', async () => {
     fakeModelScript.write({ kind: 'text', text: '一行目\n二行目' });
 
     expectSuccess(
       await invokeBoundary({
         taskId: 'playground.free-prompt',
+        prompt: MESSAGE,
         input: { system_prompt: SYSTEM_PROMPT },
       }),
     );
@@ -324,6 +312,7 @@ describe('playground.free-prompt の検査対象（ADR-0020）', () => {
 
     const response = await invokeBoundary({
       taskId: 'playground.free-prompt',
+      prompt: MESSAGE,
       input: { system_prompt: SYSTEM_PROMPT },
     });
 

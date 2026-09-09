@@ -67,7 +67,11 @@ export function buildUserMessage(
   const headings = HEADINGS[taskId];
   /*
     見出しを持たない taskId は組み立てそのものを行わず、人が書いた文をそのまま渡す。
-    **空なら空のまま投げる** — 我々が足す文はどれもノイズになる（ADR-0020）。
+    我々が足す文はどれもノイズになる（ADR-0020）。
+
+    `?? ''` に落ちる回は入力契約が先に弾く（`PROMPT_REQUIREMENT` が `'required'`）。
+    **空の user message はモデルへ投げてはいけない** — 空の text ブロックを Bedrock の
+    Converse が `ValidationException` で弾く。ここは型が `null` を許すぶんの受けである。
   */
   if (headings.input === null) return prompt ?? '';
   const sections = [

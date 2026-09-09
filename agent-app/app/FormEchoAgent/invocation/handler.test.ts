@@ -1488,32 +1488,20 @@ describe('playground.free-prompt（ADR-0020）', () => {
     expect(userMessagesOf(lastCall())[0]).not.toContain(SYSTEM_PROMPT);
   });
 
-  it('検証メッセージが空でも通り、空のまま投げる', async () => {
-    fakeModelScript.write({ kind: 'text', text: '回答本文です。' });
-
+  it('検証メッセージが無いと INVALID_INPUT になり、モデルを呼ばない', async () => {
     /*
-      持ち込みシステムプロンプト1本だけの挙動を試すのがこの画面の使い方の1つ
-      （ADR-0020）。**見出しの無い taskId の分岐が戻っていないとここで `## null` と
-      `null` の JSON が流れる。**
+      #199 で ADR-0020 の「検証メッセージは空でもよい」を狭めた。空だと user message が
+      **空の text ブロック1つ**として飛び、Bedrock の Converse が `ValidationException`
+      で弾く — 職員には原因の分からない失敗にしか見えない。画面の送信ボタンも
+      `PROMPT_REQUIREMENT` からこの可否を引くので、押せない状態がここと揃う。
     */
-    expectSuccess(
-      await invokeBoundary({
-        taskId: FREE_PROMPT_TASK_ID,
-        input: { system_prompt: SYSTEM_PROMPT },
-      }),
-    );
+    const response = await invokeBoundary({
+      taskId: FREE_PROMPT_TASK_ID,
+      input: { system_prompt: SYSTEM_PROMPT },
+    });
 
-    /*
-      **`userMessagesOf` は長さ0のテキストを落とす**ので、あれで空を見ても「送って
-      いない」と区別が付かない。モデルが受け取った生の履歴で見る。
-    */
-    expect(lastCall().messages).toEqual([
-      expect.objectContaining({
-        role: 'user',
-        content: [expect.objectContaining({ text: '' })],
-      }),
-    ]);
-    expect(systemPromptOf(lastCall())).toContain(SYSTEM_PROMPT);
+    expect(expectError(response).code).toBe('INVALID_INPUT');
+    expect(fakeModelScript.calls).toHaveLength(0);
   });
 
   it('Structured Output を通らずに回答本文が返る', async () => {
@@ -1550,12 +1538,17 @@ describe('playground.free-prompt（ADR-0020）', () => {
     {
       // 何も指示していない状態の応答を「プロンプトの効き」と誤読させない。
       name: '持ち込みシステムプロンプトが空文字',
-      payload: { taskId: FREE_PROMPT_TASK_ID, input: { system_prompt: '' } },
+      payload: {
+        taskId: FREE_PROMPT_TASK_ID,
+        prompt: FREE_PROMPT_MESSAGE,
+        input: { system_prompt: '' },
+      },
     },
     {
       name: '持ち込みシステムプロンプトが上限を超える',
       payload: {
         taskId: FREE_PROMPT_TASK_ID,
+        prompt: FREE_PROMPT_MESSAGE,
         input: { system_prompt: 'あ'.repeat(MAX_PROMPT_LENGTH + 1) },
       },
     },
@@ -1598,6 +1591,7 @@ describe('playground.free-prompt（ADR-0020）', () => {
     expectSuccess(
       await invokeBoundary({
         taskId: FREE_PROMPT_TASK_ID,
+        prompt: FREE_PROMPT_MESSAGE,
         input: { system_prompt: 'あ'.repeat(MAX_PROMPT_LENGTH) },
       }),
     );
