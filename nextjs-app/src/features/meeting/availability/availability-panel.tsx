@@ -104,7 +104,9 @@ export function AvailabilityPanel() {
         availability,
         source: "manual",
         note: current[id]?.note ?? "",
-        noteSource: current[id]?.noteSource ?? "manual",
+        // 備考にまだ触れていない回答の出どころは「既定値」。`"manual"` と書くと
+        // 「参加者が消した」と読めてしまう（守るかを出どころだけで決めるため。#179）。
+        noteSource: current[id]?.noteSource ?? "default",
       },
     }));
   }

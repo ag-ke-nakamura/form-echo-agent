@@ -195,6 +195,35 @@ export type AvailabilityAnswer = {
 /** 候補日程の識別子をキーにした回答。未回答はキーが無いことで表す。 */
 export type AvailabilityAnswers = Record<string, AvailabilityAnswer>;
 
+/**
+ * 反映しても参加可否が書き換わらない候補日程か（#38）。
+ *
+ * 手で選んだ可否は本人の予定そのもので、自然文からの読み取りより確か。
+ */
+function isAvailabilityPreserved(
+  current: AvailabilityAnswer | undefined,
+): boolean {
+  return current?.source === "manual";
+}
+
+/**
+ * 反映しても消えない備考。守らない（AI が書き換えてよい）なら `null`（#38・#179）。
+ *
+ * **見るのは出どころだけで、空かどうかは見ない。** 参加者が「消して空にした」のは
+ * 意図であって、回答がまだ無い状態（キーが無い）とは違う。空を除いていた頃は、
+ * 消した回にプレビューだけが「AI の備考が入る」と言い、反映は守る、という食い違いが
+ * 出ていた（#179）。
+ *
+ * **プレビュー・報告・反映の3箇所がこの1つを引く。** 別々に書くと、片方だけ条件が
+ * 動いたときにプレビューが嘘になる（交通ICの `isPreserved` と同じ形）。
+ *
+ * 真偽ではなく値を返すのは、守るときに反映が入れる備考がそれそのものだから。空文字と
+ * 「守らない」を `null` で分ける。
+ */
+function keptNoteOf(current: AvailabilityAnswer | undefined): string | null {
+  return current?.noteSource === "manual" ? current.note : null;
+}
+
 /** 反映のときに要る会議の与件。参加形式が寄せ先を、所要時間が表示名を決める。 */
 type ApplyContext = {
   candidates: readonly SelectedCandidate[];
@@ -243,22 +272,19 @@ export function applyAvailabilityResult(
 
     const label = candidateLabel(candidate, durationMinutes);
     const current = next[entry.candidate_id];
-    // 手で選んだ可否は本人の予定そのもので、自然文からの読み取りより確か（#38）。
-    if (current?.source === "manual") {
+    if (isAvailabilityPreserved(current)) {
       preserved.push(label);
       continue;
     }
 
-    const keepsNote = current?.noteSource === "manual";
+    const keptNote = keptNoteOf(current);
     next[entry.candidate_id] = {
       availability: normalizeAvailability(format, entry.availability),
       source: "ai",
-      note: keepsNote ? current.note : (entry.note ?? ""),
-      noteSource: keepsNote ? "manual" : "ai",
+      note: keptNote ?? entry.note ?? "",
+      noteSource: keptNote === null ? "ai" : "manual",
     };
-    updated.push(
-      keepsNote && current.note !== "" ? `${label}（備考は保持）` : label,
-    );
+    updated.push(keptNote === null ? label : `${label}（備考は保持）`);
   }
 
   return {
@@ -321,16 +347,16 @@ export function availabilityPreviewItems(
       手で選んだ可否は反映しても変わらない（`applyAvailabilityResult` が守る）。
       緑のチェックで並べると、プレビューが「押したら入る」と偽って見せる。
     */
-    if (current?.source === "manual") {
+    if (isAvailabilityPreserved(current)) {
       return { key: candidate.id, label, value: choice, preserved: true };
     }
 
     /*
-      備考も同じ。手で書いた備考は守られるので、AI が返した備考をそのまま出すと
-      入らないものを見せることになる。守られることを言い添える（文言は
+      備考も同じ。手で書いた（消したものも含む）備考は守られるので、AI が返した備考を
+      そのまま出すと入らないものを見せることになる。守られることを言い添える（文言は
       `applyAvailabilityResult` の報告と揃える）。
     */
-    if (current?.noteSource === "manual" && current.note !== "") {
+    if (keptNoteOf(current) !== null) {
       return {
         key: candidate.id,
         label,
