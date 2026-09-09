@@ -133,12 +133,17 @@ export function ApplyReportView({ report }: { report: ApplyReport }) {
 export function AiErrorNotice({
   guidance,
   taskId,
-  nonAiPathHint,
+  nonAiPathHint = "",
   exhausted = false,
 }: {
   guidance: ErrorGuidance;
   taskId: TaskId;
-  nonAiPathHint: string;
+  /**
+   * 非AI経路の一文。**持たない画面（プロンプト検証タブ）は渡さない**（ADR-0020）。
+   * その画面では案内の表も導線を出さない（`errorGuidanceFor` の `hasNonAiPath`）ので、
+   * 下のリンクごと出ない。
+   */
+  nonAiPathHint?: string;
   /**
    * 続けて失敗した回数が上限に達したか（設計書 3.7節）。
    *

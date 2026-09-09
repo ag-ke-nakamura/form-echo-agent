@@ -21,9 +21,27 @@ export type ErrorGuidance = {
    * 非AI経路への導線を出すか（11.1節・11.3節）。
    *
    * タブごとに違う一文（`AiAssistant` の `nonAiPathHint`）はここには置かない。
-   * この表はコードから引くので、どのタブで起きた失敗かを知らない。
+   * この表はコードから引くので、どのタブで起きた失敗かを知らない。**その画面が
+   * 非AI経路を持つかどうかだけを `errorGuidanceFor` の呼び出し側が渡す。**
    */
   offersNonAiPath: boolean;
+};
+
+/**
+ * 表の1行。`ErrorGuidance` との違いは、非AI経路が無い画面向けの言い換えを持つこと。
+ *
+ * WHY 表を taskId ごとに複製しないか: 種別ごとの「何が起きたか」は画面によらず同じで、
+ * 変わるのは**次の一手**のうち非AI経路に触れる部分だけである。複製すると、9.3節の
+ * 文言を直したときに片方だけが古いまま残る。
+ */
+type GuidanceEntry = ErrorGuidance & {
+  /**
+   * 非AI経路を持たない画面（プロンプト検証タブ。ADR-0020）向けの次の一手。
+   *
+   * 持たない行は `nextStep` をそのまま使う — 元から導線に触れていない文である。
+   * **触れている行にこれを書き忘れると、画面に無い導線を探させる案内が出る。**
+   */
+  nextStepWithoutNonAiPath?: string;
 };
 
 /**
@@ -35,7 +53,10 @@ const PROMPT_KEPT = "書いた指示は入力欄に残っています。";
 
 const FILL_FORM_DIRECTLY = "このタブのフォームに直接入力してください。";
 
-const GUIDANCE: Record<AiErrorCode, ErrorGuidance> = {
+/** 非AI経路を持たない画面では、待つ以外にできることが無い種別がある。 */
+const WAIT_AND_RETRY = `${PROMPT_KEPT}時間をおいて送り直してください。`;
+
+const GUIDANCE: Record<AiErrorCode, GuidanceEntry> = {
   INVALID_INPUT: {
     // 長すぎ・空・形式違いのどれでもこのコードになるので、原因を決め打たない。
     summary: "入力内容を確認してください。",
@@ -46,6 +67,8 @@ const GUIDANCE: Record<AiErrorCode, ErrorGuidance> = {
     // 職員の書き方では直らない（画面と BFF の版がずれている）。再送を勧めない。
     summary: "この機能は現在利用できません。",
     nextStep: FILL_FORM_DIRECTLY,
+    // 画面と BFF の版がずれている状態なので、直る道は読み込み直すことだけになる。
+    nextStepWithoutNonAiPath: "画面を再読み込みしてから送り直してください。",
     offersNonAiPath: true,
   },
   PARSE_FAILED: {
@@ -63,6 +86,8 @@ const GUIDANCE: Record<AiErrorCode, ErrorGuidance> = {
     alreadyAttempted:
       "AI 側には出力を作り直す自動リトライがあり、それを通り抜けたうえでの失敗です。",
     nextStep: `同じ指示を送り直しても同じ結果になることがあります。書き方を変えて送り直すか、${FILL_FORM_DIRECTLY}`,
+    nextStepWithoutNonAiPath:
+      "同じ指示を送り直しても同じ結果になることがあります。書き方を変えて送り直してください。",
     offersNonAiPath: true,
   },
   TIMEOUT: {
@@ -74,6 +99,7 @@ const GUIDANCE: Record<AiErrorCode, ErrorGuidance> = {
   RUNTIME_UNAVAILABLE: {
     summary: "AI 機能が利用できません。",
     nextStep: FILL_FORM_DIRECTLY,
+    nextStepWithoutNonAiPath: WAIT_AND_RETRY,
     offersNonAiPath: true,
   },
   GUARDRAIL_BLOCKED: {
@@ -89,6 +115,7 @@ const GUIDANCE: Record<AiErrorCode, ErrorGuidance> = {
     // 分けて持つのは、原因が分かって片方の案内だけ変わったときに動かせるようにするため。
     summary: "AI 機能が利用できません。",
     nextStep: FILL_FORM_DIRECTLY,
+    nextStepWithoutNonAiPath: WAIT_AND_RETRY,
     offersNonAiPath: true,
   },
 };
@@ -99,7 +126,21 @@ const GUIDANCE: Record<AiErrorCode, ErrorGuidance> = {
  * WHY: BFF から届いた文字列をそのまま引くので、Runtime と BFF とフロントエンドの
  * 版がずれると未知のコードが来る。素引きだと undefined が返り、呼び出し側の
  * 分岐を通過して**中身の無い赤い枠**だけが表示される。
+ *
+ * `hasNonAiPath` はその画面が非AI経路を持つか。**持たない画面（プロンプト検証タブ）へ
+ * 「手動で入力してください」と言うと、存在しない導線を探させる**（ADR-0020）ので、
+ * 導線に触れる行はここで言い換える。
  */
-export function errorGuidanceFor(code: string): ErrorGuidance {
-  return GUIDANCE[code as AiErrorCode] ?? GUIDANCE.INTERNAL_ERROR;
+export function errorGuidanceFor(
+  code: string,
+  { hasNonAiPath }: { hasNonAiPath: boolean },
+): ErrorGuidance {
+  const entry = GUIDANCE[code as AiErrorCode] ?? GUIDANCE.INTERNAL_ERROR;
+  const { nextStepWithoutNonAiPath, ...guidance } = entry;
+  if (hasNonAiPath) return guidance;
+  return {
+    ...guidance,
+    nextStep: nextStepWithoutNonAiPath ?? guidance.nextStep,
+    offersNonAiPath: false,
+  };
 }

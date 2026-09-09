@@ -5,18 +5,23 @@ import { AvailabilityPanel } from "@/features/meeting/availability/availability-
 import { CandidatesPanel } from "@/features/meeting/candidates/candidates-panel";
 import { MeetingProvider } from "@/features/meeting/meeting-provider";
 import { RecommendPanel } from "@/features/meeting/recommend/recommend-panel";
+import { PromptLabPanel } from "@/features/playground/prompt-lab-panel";
 import { ReservationPanel } from "@/features/ic-card/reservation-panel";
 
 /**
  * タブの定義。並び順は職員が触る順（予約 → 候補日程を決める → 可否を答える →
  * 集まった可否から開催日を決める）に合わせる。プロダクトオーナーがタブの切り替え
  * だけで4機能を順に追えるようにする。
+ *
+ * 5つめ（プロンプト検証）は業務機能ではなく**プロンプトの効きを測る道具**なので
+ * 業務の4つの後ろに置く（ADR-0020）。
  */
 const TABS = [
   { id: "ic-card", label: "交通IC予約" },
   { id: "meeting-candidates", label: "会議候補日設定" },
   { id: "meeting-availability", label: "参加可否回答" },
   { id: "meeting-recommend", label: "候補日提案" },
+  { id: "playground", label: "プロンプト検証" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -41,6 +46,7 @@ export function FormEchoTabs() {
     "meeting-recommend": (
       <RecommendPanel active={activeTabId === "meeting-recommend"} />
     ),
+    playground: <PromptLabPanel />,
   };
 
   return (

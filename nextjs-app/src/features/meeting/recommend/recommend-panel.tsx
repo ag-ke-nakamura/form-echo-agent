@@ -271,7 +271,11 @@ export function RecommendPanel({
       // 新しい提案が来たらアコーディオンを導出へ戻す（「推奨」だけが開く）。
       setOpenGrounds(null);
     } else {
-      setGuidance({ seed, value: errorGuidanceFor(outcome.code) });
+      setGuidance({
+        seed,
+        // 参加可否表を手で埋める非AI経路がこのタブにもある。
+        value: errorGuidanceFor(outcome.code, { hasNonAiPath: true }),
+      });
     }
     setPending(false);
   }, [canRequest, input, meetingInfo, tableSeed]);

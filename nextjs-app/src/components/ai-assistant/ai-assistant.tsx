@@ -303,7 +303,9 @@ export function AiAssistant<TTaskId extends FormTaskId>({
         許容する: 良い結果なら反映しているはずで、そこから3回作り直したということは
         その結果は職員が採らなかったものである。
       */
-      setFailure(errorGuidanceFor(outcome.code));
+      // このアシスタントが載るのはフォームを持つ4タブだけ（`FormTaskId`）なので、
+      // 非AI経路は必ずある。
+      setFailure(errorGuidanceFor(outcome.code, { hasNonAiPath: true }));
       failureStreak.current += 1;
       if (failureStreak.current >= MAX_CONSECUTIVE_FAILURES) {
         setExhausted(true);
