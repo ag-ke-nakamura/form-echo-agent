@@ -371,7 +371,12 @@ export const FIELD_LABELS: Record<FieldName, string> = {
   destination: "目的地",
   // 交通手段の選択欄を置き換える（#86。CONTEXT.md「移動経路」）。
   route: "移動経路",
-  transport_cost: "交通費",
+  /*
+    用語「1人あたり運賃（見込み）」から「（見込み）」を落としたラベル（#192）。
+    「交通費」と呼ばない — 1人分か全員分かを言えていないので、同行者がいる回に
+    欄の額が誰の分なのかを職員が欄名から判断できない（CONTEXT.md の _Avoid_）。
+  */
+  transport_cost: "1人あたり運賃",
   /*
     「目的」ではなく「利用目的」と呼ぶ。目的地が同じ画面に並んでいるので、
     「目的」だと職員がどちらの欄を読んでいるのか一瞬で分からない。
@@ -481,7 +486,7 @@ export function reservationInput(fields: FormState): ParseReservationInput {
 
 /**
  * 採用移動経路（#100。CONTEXT.md「採用移動経路」）。この1件の `route`/`fare` を
- * 「移動経路」「交通費」欄へ写す。**フォームへ入るのは採用した1件だけ**で、その他の
+ * 「移動経路」「1人あたり運賃」欄へ写す。**フォームへ入るのは採用した1件だけ**で、その他の
  * 移動経路候補は内訳に並ぶだけ（#173。切り替える操作は置かない）。
  *
  * `is_selected` がちょうど1件であることは出力契約の `.refine()` が保証する
@@ -646,7 +651,11 @@ function candidateLines(
   const overlap = candidate.commuter_pass_overlap_sections;
   return [
     `経路：${candidate.route}`,
-    `1人あたり合計運賃：${candidate.fare}`,
+    /*
+      欄名と同じ定数から引く（#192）。欄の額は採用候補の `fare` そのものなので、
+      文言が2つに割れると同じ額を2通りに呼ぶことになる。
+    */
+    `${FIELD_LABELS.transport_cost}：${candidate.fare}`,
     `所要時間：${candidate.duration}`,
     `乗換回数：${candidate.transfer_count}回`,
     ...(candidate.is_selected ? [`採用理由：${candidate.reason}`] : []),
