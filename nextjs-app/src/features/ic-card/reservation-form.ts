@@ -9,6 +9,8 @@ import type {
   FieldSource,
 } from "@/components/ai-assistant/field-source";
 import type { BreakdownSection, PreviewItem } from "@/lib/ai-preview";
+import type { WebSearchCitation } from "@/lib/api";
+import { linkableSources } from "@/lib/sources";
 
 /**
  * 交通ICタブのフォームの組み立て（#38・#65）。
@@ -545,7 +547,10 @@ const NO_COMMUTER_PASS_OVERLAP = "重複なし";
  * いて重なっていない（空配列）回は「重複なし」と出す — 落とすと、定期券で乗れる区間を
  * 二重に請求していないかを職員が確かめられない。
  */
-function candidateLines(candidate: RouteCandidate): string[] {
+function candidateLines(
+  candidate: RouteCandidate,
+  citationNumbers: ReadonlySet<number>,
+): string[] {
   const overlap = candidate.commuter_pass_overlap_sections;
   return [
     `経路：${candidate.route}`,
@@ -557,8 +562,27 @@ function candidateLines(candidate: RouteCandidate): string[] {
     ...(overlap === null
       ? []
       : [`定期重複区間：${overlap.join("、") || NO_COMMUTER_PASS_OVERLAP}`]),
+    /*
+      経路検索結果（#174、ADR-0019）。**採用・不採用のどちらにも出す** — 「1円でも安い
+      経路を選んだ」を職員が検算できるのは、候補と根拠のページが対になっているときだけ
+      である。
+
+      出すのは番号だけで、URL は書かない。**同じ URL は下の出典の一覧がリンクとして
+      持っている**（`AiNotice` の「AI が参照した検索結果」）ので、ここに要るのは
+      どの候補がどのページかという対応である。行を押せるリンクにするには3タブ共有の
+      `BreakdownSection` に文字列以外の構造を持ち込むことになり、それに見合わない。
+
+      **引けない番号は番号を出さない。** モデルが取得していない番号を書いた回で、
+      その番号を見せても職員には辿れない（Runtime が warn ログに残す）。
+    */
+    citationNumbers.has(candidate.citation_number)
+      ? `経路検索結果：出典${candidate.citation_number}`
+      : `経路検索結果：${UNRESOLVED_CITATION}`,
   ];
 }
+
+/** 出典を引けなかった候補の語（#174）。 */
+const UNRESOLVED_CITATION = "確認できませんでした";
 
 /**
  * AI提案の内訳（#172・#173。設計書 2節）。**欄の一覧とは別の領域**で、AI が何を
@@ -578,8 +602,17 @@ function candidateLines(candidate: RouteCandidate): string[] {
  */
 export function reservationBreakdown(
   result: ParseReservationOutput,
+  citations: readonly WebSearchCitation[],
 ): BreakdownSection[] {
   if (result.route_candidates.length === 0) return [];
+  /*
+    引ける出典番号（#174、ADR-0019）。**出典の一覧に出るものと同じ集合**を使う
+    （`linkableSources` は http(s) 以外を落とす）ので、内訳が「出典2」と言うときは
+    必ず下の一覧に2番が並んでいる。
+  */
+  const citationNumbers = new Set(
+    linkableSources(citations).map((source) => source.number),
+  );
   const selected = selectedRouteCandidate(result);
   const others = result.route_candidates.filter(
     (candidate) => !candidate.is_selected,
@@ -612,14 +645,14 @@ export function reservationBreakdown(
           {
             key: "selected-route",
             label: "採用移動経路",
-            lines: candidateLines(selected),
+            lines: candidateLines(selected, citationNumbers),
           },
         ]),
     ...others.map((candidate, index) => ({
       key: `route-candidate-${index + 1}`,
       // 番号を振るのは、候補ごとの行が同じ見出しで続くと境目が読めないため。
       label: `その他の移動経路候補${index + 1}`,
-      lines: candidateLines(candidate),
+      lines: candidateLines(candidate, citationNumbers),
     })),
   ];
 }

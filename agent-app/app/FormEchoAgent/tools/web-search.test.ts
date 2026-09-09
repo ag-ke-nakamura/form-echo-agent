@@ -63,6 +63,91 @@ describe('createWebSearchTool', () => {
     });
   });
 
+  /*
+    出典番号（#174、ADR-0019）。**モデルが URL を書き写さずに根拠を指せることが
+    この番号の存在理由**なので、番号の振り方が壊れると経路候補の根拠が全部ずれる。
+    番号の並びは `toCitations` が持つ1つの並び（応答の `citations` と同じもの）。
+  */
+  describe('出典番号', () => {
+    it('1始まりで、結果の並びに振る', async () => {
+      const tool = createWebSearchTool(
+        recordingBackend([
+          hit({ url: 'https://www.example.jp/a' }),
+          hit({ url: 'https://www.example.jp/b' }),
+        ]),
+      );
+
+      const result = await withWebSearchBudget(() => callTool(tool, '経路'));
+
+      expect(result).toMatchObject({
+        results: [
+          { url: 'https://www.example.jp/a', citation_number: 1 },
+          { url: 'https://www.example.jp/b', citation_number: 2 },
+        ],
+      });
+    });
+
+    it('2回目の検索には続きの番号を振る', async () => {
+      const first = createWebSearchTool(
+        recordingBackend([hit({ url: 'https://www.example.jp/a' })]),
+      );
+      const second = createWebSearchTool(
+        recordingBackend([hit({ url: 'https://www.example.jp/b' })]),
+      );
+
+      const results = await withWebSearchBudget(async () => [
+        await callTool(first, '経路1'),
+        await callTool(second, '経路2'),
+      ]);
+
+      // 番号はリクエスト単位で通し。検索ごとに1へ戻すと、2回目の結果を指した
+      // 候補が1回目のページを指すことになる。
+      expect(results[1]).toMatchObject({
+        results: [{ url: 'https://www.example.jp/b', citation_number: 2 }],
+      });
+    });
+
+    it('正規化して同じになる URL は1つの番号にまとめる', async () => {
+      const tool = createWebSearchTool(
+        recordingBackend([
+          hit({ url: 'https://www.example.jp/a' }),
+          hit({ url: 'https://WWW.Example.jp:443/a' }),
+          hit({ url: 'https://www.example.jp/b' }),
+        ]),
+      );
+
+      const result = await withWebSearchBudget(() => callTool(tool, '経路'));
+
+      // 画面は `new URL().href` で重複を落とすので、ここで2件のまま残すと
+      // 番号2が画面で引けなくなる（実在するページを指した候補が確認できなくなる）。
+      expect(result).toMatchObject({
+        results: [
+          { citation_number: 1 },
+          { citation_number: 1 },
+          { citation_number: 2 },
+        ],
+      });
+    });
+
+    it('同じページが再び返ったら初出の番号になる', async () => {
+      const backend = recordingBackend([
+        hit({ url: 'https://www.example.jp/a' }),
+      ]);
+      const tool = createWebSearchTool(backend);
+
+      const results = await withWebSearchBudget(async () => [
+        await callTool(tool, '経路1'),
+        await callTool(tool, '経路2'),
+      ]);
+
+      // 応答の `citations` は URL で重複を落とすので、番号もその並びに合わせる。
+      // 合わせないと、職員が見る一覧に無い番号を候補が指す。
+      expect(results[1]).toMatchObject({
+        results: [{ url: 'https://www.example.jp/a', citation_number: 1 }],
+      });
+    });
+  });
+
   it(`1リクエストあたり ${WEB_SEARCH_MAX_CALLS} 回を超えて検索しない`, async () => {
     const backend = recordingBackend();
     const tool = createWebSearchTool(backend);

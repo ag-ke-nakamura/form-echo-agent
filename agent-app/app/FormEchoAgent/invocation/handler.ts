@@ -2,9 +2,13 @@ import {
   type AiErrorResponse,
   type AiTaskSuccessResponse,
   aiTaskRequestSchema,
-  type WebSearchCitation,
 } from '../contracts/index.js';
-import type { WebSearchHit } from '../tools/web-search.js';
+/*
+  出典への落とし込みはツール側に置く（#174）。**出典番号の並びを決めるのが
+  `toCitations` なので、モデルへ番号を渡す側と応答に載せる側が同じ関数を引く必要が
+  ある** — 2箇所で並べると、モデルが指した番号と職員が見る一覧の番号が食い違う。
+*/
+import { toCitations } from '../tools/web-search.js';
 import {
   GuardrailBlockedError,
   invokeTask,
@@ -18,36 +22,6 @@ import type { InvocationLogger } from './logger.js';
  */
 const GUARDRAIL_BLOCKED_MESSAGE =
   '入力内容に問題があります。個人情報（マイナンバー等）が含まれていないか確認してください。';
-
-/**
- * 取得した Search Result を、職員に見せる出典に落とす（#46）。
- *
- * **本文は落とし、出典（`title`）とリンク（`url`）だけを残す。** AWS の Web Search
- * Tool の「許容される利用方法」が表示を義務づけているのは出典とリンクであって、
- * 本文ではない。載せると応答が1件あたり数千字ぶん太るだけになる。
- *
- * 「一括での抽出・保存・再現の禁止」は**ここでは理由にならない。** 本文はモデルへ
- * 渡しており（渡さなければ裏取りが成立しない）、応答に載せないことをあの条項で
- * 説明すると自分たちの実装と食い違う。
- *
- * URL で重複を落とす。1リクエストで最大3回検索するので、同じページが複数回返る。
- * タイトルが空の結果は URL で代える — 出典の欄が空のリンクは、職員には
- * どこの情報か分からない。
- */
-function toCitations(hits: readonly WebSearchHit[]): WebSearchCitation[] {
-  const byUrl = new Map<string, WebSearchCitation>();
-  for (const hit of hits) {
-    if (byUrl.has(hit.url)) continue;
-    byUrl.set(hit.url, {
-      title: hit.title.trim() === '' ? hit.url : hit.title,
-      url: hit.url,
-      ...(hit.publishedDate === undefined
-        ? {}
-        : { publishedDate: hit.publishedDate }),
-    });
-  }
-  return [...byUrl.values()];
-}
 
 /**
  * ハンドラが `RequestContext` から実際に使うものだけ。

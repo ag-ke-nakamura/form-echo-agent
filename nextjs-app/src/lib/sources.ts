@@ -19,6 +19,15 @@ import type { WebSearchCitation } from "./api";
 
 /** 画面に出す1件。`label` はリンクの文字列、`url` は `href` に入る値。 */
 export interface LinkableSource {
+  /**
+   * 出典番号（1始まり。#174、ADR-0019）。**`citations` の並びそのもの**で、この一覧の
+   * 並び順ではない。
+   *
+   * WHY 一覧の位置で振り直さないか: 経路候補が `citation_number` でこの番号を指すので、
+   * 振り直すと候補が別のページを指す。下で落とした出典（http(s) 以外）があった回は
+   * 番号が飛ぶ — 飛ぶほうが、ずれるより読める。
+   */
+  number: number;
   url: string;
   /** 出典（ページのタイトル）。 */
   label: string;
@@ -101,7 +110,7 @@ export function linkableSources(
   const seen = new Set<string>();
   const linkable: LinkableSource[] = [];
 
-  for (const citation of citations) {
+  for (const [index, citation] of citations.entries()) {
     let parsed: URL;
     try {
       parsed = new URL(citation.url);
@@ -113,6 +122,8 @@ export function linkableSources(
     seen.add(parsed.href);
     const publishedDate = toIsoDate(citation.publishedDate);
     linkable.push({
+      // 番号は `citations` の位置。落とした出典があっても振り直さない。
+      number: index + 1,
       url: parsed.href,
       // タイトルが空なら URL で代える。出典の欄が空のリンクは、職員には
       // どこの情報か分からない。

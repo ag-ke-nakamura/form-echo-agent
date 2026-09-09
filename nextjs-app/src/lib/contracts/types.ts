@@ -61,6 +61,13 @@ export type RouteCandidate = {
   transfer_count: number;
   is_selected: boolean;
   reason: string;
+  /**
+   * この候補を引いた経路検索結果の出典番号（#174、ADR-0019）。**必須で、1始まり。**
+   *
+   * 指しているのは**応答封筒の `citations`** の並び。**画面が引く**（サーバー側は
+   * 範囲を検査しない）ので、範囲外の番号は「確認できませんでした」として出す。
+   */
+  citation_number: number;
   commuter_pass_overlap_sections: string[] | null;
 };
 

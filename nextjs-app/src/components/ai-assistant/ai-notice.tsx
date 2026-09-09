@@ -343,6 +343,15 @@ export function AiPreview({
           <ul className="mt-2 grid gap-2">
             {links.map((source) => (
               <li key={source.url}>
+                {/*
+                  出典番号を出す（#174、ADR-0019）。内訳の行が「出典2」と言うので、
+                  番号が無いと職員がどれを押せばよいか分からない。`<ol>` の
+                  `list-style` に任せないのは、番号がリンクの折り返しに巻き込まれて
+                  ホスト名の行と縦に揃わなくなるため。
+                */}
+                <span className="mr-1 text-dns-14N-130 text-solid-gray-600">
+                  {source.number}.
+                </span>
                 <a
                   href={source.url}
                   /*

@@ -52,6 +52,7 @@ const VALID_OUTPUT = {
       transfer_count: 0,
       is_selected: true,
       reason: '運賃が最安',
+      citation_number: 1,
       commuter_pass_overlap_sections: null,
     },
   ],
