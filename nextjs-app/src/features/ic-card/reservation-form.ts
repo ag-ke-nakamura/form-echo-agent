@@ -39,14 +39,18 @@ export type FormState = Record<
   { value: string; source: FieldSource }
 >;
 
+/**
+ * 初期状態は「既定値」（ADR-0018）。**`"manual"` と書くと AI が一切上書きできない** —
+ * 手を触れていない欄が「手入力だから」という理由で守られてしまう。
+ */
 export const EMPTY_FORM: FormState = {
-  borrow_at: { value: "", source: "manual" },
-  return_at: { value: "", source: "manual" },
-  origin: { value: "", source: "manual" },
-  destination: { value: "", source: "manual" },
-  route: { value: "", source: "manual" },
-  transport_cost: { value: "", source: "manual" },
-  purpose: { value: "", source: "manual" },
+  borrow_at: { value: "", source: "default" },
+  return_at: { value: "", source: "default" },
+  origin: { value: "", source: "default" },
+  destination: { value: "", source: "default" },
+  route: { value: "", source: "default" },
+  transport_cost: { value: "", source: "default" },
+  purpose: { value: "", source: "default" },
 };
 
 /**
@@ -153,7 +157,7 @@ function previewValue(
  * 画面から消える。
  *
  * **いまのフォームを見て、押しても変わらない欄に印を付ける。** 判定は `applyToForm`
- * と同じ条件（手入力かつ空でない）で、この2つが食い違うとプレビューが嘘になる —
+ * と同じ条件（手入力かどうか）で、この2つが食い違うとプレビューが嘘になる —
  * 揃えるために条件を `isPreserved` に括ってどちらからも引く。
  */
 export function reservationPreviewItems(
@@ -174,11 +178,12 @@ export function reservationPreviewItems(
  * **プレビューの印と `applyToForm` の判断を1箇所から引く。** 2箇所に書くと、片方だけ
  * 条件が動いたときにプレビューが「入る」と言って入らない（またはその逆）状態になる。
  *
- * 空にした欄を守らないのは既知の穴（`applyToForm` の但し書き）。空欄は初期状態と
- * 区別が付かないので、次の反映で埋め直される。
+ * **見るのは出どころだけで、空かどうかは見ない**（ADR-0018）。初期状態が `"default"`
+ * になったので「空で `manual`」は職員が「消す」で空にした欄しか指さず、消したという
+ * 意図をそのまま守れる。
  */
 function isPreserved(field: FormState[FieldName]): boolean {
-  return field.source === "manual" && field.value !== "";
+  return field.source === "manual";
 }
 
 /**
@@ -188,10 +193,9 @@ function isPreserved(field: FormState[FieldName]): boolean {
  * 上書きされる範囲」の印としても働く。代わりに、追加で指示したのに変わらない欄が
  * 出るので、守ったことを報告に載せて画面から分かるようにする。
  *
- * 既知の穴: 職員が「消す」で空にした AI 由来の欄は `{value: "", source: "manual"}`
- * になるが、空欄は初期状態と区別が付かないので次の再生成で埋め直される。分けるには
- * `FieldSource` に3つ目の状態が必要で、それを足すと3タブすべての印の意味が変わる。
- * 埋め直しは報告の「更新」に出るので、第1段はこのまま進める。
+ * **「消す」で空にした欄は空のまま残る**（ADR-0018）。それは `{ value: "",
+ * source: "manual" }` で、初期状態の `"default"` と区別が付くため。消したのには意図が
+ * あるので、報告の「守った」側に出る。
  */
 export function applyToForm(
   current: FormState,

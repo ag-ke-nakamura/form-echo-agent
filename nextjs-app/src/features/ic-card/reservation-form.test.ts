@@ -103,13 +103,13 @@ describe("reservationPreviewItems", () => {
     ).toEqual({ value: "横浜", source: "manual" });
   });
 
-  it("手で空にした欄は守らない（既知の穴と揃える）", () => {
+  it("手で空にした欄にも守る印を付ける（消したのは意図）", () => {
     const current: FormState = {
       ...EMPTY_FORM,
       origin: { value: "", source: "manual" },
     };
     const items = reservationPreviewItems(output({ origin: "東京" }), current);
-    expect(items.find((item) => item.key === "origin")?.preserved).toBe(false);
+    expect(items.find((item) => item.key === "origin")?.preserved).toBe(true);
   });
 });
 
@@ -184,15 +184,29 @@ describe("applyToForm", () => {
     expect(report).toEqual({ updated: [], preserved: ["出発地"] });
   });
 
-  /* 手で空にした欄は初期状態と区別が付かないので埋め直される（既知の穴）。 */
-  it("手で空にした欄は守らない", () => {
+  /*
+    「消す」で空にした欄は `{ value: "", source: "manual" }` になる。初期状態が
+    `"default"` になったことでこれと区別が付き、消したまま残せる（ADR-0018）。
+  */
+  it("手で空にした欄は埋め直さず、守ったことを報告に載せる", () => {
     const current: FormState = {
       ...EMPTY_FORM,
       origin: { value: "", source: "manual" },
     };
     const { next, report } = applyToForm(current, output({ origin: "東京" }));
+    expect(next.origin).toEqual({ value: "", source: "manual" });
+    expect(report).toEqual({ updated: [], preserved: ["出発地"] });
+  });
+
+  /* 初期状態は「既定値」。手入力ではないので AI が上書きできる（ADR-0018）。 */
+  it("フォームの初期状態は既定値で、AI が上書きできる", () => {
+    expect(EMPTY_FORM.origin).toEqual({ value: "", source: "default" });
+    const { next, report } = applyToForm(
+      EMPTY_FORM,
+      output({ origin: "東京" }),
+    );
     expect(next.origin).toEqual({ value: "東京", source: "ai" });
-    expect(report.updated).toEqual(["出発地"]);
+    expect(report.preserved).toEqual([]);
   });
 
   it("同じ値を読み取り直した欄は更新に数えない", () => {
