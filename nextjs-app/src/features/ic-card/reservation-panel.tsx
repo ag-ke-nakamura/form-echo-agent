@@ -161,6 +161,7 @@ export function ReservationPanel() {
           <Field
             name="origin"
             type="text"
+            required
             state={fields.origin}
             onChange={setField}
             placeholder={PLACE_PLACEHOLDER}
@@ -169,6 +170,7 @@ export function ReservationPanel() {
           <Field
             name="destination"
             type="text"
+            required
             state={fields.destination}
             onChange={setField}
             placeholder={PLACE_PLACEHOLDER}
@@ -254,6 +256,7 @@ function TravelConditionFields({
 }) {
   const headingId = useId();
   const groupName = useId();
+  const legendId = useId();
   return (
     <section
       aria-labelledby={headingId}
@@ -268,11 +271,30 @@ function TravelConditionFields({
       </p>
 
       <fieldset className="mt-4">
+        {/* 必須の印は欄のラベルの隣にしか置けない（設計書 7.3節）ので、ラジオでは `<legend>` がその場所になる（#196）。 */}
         <legend className="flex items-center gap-2 text-dns-14M-130 text-solid-gray-900">
-          往復区分
+          {/*
+            指す先はラベルの文字列だけにする。`<legend>` ごと指すと印とバッジの字面が
+            グループの名前に入り、「往復区分 必須 AIが生成」と読み上げられる — 必須は
+            `aria-required` が言う仕事で、他の3欄（`FieldHeader`）もラベル要素の外に
+            バッジを置いている。
+          */}
+          <span id={legendId}>往復区分</span>
+          <RequiredBadge />
           {state.source === "ai" && <AiBadge />}
         </legend>
-        <div className="mt-1.5 flex flex-wrap gap-4 py-1">
+        {/*
+          `role="radiogroup"` と `aria-labelledby` は参加可否タブのラジオと同じ形
+          （`availability-panel.tsx`）。**`aria-required` の置き場所がここしかない**（#196）
+          — 名乗れるのは欄1つかグループのどちらかで、素の `<fieldset>`（`group`）は
+          これを取らないので、印だけが見えて読み上げが必須と言わない状態になる。
+        */}
+        <div
+          role="radiogroup"
+          aria-required
+          aria-labelledby={legendId}
+          className="mt-1.5 flex flex-wrap gap-4 py-1"
+        >
           {Object.entries(CHOICE_LABELS.round_trip).map(([value, label]) => (
             <label
               key={value}
@@ -341,8 +363,9 @@ const INPUT_CLASS =
  * この1組だけである（`globals.css` は「設計書に出てくる分だけ」と決めているので
  * 足さない）。**置く場所の制約は設計書 7.3節**。
  *
- * **いま印が付くのは運賃だけである。** #169 の範囲が運賃1欄なのでそこに留めてあり、
- * 正典が求める残りの欄（出発地・目的地・往復区分）は設計書 12節「未着手の要求」にある。
+ * **どの欄に付くかは呼び出し側が決める**（基準は設計書 2.3節の表の「必須の印」列で、
+ * 指南書が「※必須」と書いた欄がそのまま載っている。#196）。ここに欄を並べると、
+ * 欄が増えたときにこの説明だけが古くなる。
  */
 function RequiredBadge() {
   return (
