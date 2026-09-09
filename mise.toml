@@ -84,7 +84,7 @@ run = "pnpm run dev"
 # 直書きすると CI の secret scan と正面衝突するので、ここは環境変数を素通しする
 # だけにする。未設定なら空文字が渡り、スタック側が理由の分かるエラーで止める。
 [tasks.deploy]
-description = "フロントエンドをビルドして CloudFront + S3 へデプロイする（要 FORMECHO_BASIC_AUTH_PASSWORD）"
+description = "フロントエンドをビルドして front door（CloudFront + S3 + BFF Lambda）へデプロイする（要 FORMECHO_BASIC_AUTH_PASSWORD）"
 depends = ["deploy:web"]
 dir = "infra"
 run = 'npm run cdk -- deploy --context basicAuthPassword="$FORMECHO_BASIC_AUTH_PASSWORD"'

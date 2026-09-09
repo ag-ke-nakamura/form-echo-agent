@@ -2,15 +2,27 @@ import * as path from 'node:path';
 import { App } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { BASIC_AUTH_USERNAME, FormEchoFrontDoorStack } from '../lib/front-door-stack';
+import { readRuntimeArn } from '../lib/runtime-arn';
 
 const FRONTEND_OUT_DIR = path.join(__dirname, 'fixtures', 'frontend-out');
+const BFF_ENTRY = path.join(__dirname, 'fixtures', 'bff-entry', 'lambda.ts');
+// フィクスチャのエントリに合わせてこのプロジェクトの lock file を指す（projectRoot が
+// `infra` になる）。本物は workspace ルートの pnpm-lock.yaml を指す。
+const BFF_DEPS_LOCK_FILE_PATH = path.join(__dirname, '..', 'package-lock.json');
+// 作り話の ARN。本物を状態ファイルから読むところは別のテストで見る。
+const RUNTIME_ARN = 'arn:aws:bedrock-agentcore:ap-northeast-1:000000000000:runtime/Test_Agent-abc123';
 // テスト用の作り話であって秘密ではない。識別子が `PASSWORD` で終わると
 // betterleaks の generic-password に引っかかるので明示的に許可する。
 const PASSWORD = 'test-password'; // betterleaks:allow
 
 function synth(context: Record<string, unknown> = { basicAuthPassword: PASSWORD }): Template {
   const app = new App({ context });
-  const stack = new FormEchoFrontDoorStack(app, 'TestStack', { frontendOutDir: FRONTEND_OUT_DIR });
+  const stack = new FormEchoFrontDoorStack(app, 'TestStack', {
+    frontendOutDir: FRONTEND_OUT_DIR,
+    bffEntry: BFF_ENTRY,
+    bffDepsLockFilePath: BFF_DEPS_LOCK_FILE_PATH,
+    runtimeArn: RUNTIME_ARN,
+  });
   return Template.fromStack(stack);
 }
 
@@ -19,6 +31,9 @@ test('フロントエンドの成果物が無いと synth 時にエラーで止�
     () =>
       new FormEchoFrontDoorStack(new App({ context: { basicAuthPassword: PASSWORD } }), 'TestStack', {
         frontendOutDir: path.join(__dirname, 'fixtures', 'does-not-exist'),
+        bffEntry: BFF_ENTRY,
+        bffDepsLockFilePath: BFF_DEPS_LOCK_FILE_PATH,
+        runtimeArn: RUNTIME_ARN,
       })
   ).toThrow('mise run deploy');
 });
@@ -65,7 +80,9 @@ test('CloudFront が OAC で S3 を読む', () => {
   // 揃って初めて読める。片方だけ足しても 403 になる。
   template.hasResourceProperties('AWS::CloudFront::Distribution', {
     DistributionConfig: Match.objectLike({
-      Origins: [Match.objectLike({ OriginAccessControlId: Match.anyValue() })],
+      Origins: Match.arrayWith([
+        Match.objectLike({ S3OriginConfig: Match.anyValue(), OriginAccessControlId: Match.anyValue() }),
+      ]),
     }),
   });
   template.hasResourceProperties('AWS::S3::BucketPolicy', {
@@ -135,6 +152,25 @@ describe('Basic 認証の CloudFront Function', () => {
     });
   });
 
+  // #139 で開く Bedrock の課金口。静的ファイルだけ守って `/api/*` を開けると、
+  // Basic 認証を通らずに Runtime を呼べる（= 課金できる）経路が残る。
+  test('/api/* の viewer-request にも同じ Function が付いている', () => {
+    const template = synth();
+    const [logicalId] = Object.keys(template.findResources('AWS::CloudFront::Function'));
+    template.hasResourceProperties('AWS::CloudFront::Distribution', {
+      DistributionConfig: Match.objectLike({
+        CacheBehaviors: Match.arrayWith([
+          Match.objectLike({
+            PathPattern: '/api/*',
+            FunctionAssociations: [
+              { EventType: 'viewer-request', FunctionARN: { 'Fn::GetAtt': [logicalId, 'FunctionARN'] } },
+            ],
+          }),
+        ]),
+      }),
+    });
+  });
+
   test('viewer request 用のランタイムで動く', () => {
     synth().hasResourceProperties('AWS::CloudFront::Function', {
       FunctionConfig: Match.objectLike({ Runtime: 'cloudfront-js-2.0' }),
@@ -170,5 +206,99 @@ describe('Basic 認証の CloudFront Function', () => {
   // ないが、テンプレートに載るのは synth の産物であってリポジトリの中身ではない。
   test('コードにパスワードの平文を含まない', () => {
     expect(functionCode).not.toContain(PASSWORD);
+  });
+});
+
+// #139: BFF を Lambda に載せ、同じディストリビューションの `/api/*` から通す。
+describe('BFF（Lambda + Function URL）', () => {
+  test('Function URL は署名の無いリクエストを拒む', () => {
+    synth().hasResourceProperties('AWS::Lambda::Url', { AuthType: 'AWS_IAM' });
+  });
+
+  // authType だけでは「CloudFront 以外の署名済みリクエスト」が残る。resource policy が
+  // principal と SourceArn の両方で絞ることで、この CloudFront 以外の経路が閉じる。
+  test('resource policy がこのディストリビューション以外からの呼び出しを閉じる', () => {
+    const template = synth();
+    const [distributionId] = Object.keys(template.findResources('AWS::CloudFront::Distribution'));
+    template.hasResourceProperties('AWS::Lambda::Permission', {
+      Action: 'lambda:InvokeFunctionUrl',
+      Principal: 'cloudfront.amazonaws.com',
+      SourceArn: {
+        'Fn::Join': ['', Match.arrayWith([':distribution/', { Ref: distributionId }])],
+      },
+    });
+  });
+
+  // OAC は origin へのリクエストで Authorization を自分の SigV4 署名に差し替える。
+  // ビューアの分が転送されると署名と衝突する（#138 の Basic 認証と同じヘッダ）。
+  // CDK 既定の `AllViewerExceptHostHeader` は Authorization を含むので使えない。
+  test('/api/* はビューアの Authorization を origin へ転送しない', () => {
+    synth().hasResourceProperties('AWS::CloudFront::OriginRequestPolicy', {
+      OriginRequestPolicyConfig: Match.objectLike({
+        HeadersConfig: { HeaderBehavior: 'allExcept', Headers: Match.arrayWith(['authorization']) },
+      }),
+    });
+  });
+
+  // 既定は30秒で、Runtime の自己打ち切り55秒（#125）より手前で切れる。
+  test('origin response timeout が60秒（時間予算の外側）', () => {
+    synth().hasResourceProperties('AWS::CloudFront::Distribution', {
+      DistributionConfig: Match.objectLike({
+        Origins: Match.arrayWith([
+          Match.objectLike({ CustomOriginConfig: Match.objectLike({ OriginReadTimeout: 60 }) }),
+        ]),
+      }),
+    });
+  });
+
+  // `*` を許すと、事故のときに他の Runtime も叩けて請求だけが増える。
+  test('Runtime を呼ぶ権限がこの Runtime の ARN に限られている', () => {
+    const statements = Object.values(synth().findResources('AWS::IAM::Policy')).flatMap(
+      policy => policy.Properties.PolicyDocument.Statement as { Action: unknown; Resource: unknown }[]
+    );
+    const invoke = statements.filter(s => JSON.stringify(s.Action).includes('bedrock-agentcore:InvokeAgentRuntime'));
+    expect(invoke).toHaveLength(1);
+    for (const resource of [invoke[0].Resource].flat()) {
+      expect(resource).toMatch(/^arn:aws:bedrock-agentcore:/);
+    }
+  });
+
+  test('ログに保持期間が設定されている', () => {
+    synth().hasResourceProperties('AWS::Logs::LogGroup', { RetentionInDays: Match.anyValue() });
+  });
+
+  // 設定ミスをリクエスト時に落とすと RUNTIME_UNAVAILABLE として出て Runtime 障害と
+  // 区別が付かない。`hono-app/src/index.ts` が起動時に検証するので、誤った値は
+  // コールドスタートで落ちる — その値をここが渡している。
+  test('BFF はデプロイ済み Runtime を向く', () => {
+    synth().hasResourceProperties('AWS::Lambda::Function', {
+      Runtime: 'nodejs22.x',
+      Environment: {
+        Variables: Match.objectLike({
+          FORMECHO_RUNTIME_CLIENT: 'deployed',
+          FORMECHO_RUNTIME_ARN: RUNTIME_ARN,
+        }),
+      },
+    });
+  });
+});
+
+// ARN は context にもスタックのコードにも手写ししない（#139）。出所は
+// `agentcore deploy` の結果としてコミットされている状態ファイルだけ。
+//
+// ここだけが実物の状態ファイルを読む。スタック側は受け取った ARN しか見ないので、
+// 上のテストは作り話の ARN で回る — 「形の検証」と「コミット済みの出所が生きているか」
+// を分けてある。
+describe('Runtime の ARN の解決', () => {
+  const DEPLOYED_STATE_PATH = path.join(__dirname, '..', '..', 'agent-app', 'agentcore', '.cli', 'deployed-state.json');
+
+  test('コミット済みのデプロイ状態ファイルから読める', () => {
+    expect(readRuntimeArn(DEPLOYED_STATE_PATH)).toMatch(/^arn:aws:bedrock-agentcore:[^:]+:\d+:runtime\//);
+  });
+
+  test('状態ファイルに ARN が無ければ理由の分かるエラーで止まる', () => {
+    expect(() => readRuntimeArn(path.join(__dirname, 'fixtures', 'deployed-state-without-runtime.json'))).toThrow(
+      'agentcore deploy'
+    );
   });
 });

@@ -83,3 +83,22 @@ it("打ち切りの signal が fetch まで届く", async () => {
   const { fetchMock } = await callFetch("");
   expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
 });
+
+/**
+ * CloudFront の OAC 経由で Lambda Function URL を叩くには、POST の本文ハッシュを
+ * 呼び出し側が `x-amz-content-sha256` に載せる必要がある（#139。Lambda は
+ * unsigned payload を受け付けない）。**落ちるとデプロイ済み環境でだけ 403 になり、
+ * ローカルでは通るので手元では気付けない。**
+ */
+it("本文の SHA-256 を x-amz-content-sha256 に載せる", async () => {
+  const { fetchMock } = await callFetch("");
+  const init = fetchMock.mock.calls[0]?.[1];
+  const body = String(init?.body);
+  const expected = Array.from(
+    new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body)),
+    ),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
+  expect(new Headers(init?.headers).get("x-amz-content-sha256")).toBe(expected);
+});

@@ -2,7 +2,7 @@
 
 ## Repository layout
 
-`agent-app/`（AgentCore Runtime）・`hono-app/`（BFF）・`nextjs-app/`（SSG フロントエンド）の3プロジェクトを並べたリポジトリ。**`hono-app` と `nextjs-app` の2つはルートの pnpm workspace のメンバー**で、`agent-app` は npm 管理のまま外にいる（ADR-0015）。メンバーの宣言は `pnpm-workspace.yaml` にあり、ルートの `package.json` は `packageManager` を固定するだけでスクリプトも依存も置かない。入出力スキーマは3プロジェクトがそれぞれ自己完結の複製として持つ（ADR-0011）。デプロイ済み検証環境の front door（S3 + CloudFront）はルートの `infra/` に独立の CDK アプリとして置く（ADR-0014。`agent-app/infra` とは別物）。
+`agent-app/`（AgentCore Runtime）・`hono-app/`（BFF）・`nextjs-app/`（SSG フロントエンド）の3プロジェクトを並べたリポジトリ。**`hono-app` と `nextjs-app` の2つはルートの pnpm workspace のメンバー**で、`agent-app` は npm 管理のまま外にいる（ADR-0015）。メンバーの宣言は `pnpm-workspace.yaml` にあり、ルートの `package.json` は `packageManager` を固定するだけでスクリプトも依存も置かない。入出力スキーマは3プロジェクトがそれぞれ自己完結の複製として持つ（ADR-0011）。デプロイ済み検証環境の front door（S3 + CloudFront + `/api/*` の BFF Lambda）はルートの `infra/` に独立の CDK アプリとして置く（ADR-0014。`agent-app/infra` とは別物）。
 
 **`pnpm install` はリポジトリルートで打つ。** `pnpm-lock.yaml` は workspace に1つで、`hono-app/` `nextjs-app/` の中には無い。
 
@@ -93,7 +93,8 @@ CI（`.github/workflows/ci.yml`）と同じものを手元で回す。
 | `agent-app/infra` | `npx prettier --check . && npm run build && npm run test` |
 | `infra` | `npx prettier --check . && npm run build && npm run test && npx cdk synth --context basicAuthPassword=...` |
 
-`infra` の `cdk synth` はフロントエンドの成果物を貼るので、先に `mise run deploy:web` が要る。
+`infra` の `cdk synth` はフロントエンドの成果物を貼り、BFF のエントリを esbuild で束ねるので、
+先に `mise run deploy:web` とルートの `pnpm install` が要る（後者が無いと "Could not resolve"）。
 `basicAuthPassword` は synth を通すだけの捨て値でよい（#138）。
 
 `nextjs-app` に `typecheck` は無い（`build` が兼ねる）。Runtime だけ `build` と `typecheck` の

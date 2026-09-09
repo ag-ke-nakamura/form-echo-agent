@@ -4,8 +4,8 @@ import type { InferResponseType } from "hono/client";
 import type { TaskId, TaskInputMap, TaskOutputMap } from "./contracts/types";
 
 /**
- * SSG なのでビルド時に埋め込まれる。本番は CloudFront で配信した静的ファイルから
- * ALB 上の BFF を直接叩くため、相対パスではなく絶対 URL で持つ。
+ * SSG なのでビルド時に埋め込まれる。BFF は別オリジンにも置けるので、相対パスでは
+ * なく絶対 URL を持てる形にしてある（本番想定は ALB 上の BFF。ADR-0014）。
  *
  * 空文字を渡すと `hc` は相対パス（`/api/ai/tasks`）を叩く。同一オリジンに BFF を
  * 相乗りさせる構成（#137）はこの挙動に乗る。**`$url()` は使わない** — Hono は
@@ -14,7 +14,41 @@ import type { TaskId, TaskInputMap, TaskOutputMap } from "./contracts/types";
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8787";
 
-const client = hc<AppType>(API_BASE_URL);
+/**
+ * CloudFront の OAC が Lambda Function URL を SigV4 で署名するとき、**POST の本文
+ * ハッシュは呼び出し側が載せる**（#139）。AWS のドキュメントが明記している —
+ * 「PUT / POST を使う場合、利用者が本文の SHA256 を計算して `x-amz-content-sha256`
+ * ヘッダに入れて CloudFront へ送る必要がある。Lambda は unsigned payload を
+ * サポートしない」。
+ *
+ * 無いと Function URL が 403 を返し、デプロイ済み検証環境では AI 機能が丸ごと
+ * 通らない（ローカルでは通るので、手元では気付けない類の失敗になる）。
+ */
+const PAYLOAD_HASH_HEADER = "x-amz-content-sha256";
+
+async function payloadHash(body: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(body),
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+/**
+ * 環境で分岐せず常に載せる。BFF を直に叩くローカル開発では余分なヘッダが1つ増える
+ * だけ（Hono の cors は preflight で要求されたヘッダをそのまま許可する）なので、
+ * 「デプロイ済みでだけ通らない」経路を作らずに同じコードが両方で通る。
+ */
+const fetchWithPayloadHash: typeof fetch = async (input, init) => {
+  if (typeof init?.body !== "string") return fetch(input, init);
+  const headers = new Headers(init.headers);
+  headers.set(PAYLOAD_HASH_HEADER, await payloadHash(init.body));
+  return fetch(input, { ...init, headers });
+};
+
+const client = hc<AppType>(API_BASE_URL, { fetch: fetchWithPayloadHash });
 
 /**
  * BFF の応答封筒。`hono-app` の `AppType` から型で届く（ADR-0015）。
