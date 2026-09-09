@@ -344,6 +344,80 @@ describe('入力の門', () => {
     expect(lastInvocation().prompt).toBe('大阪へ出張')
   })
 
+  it.each(
+    ALLOWED_TASK_IDS.filter((taskId) => taskId !== 'playground.free-prompt'),
+  )('%s ではタグを除去してから Runtime へ渡す', async (taskId) => {
+    fakeRuntimeScript.write(runtimeReturns(VALID_RESULTS[taskId]))
+
+    await postTask({
+      ...REQUESTS[taskId],
+      prompt: '<thinking>考える</thinking>15日で',
+      sessionId: SESSION_ID,
+    })
+
+    expect(lastInvocation().prompt).toBe('考える15日で')
+  })
+
+  it('プロンプト検証だけはタグを保ったまま Runtime へ渡す', async () => {
+    // ADR-0020。持ち込みシステムプロンプト（`input`）はサニタイズを通らないので、
+    // 検証メッセージ側だけタグが消えると「片方だけ消えた」を挙動の違いと誤読する。
+    fakeRuntimeScript.write(
+      runtimeReturns(VALID_RESULTS['playground.free-prompt']),
+    )
+
+    await postTask({
+      ...REQUESTS['playground.free-prompt'],
+      prompt: '<thinking>考えてから</thinking>答えて',
+      sessionId: SESSION_ID,
+    })
+
+    expect(lastInvocation().prompt).toBe(
+      '<thinking>考えてから</thinking>答えて',
+    )
+  })
+
+  it('プロンプト検証でも長さの上限は掛かる', async () => {
+    const response = await postTask({
+      ...REQUESTS['playground.free-prompt'],
+      prompt: 'あ'.repeat(MAX_PROMPT_LENGTH + 1),
+    })
+
+    expect((await expectError(response)).code).toBe('INVALID_INPUT')
+    expect(fakeRuntimeScript.calls).toHaveLength(0)
+  })
+
+  it('持ち込みシステムプロンプトが空なら拒否する', async () => {
+    const response = await postTask({
+      ...REQUESTS['playground.free-prompt'],
+      input: { system_prompt: '' },
+    })
+
+    expect((await expectError(response)).code).toBe('INVALID_INPUT')
+    expect(fakeRuntimeScript.calls).toHaveLength(0)
+  })
+
+  it(`持ち込みシステムプロンプトは${MAX_PROMPT_LENGTH.toLocaleString()}文字を超えると拒否する`, async () => {
+    const response = await postTask({
+      ...REQUESTS['playground.free-prompt'],
+      input: { system_prompt: 'あ'.repeat(MAX_PROMPT_LENGTH + 1) },
+    })
+
+    expect((await expectError(response)).code).toBe('INVALID_INPUT')
+    expect(fakeRuntimeScript.calls).toHaveLength(0)
+  })
+
+  it('検証メッセージが空白だけなら拒否する', async () => {
+    // 必須（ADR-0022）。空白だけは「書かれなかった」として扱われるので、
+    // `min(1)` ではなくこの経路で落ちる。
+    const response = await postTask({
+      ...REQUESTS['playground.free-prompt'],
+      prompt: '   ',
+    })
+
+    expect((await expectError(response)).code).toBe('INVALID_INPUT')
+    expect(fakeRuntimeScript.calls).toHaveLength(0)
+  })
+
   it('サニタイズで空になった自然文は、必須の taskId では拒否される', async () => {
     const response = await postTask({
       ...REQUESTS['meeting.parse-candidates'],
