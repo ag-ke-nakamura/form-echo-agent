@@ -97,7 +97,11 @@ jobs:
         working-directory: .
       # AWS 資格情報は要らない。account/region はテンプレートに埋め込むだけで、
       # synth 自体は AWS を呼ばない。
-      - run: npx cdk synth
+      #
+      # Basic 認証のパスワードは context 必須（#138）。ここは synth が通るかだけを
+      # 見る使い捨てで、この値でデプロイされることはない（デプロイは人が手元から
+      # 実行する）。実物は `FORMECHO_BASIC_AUTH_PASSWORD` で渡す。
+      - run: npx cdk synth --context basicAuthPassword="ci-synth-only-${{ github.run_id }}"
 
   formecho-agent:
     runs-on: ubuntu-latest
