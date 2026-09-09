@@ -91,9 +91,10 @@ CI（`.github/workflows/ci.yml`）と同じものを手元で回す。
 | `nextjs-app` | `pnpm run format:check && pnpm run lint && pnpm run test && pnpm run build` |
 | `agent-app/agentcore/cdk` | `npx prettier --check . && npm run build && npx cdk synth` |
 | `agent-app/infra` | `npx prettier --check . && npm run build && npm run test` |
-| `infra` | `npx prettier --check . && npm run build && npm run test && npx cdk synth` |
+| `infra` | `npx prettier --check . && npm run build && npm run test && npx cdk synth --context basicAuthPassword=...` |
 
 `infra` の `cdk synth` はフロントエンドの成果物を貼るので、先に `mise run deploy:web` が要る。
+`basicAuthPassword` は synth を通すだけの捨て値でよい（#138）。
 
 `nextjs-app` に `typecheck` は無い（`build` が兼ねる）。Runtime だけ `build` と `typecheck` の
 両方を回す（`build` は `dist/` にテストを混ぜないよう除くので、`typecheck` がテストまで見る）。

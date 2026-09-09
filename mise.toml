@@ -79,11 +79,15 @@ run = "pnpm run dev"
 # デプロイは人が手元から実行する（`agentcore deploy` と同じ慣習。CI にデプロイ用の
 # OIDC ロールは作らない）。AWS 認証はローカルの ambient credential provider chain に
 # 任せる。
+#
+# Basic 認証のパスワードは synth 時に context で注入する（#138）。リポジトリに
+# 直書きすると CI の secret scan と正面衝突するので、ここは環境変数を素通しする
+# だけにする。未設定なら空文字が渡り、スタック側が理由の分かるエラーで止める。
 [tasks.deploy]
-description = "フロントエンドをビルドして CloudFront + S3 へデプロイする"
+description = "フロントエンドをビルドして CloudFront + S3 へデプロイする（要 FORMECHO_BASIC_AUTH_PASSWORD）"
 depends = ["deploy:web"]
 dir = "infra"
-run = "npm run cdk -- deploy"
+run = 'npm run cdk -- deploy --context basicAuthPassword="$FORMECHO_BASIC_AUTH_PASSWORD"'
 
 # `NEXT_PUBLIC_API_BASE_URL` を空文字にすると `hc` が相対パスを叩く（空文字は
 # nullish ではないので既定値の localhost には落ちない）。単一オリジンなので
