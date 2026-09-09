@@ -17,9 +17,15 @@ import {
  * 解釈）は `guardrail/*.test.ts` が見る。
  */
 
+/** 交通ICの与件（#168）。往復区分は「移動の条件」で職員が選ぶ。 */
+const RESERVATION_INPUT = {
+  round_trip: { value: 'round', is_manual: false },
+} as const;
+
 const REQUEST: AiTaskRequest = {
   taskId: 'ic-card.parse-reservation',
   prompt: '来月15日から3泊4日で大阪出張、新幹線で往復',
+  input: RESERVATION_INPUT,
 };
 
 const VALID_OUTPUT = {
@@ -27,6 +33,7 @@ const VALID_OUTPUT = {
   return_at: '2026-10-18T18:00',
   origin: '東京',
   destination: '大阪',
+  round_trip: 'round',
   purpose: 'business_trip',
   route_candidates: [
     {
@@ -90,7 +97,11 @@ describe('Guardrail', () => {
     // 2回目: 台本を使い切ったので既定（ブロックしない）に戻る。
     const followUp = '往路は16日でした';
     const secondResponse = await invokeBoundary(
-      { taskId: 'ic-card.parse-reservation', prompt: followUp },
+      {
+        taskId: 'ic-card.parse-reservation',
+        prompt: followUp,
+        input: RESERVATION_INPUT,
+      },
       sessionId,
     );
 
@@ -98,6 +109,8 @@ describe('Guardrail', () => {
     // セッションが破棄されていれば、2回目にモデルへ届く user メッセージは
     // 今回の1件だけになる。破棄されていなければ、1回目の（ブロックされた）
     // 指示も履歴に残ったまま積まれる。
-    expect(userMessagesOf(fakeModelScript.calls[1])).toEqual([followUp]);
+    const messages = userMessagesOf(fakeModelScript.calls[1]);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain(followUp);
   });
 });

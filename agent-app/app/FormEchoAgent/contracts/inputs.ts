@@ -5,6 +5,7 @@ import {
   durationMinutesSchema,
   isoDateSchema,
   meetingFormatSchema,
+  roundTripSchema,
 } from './fields.js';
 import { MAX_INPUT_CANDIDATES } from './meeting.js';
 import type { TaskId } from './task-ids.js';
@@ -23,6 +24,42 @@ const participantSchema = z
   .string()
   .regex(PARTICIPANT)
   .describe('参加者の識別子。「参加者A」のような形');
+
+/**
+ * 職員が手で入れたかどうかを添えた与件（ADR-0018）。
+ *
+ * WHY 値だけで渡さないか: 出発地・目的地・往復区分は出力にも載る（追加指示で別の
+ * 場所や区分が明示されたら AI が直せる必要がある）が、**画面の `isPreserved` は
+ * 手入力の欄を守る**ので、AI が手入力の欄を直しても反映されない。値だけを渡すと
+ * 「出発地は霞ヶ関のまま、運賃と経路は新宿から」という自己矛盾したフォームができる。
+ * 手入力かどうかを知っているのは画面だけなので、画面が渡す（#69 と同じ形）。
+ *
+ * 食い違ったときにどちらが勝つかの規則は Skill が持つ。ここは印を運ぶだけ。
+ */
+function manualAware<T extends z.ZodType>(value: T) {
+  return z.object({
+    value,
+    is_manual: z
+      .boolean()
+      .describe(
+        '職員が手で入れた値なら true。既定値のまま、または前回 AI が入れた値なら false',
+      ),
+  });
+}
+
+/**
+ * `ic-card.parse-reservation` の入力（往復区分。#168）。
+ *
+ * **運賃の額を決める与件だけを載せる**（ADR-0017）。往復区分が無かった間、Skill の
+ * 「往復なら往復分」と `fare` の `describe` は AI が往復かどうかを知る手段が無く
+ * 死んでいた。借りる日・返す日時・利用目的は運賃を決めないので、引き続き自然文から
+ * 読み取る側に置く。
+ */
+export const parseReservationInputSchema = z.object({
+  round_trip: manualAware(roundTripSchema),
+});
+
+export type ParseReservationInput = z.infer<typeof parseReservationInputSchema>;
 
 /**
  * 会議の与件のうち、参加可否の選択肢と候補日程の長さを決める2つ。
@@ -144,13 +181,13 @@ export type RecommendScheduleInput = z.infer<
 /**
  * taskId から入力契約を引くための表。`OUTPUT_SCHEMAS` と対称に置く（ADR-0004）。
  *
- * `null` は「自然文だけを受け取る」ことを表す。省略せずに書くのは
- * `domain-agent.ts` の `tools: []` と同じ理由で、**まだ足していないのか、
- * 足さないと決めたのかを区別する**ため。交通ICが `null` のまま残るのは
- * ADR-0005 の判断で、送るべき画面状態が無い（基準時刻は system prompt が持つ）。
+ * `null` は「自然文だけを受け取る」ことを表す。**いまは1つも無い** — 交通ICが
+ * フォーム主導になり（ADR-0017）、4タスクすべてが与件を受け取るようになった。
+ * 型は `null` を許したまま残す。書けなくすると、次に「自然文だけ」のタスクが
+ * 増えたときに表がその状態を表せない。
  */
 export const INPUT_SCHEMAS = {
-  'ic-card.parse-reservation': null,
+  'ic-card.parse-reservation': parseReservationInputSchema,
   'meeting.parse-candidates': parseCandidatesInputSchema,
   'meeting.parse-availability': parseAvailabilityInputSchema,
   'meeting.recommend-schedule': recommendScheduleInputSchema,

@@ -6,10 +6,12 @@ import { describe, expect, it } from "vitest";
 import {
   addCompanion,
   applyToForm,
+  DEFAULT_ROUND_TRIP,
   EMPTY_FORM,
   EMPTY_RESERVATION,
   type FormState,
   removeCompanion,
+  reservationInput,
   reservationPreviewItems,
   resetReservation,
   setCardCount,
@@ -25,6 +27,7 @@ function output(
     return_at: null,
     origin: null,
     destination: null,
+    round_trip: null,
     purpose: null,
     route_candidates: [],
     message: "",
@@ -64,19 +67,84 @@ describe("reservationPreviewItems", () => {
       EMPTY_FORM,
     );
     expect(items).toEqual([
-      { key: "borrow_at", label: "借りる日", value: null, preserved: false },
-      { key: "return_at", label: "返す日時", value: null, preserved: false },
-      { key: "origin", label: "出発地", value: "東京", preserved: false },
-      { key: "destination", label: "目的地", value: "大阪", preserved: false },
-      { key: "route", label: "移動経路", value: null, preserved: false },
+      {
+        key: "round_trip",
+        label: "往復区分",
+        value: null,
+        preserved: false,
+        optional: true,
+      },
+      {
+        key: "borrow_at",
+        label: "借りる日",
+        value: null,
+        preserved: false,
+        optional: true,
+      },
+      {
+        key: "return_at",
+        label: "返す日時",
+        value: null,
+        preserved: false,
+        optional: true,
+      },
+      {
+        key: "origin",
+        label: "出発地",
+        value: "東京",
+        preserved: false,
+        optional: true,
+      },
+      {
+        key: "destination",
+        label: "目的地",
+        value: "大阪",
+        preserved: false,
+        optional: true,
+      },
+      {
+        key: "route",
+        label: "移動経路",
+        value: null,
+        preserved: false,
+        optional: false,
+      },
       {
         key: "transport_cost",
         label: "交通費",
         value: null,
         preserved: false,
+        optional: false,
       },
-      { key: "purpose", label: "利用目的", value: null, preserved: false },
+      {
+        key: "purpose",
+        label: "利用目的",
+        value: null,
+        preserved: false,
+        optional: true,
+      },
     ]);
+  });
+
+  /*
+    聞き返しの分母（#168）。フォームだけで生成した回に借りる日・返す日時・利用目的が
+    空なのは正しい姿で、そこで黄が出ると成功の回が失敗に見える。移動経路と運賃は
+    この往復で AI が調べてくるものなので、欠けていれば本当に聞き返すべき回。
+  */
+  it("移動経路と運賃だけが聞き返しの分母に入る", () => {
+    const items = reservationPreviewItems(output(), EMPTY_FORM);
+    const denominator = items
+      .filter((item) => item.optional !== true)
+      .map((item) => item.key);
+    expect(denominator).toEqual(["route", "transport_cost"]);
+  });
+
+  it("往復区分は職員が読む語に写す", () => {
+    const items = reservationPreviewItems(
+      output({ round_trip: "one_way" }),
+      EMPTY_FORM,
+    );
+    expect(items.find((item) => item.key === "round_trip")?.value).toBe("片道");
   });
 
   it("利用目的は職員が読む語に写す", () => {
@@ -103,6 +171,7 @@ describe("reservationPreviewItems", () => {
       label: "出発地",
       value: "東京",
       preserved: true,
+      optional: true,
     });
     // 実際に反映しても変わらない。
     expect(
@@ -227,6 +296,68 @@ describe("applyToForm", () => {
     );
     expect(next.origin).toEqual({ value: "東京", source: "ai" });
     expect(report).toEqual({ updated: ["目的地"], preserved: [] });
+  });
+});
+
+/**
+ * Runtime へ渡す与件（ADR-0017・ADR-0018）。
+ *
+ * WHY テストを持つか: `is_manual` は**規則の入口**である。true になると AI は与件を
+ * 直さず聞き返し、false なら追加指示で書き換える。プレプリントのまま（`"default"`）を
+ * 手入力と数えると、指南書が求める主な流れ（プレプリントを放置して追加指示に書く）が
+ * 毎回聞き返しになる。
+ */
+describe("reservationInput", () => {
+  it("既定値のままなら手入力ではない（AI が直せる）", () => {
+    expect(reservationInput(EMPTY_FORM)).toEqual({
+      round_trip: { value: DEFAULT_ROUND_TRIP, is_manual: false },
+    });
+  });
+
+  it("職員が選ぶと手入力になる", () => {
+    const state = setFieldValue(EMPTY_RESERVATION, "round_trip", "one_way");
+    expect(reservationInput(state.fields)).toEqual({
+      round_trip: { value: "one_way", is_manual: true },
+    });
+  });
+
+  /* AI バッジは「再生成で上書きされる範囲」の印でもある（#38）ので false 側。 */
+  it("前回 AI が入れた値は手入力ではない", () => {
+    const { next } = applyToForm(EMPTY_FORM, output({ round_trip: "one_way" }));
+    expect(reservationInput(next)).toEqual({
+      round_trip: { value: "one_way", is_manual: false },
+    });
+  });
+});
+
+/**
+ * 往復区分の写す規則（#168）。与件でありながら出力にも載る唯一の欄。
+ */
+describe("往復区分", () => {
+  it("初期状態は往復のプレプリントで、AI が上書きできる", () => {
+    expect(EMPTY_FORM.round_trip).toEqual({
+      value: "round",
+      source: "default",
+    });
+    const { next, report } = applyToForm(
+      EMPTY_FORM,
+      output({ round_trip: "one_way" }),
+    );
+    expect(next.round_trip).toEqual({ value: "one_way", source: "ai" });
+    expect(report).toEqual({ updated: ["往復区分"], preserved: [] });
+  });
+
+  it("職員が選んだ値は上書きしない", () => {
+    const current: FormState = {
+      ...EMPTY_FORM,
+      round_trip: { value: "one_way", source: "manual" },
+    };
+    const { next, report } = applyToForm(
+      current,
+      output({ round_trip: "round" }),
+    );
+    expect(next.round_trip).toEqual({ value: "one_way", source: "manual" });
+    expect(report).toEqual({ updated: [], preserved: ["往復区分"] });
   });
 });
 

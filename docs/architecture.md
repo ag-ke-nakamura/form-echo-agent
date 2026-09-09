@@ -131,11 +131,11 @@ nextjs-app だけが持つ — 他プロジェクトは使っていないため�
 | `OUTPUT_SCHEMAS` / `outputSchemaFor` | 出力契約。入力を見ないと言えない不変条件も載る |
 | `AiErrorCode` | エラーコードの語彙 |
 
-`input`（構造化入力）が taskId ごとに運ぶもの。**サニタイズも Guardrail チェックも通さないので自由文字列を置かない** — 識別子は正規表現で縛り、参加者の実名はブラウザから出さない（ADR-0008）。
+`input`（構造化入力）が taskId ごとに運ぶもの。**システムが組み立てた与件はサニタイズも Guardrail チェックも通さないので、そこに自由文字列を置かない** — 識別子は正規表現で縛り、参加者の実名はブラウザから出さない（ADR-0008）。職員がフォームに打った自由文字列を載せるなら Guardrail チェックに通す（ADR-0017）。
 
 | taskId | `input` |
 | --- | --- |
-| `ic-card.parse-reservation` | `null`（送るべき画面状態が無い） |
+| `ic-card.parse-reservation` | 往復区分（値と `is_manual` の組。ADR-0017 / ADR-0018） |
 | `meeting.parse-candidates` | 所要時間のみ |
 | `meeting.parse-availability` | 参加形式・所要時間・候補日程の一覧 |
 | `meeting.recommend-schedule` | 参加形式・所要時間・参加者の名簿・参加可否表 |

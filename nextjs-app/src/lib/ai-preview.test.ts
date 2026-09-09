@@ -54,6 +54,29 @@ describe("previewTone", () => {
   });
 
   /*
+    分母から外れる行（#168）。交通ICがフォーム主導になり、追加指示を空にして生成
+    できるようになると、借りる日・返す日時・利用目的は言及が無いので読み取れないのが
+    正しい。数えたままだと、経路と運賃が返った成功の回が毎回黄になる。
+  */
+  it("分母から外れる行は、空でも聞き返しに数えない", () => {
+    const items: PreviewItem[] = [
+      { key: "route", label: "移動経路", value: "東京 => 大阪" },
+      { key: "transport_cost", label: "交通費", value: "14720円" },
+      { key: "borrow_at", label: "借りる日", value: null, optional: true },
+    ];
+    expect(previewTone(items)).toBe("filled");
+  });
+
+  it("分母の行が空なら聞き返し", () => {
+    const items: PreviewItem[] = [
+      { key: "route", label: "移動経路", value: null },
+      { key: "transport_cost", label: "交通費", value: null },
+      { key: "borrow_at", label: "借りる日", value: null, optional: true },
+    ];
+    expect(previewTone(items)).toBe("incomplete");
+  });
+
+  /*
     守られる行は AI が読み取れている。聞き返しに数えると「情報を足せば進む」と
     言うことになるが、足しても入らない（手入力を守るのはそういう約束）。
   */

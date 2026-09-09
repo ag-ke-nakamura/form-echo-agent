@@ -17,6 +17,7 @@ import type {
   OUTPUT_SCHEMAS,
   ParseAvailabilityInput,
   ParseCandidatesInput,
+  ParseReservationInput,
   RecommendScheduleInput,
   TaskId,
 } from './schemas/index.js'
@@ -31,6 +32,14 @@ import { ALLOWED_TASK_IDS, MAX_PROMPT_LENGTH } from './schemas/index.js'
  * fake が差し替えるのは Runtime との通信だけで、応答をどう解釈するかは実物と同じ
  * コードが通る。ここを丸ごと差し替えると、下のテストは fake を検証するだけになる。
  */
+
+/**
+ * 交通ICの与件。往復区分は職員が「移動の条件」で選ぶもので、既定値は往復（#168）。
+ * `is_manual` は職員が手で選んだかどうか（ADR-0018）。
+ */
+const RESERVATION_INPUT: ParseReservationInput = {
+  round_trip: { value: 'round', is_manual: false },
+}
 
 /** 会議の与件。参加形式と所要時間は職員がタブ2で決めたもの（#66）。 */
 const MEETING_CONTEXT = {
@@ -80,6 +89,7 @@ const REQUESTS = {
   'ic-card.parse-reservation': {
     taskId: 'ic-card.parse-reservation',
     prompt: '来月15日から3泊4日で大阪出張、新幹線で往復',
+    input: RESERVATION_INPUT,
   },
   'meeting.parse-candidates': {
     taskId: 'meeting.parse-candidates',
@@ -109,6 +119,7 @@ const VALID_RESULTS = {
     return_at: '2026-10-18T18:00',
     origin: '東京',
     destination: '大阪',
+    round_trip: 'round',
     purpose: 'business_trip',
     route_candidates: [
       {
@@ -252,7 +263,7 @@ describe('入力の門', () => {
     )
 
     const response = await postTask({
-      taskId: 'ic-card.parse-reservation',
+      ...REQUESTS['ic-card.parse-reservation'],
       prompt: 'あ'.repeat(MAX_PROMPT_LENGTH),
       sessionId: SESSION_ID,
     })
@@ -303,7 +314,7 @@ describe('入力の門', () => {
     )
 
     await postTask({
-      taskId: 'ic-card.parse-reservation',
+      ...REQUESTS['ic-card.parse-reservation'],
       prompt: '<b>大阪</b>へ出張<script>alert(1)</script>',
       sessionId: SESSION_ID,
     })
@@ -313,12 +324,29 @@ describe('入力の門', () => {
 
   it('サニタイズで空になった自然文は、必須の taskId では拒否される', async () => {
     const response = await postTask({
-      taskId: 'ic-card.parse-reservation',
+      ...REQUESTS['meeting.parse-candidates'],
       prompt: '<script>alert(1)</script>',
     })
 
     expect((await expectError(response)).code).toBe('INVALID_INPUT')
     expect(fakeRuntimeScript.calls).toHaveLength(0)
+  })
+
+  it('サニタイズで空になった自然文は、任意の taskId では指示なしとして通る', async () => {
+    // 交通ICは与件だけで成立する（ADR-0017）。判断は契約の表に返しているので、
+    // `PROMPT_REQUIREMENT` が動けばこの分岐も一緒に動く。
+    fakeRuntimeScript.write(
+      runtimeReturns(VALID_RESULTS['ic-card.parse-reservation']),
+    )
+
+    const response = await postTask({
+      ...REQUESTS['ic-card.parse-reservation'],
+      prompt: '<script>alert(1)</script>',
+      sessionId: SESSION_ID,
+    })
+
+    await expectSuccess(response)
+    expect(lastInvocation().prompt).toBeUndefined()
   })
 })
 
@@ -378,21 +406,29 @@ describe('sessionId', () => {
 })
 
 describe('構造化入力', () => {
-  const NEEDS_INPUT = [
-    'meeting.parse-candidates',
-    'meeting.parse-availability',
-    'meeting.recommend-schedule',
-  ] as const
+  // ADR-0017 で交通ICもフォーム主導になり、4タスクすべてが与件を持つ。
+  const NEEDS_INPUT = ALLOWED_TASK_IDS
 
-  it('自然文だけの taskId に構造化入力が付いていたら拒否する', async () => {
-    // 交通ICは ADR-0005 の表で唯一 `null` のまま残る（送るべき画面状態が無い）。
+  it('交通ICは追加指示が空でも与件があれば通る', async () => {
+    /*
+      主な流れ（#168）。フォームだけ埋めて生成を押した回が `PROMPT_REQUIRED` で
+      弾かれると、指南書の流れがそもそも成立しない。
+    */
+    fakeRuntimeScript.write(
+      runtimeReturns(VALID_RESULTS['ic-card.parse-reservation']),
+    )
+
     const response = await postTask({
-      ...REQUESTS['ic-card.parse-reservation'],
-      input: CANDIDATES_INPUT,
+      taskId: 'ic-card.parse-reservation',
+      prompt: '   ',
+      input: RESERVATION_INPUT,
+      sessionId: SESSION_ID,
     })
 
-    expect((await expectError(response)).code).toBe('INVALID_INPUT')
-    expect(fakeRuntimeScript.calls).toHaveLength(0)
+    await expectSuccess(response)
+    // 空白だけの追加指示は「書かれなかった」として落ちる（Runtime へ渡さない）。
+    expect(lastInvocation().prompt).toBeUndefined()
+    expect(lastInvocation().input).toEqual(RESERVATION_INPUT)
   })
 
   it.each(NEEDS_INPUT)('%s に構造化入力が無ければ拒否する', async (taskId) => {
@@ -405,6 +441,22 @@ describe('構造化入力', () => {
   })
 
   it.each([
+    {
+      name: '往復区分が値域の外',
+      taskId: 'ic-card.parse-reservation',
+      input: { round_trip: { value: 'one', is_manual: false } },
+    },
+    {
+      // ADR-0018: 印が落ちると、AI は手入力の欄を直してよいと読む。
+      name: '往復区分に手入力かどうかが無い',
+      taskId: 'ic-card.parse-reservation',
+      input: { round_trip: { value: 'round' } },
+    },
+    {
+      name: '往復区分そのものが無い',
+      taskId: 'ic-card.parse-reservation',
+      input: {},
+    },
     {
       name: '所要時間が選択肢の外',
       taskId: 'meeting.parse-candidates',

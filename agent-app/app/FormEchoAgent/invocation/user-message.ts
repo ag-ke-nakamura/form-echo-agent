@@ -6,7 +6,10 @@ import type { INPUT_SCHEMAS, TaskId } from '../contracts/index.js';
  * WHY 与件の見出しを taskId ごとにするか: 見出しは「参加可否表」のように中身の名前
  * そのものなので、taskId ごとに違うものを名乗る必要がある。共通の見出し（「入力」など）
  * にすると、モデルの側で何を渡されたのかが読めない。構造化入力を持たない taskId は
- * `null` しか書けないよう型で縛る（`PROMPT_REQUIREMENT` と同じ形）。
+ * `null` しか書けないよう型で縛る（`PROMPT_REQUIREMENT` と同じ形）。**いま `null` の
+ * taskId は1つも無い**（ADR-0017 で交通ICも与件を持った）ので、`buildUserMessage` は
+ * 見出しの無い分岐を持たない。**再び `null` の taskId を足すなら、この表と一緒に
+ * あちらの分岐も戻すこと** — 戻さないと `## null` と `null` の JSON がモデルへ流れる。
  *
  * WHY 自然文の見出しも taskId ごとにするか: **書き手が違う。** 参加可否回答フォームに
  * 自然文を書くのは参加者であって職員ではない（`CONTEXT.md` の用語集はこの2つを
@@ -14,7 +17,10 @@ import type { INPUT_SCHEMAS, TaskId } from '../contracts/index.js';
  * 書いた文言とモデルが受け取る見出しが食い違う。
  */
 const HEADINGS = {
-  'ic-card.parse-reservation': { input: null, prompt: null },
+  'ic-card.parse-reservation': {
+    input: 'フォームの入力内容',
+    prompt: '職員からの追加指示',
+  },
   'meeting.parse-candidates': {
     input: '会議情報',
     prompt: '職員からの指示',
@@ -52,11 +58,6 @@ export function buildUserMessage(
   input: unknown,
 ): string {
   const headings = HEADINGS[taskId];
-  if (headings.input === null) {
-    // 交通IC。自然文が必須なのは入力契約の表（PROMPT_REQUIREMENT）が保証している。
-    return prompt ?? '';
-  }
-
   const sections = [
     `## ${headings.input}`,
     '',

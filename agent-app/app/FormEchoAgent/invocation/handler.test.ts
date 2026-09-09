@@ -10,6 +10,7 @@ import {
   type OUTPUT_SCHEMAS,
   type ParseAvailabilityInput,
   type ParseCandidatesInput,
+  type ParseReservationInput,
   type RecommendScheduleInput,
   type TaskId,
   usageSchema,
@@ -47,6 +48,14 @@ const PROMPTS = {
   'meeting.parse-candidates': '来月の午後',
   'meeting.parse-availability': '15日は大丈夫ですが16日は無理です',
 } as const;
+
+/**
+ * 交通ICの与件。往復区分は職員が「移動の条件」で選ぶもので、既定値は往復（#168）。
+ * `is_manual` は職員が手で選んだかどうか（ADR-0018）。
+ */
+const RESERVATION_INPUT: ParseReservationInput = {
+  round_trip: { value: 'round', is_manual: false },
+};
 
 /** 会議の与件。参加形式と所要時間は職員がタブ2で決めたもの（#66）。 */
 const MEETING_CONTEXT = {
@@ -101,6 +110,7 @@ const REQUESTS = {
   'ic-card.parse-reservation': {
     taskId: 'ic-card.parse-reservation',
     prompt: PROMPTS['ic-card.parse-reservation'],
+    input: RESERVATION_INPUT,
   },
   'meeting.parse-candidates': {
     taskId: 'meeting.parse-candidates',
@@ -130,6 +140,7 @@ const VALID_OUTPUTS = {
     return_at: '2026-10-18T18:00',
     origin: '東京',
     destination: '大阪',
+    round_trip: 'round',
     purpose: 'business_trip',
     route_candidates: [
       {
@@ -308,6 +319,12 @@ describe('meeting.parse-availability の曖昧表現ルール（#102）', () => 
 describe('構造化入力', () => {
   const WITH_INPUT = [
     {
+      taskId: 'ic-card.parse-reservation',
+      heading: 'フォームの入力内容',
+      // 値だけでなく手入力かどうかも届く（ADR-0018）。規則は Skill が持つ。
+      shows: '"is_manual": false',
+    },
+    {
       taskId: 'meeting.parse-candidates',
       heading: '会議情報',
       shows: '"duration_minutes": 60',
@@ -340,32 +357,51 @@ describe('構造化入力', () => {
     },
   );
 
-  it('ic-card.parse-reservation は構造化入力を受け取らず、自然文だけが届く', async () => {
-    // ADR-0005 の表で唯一 `null` のまま残る taskId。送るべき画面状態が無く、
-    // 基準時刻は system prompt が持つ。与件の見出しが付くと、モデルは無い表を探す。
+  it('ic-card.parse-reservation は追加指示が無くても与件だけで通る', async () => {
+    /*
+      ADR-0017 でフォーム主導になった。出発地・目的地・往復区分だけで経路と運賃を
+      調べられるので、追加指示に何も書かずに生成を押せる必要がある
+      （`PROMPT_REQUIREMENT` が `'optional'` になった配線）。
+    */
     fakeModelScript.write({
       kind: 'structuredOutput',
       output: VALID_OUTPUTS['ic-card.parse-reservation'],
     });
 
-    expectSuccess(await invokeBoundary(REQUESTS['ic-card.parse-reservation']));
+    expectSuccess(
+      await invokeBoundary({
+        taskId: 'ic-card.parse-reservation',
+        input: RESERVATION_INPUT,
+      }),
+    );
 
-    expect(userMessagesOf(lastCall())).toEqual([
-      PROMPTS['ic-card.parse-reservation'],
-    ]);
+    const [message] = userMessagesOf(lastCall());
+    expect(message).toContain('## フォームの入力内容');
+    // 追加指示が無い回に見出しだけが立つと、モデルは書かれていない指示を探す。
+    expect(message).not.toContain('## 職員からの追加指示');
   });
 
   it.each([
     {
-      name: '交通ICに自然文が無い',
-      payload: { taskId: 'ic-card.parse-reservation' },
-    },
-    {
-      name: '交通ICに構造化入力が付いている',
+      name: '交通ICに構造化入力が無い',
       payload: {
         taskId: 'ic-card.parse-reservation',
         prompt: PROMPTS['ic-card.parse-reservation'],
-        input: CANDIDATES_INPUT,
+      },
+    },
+    {
+      name: '往復区分が値域の外',
+      payload: {
+        taskId: 'ic-card.parse-reservation',
+        input: { round_trip: { value: 'one', is_manual: false } },
+      },
+    },
+    {
+      // ADR-0018: 印が落ちると、AI は手入力の欄を直してよいと読む。
+      name: '往復区分に手入力かどうかが無い',
+      payload: {
+        taskId: 'ic-card.parse-reservation',
+        input: { round_trip: { value: 'round' } },
       },
     },
     {
@@ -532,9 +568,9 @@ describe('Structured Output の再試行', () => {
 
     // 巻き戻さないと、失敗した試行が足した user メッセージが残ったまま
     // 2回目の user メッセージが積まれ、同じ自然文が2つ並ぶ。
-    expect(userMessagesOf(lastCall())).toEqual([
-      PROMPTS['ic-card.parse-reservation'],
-    ]);
+    const messages = userMessagesOf(lastCall());
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain(PROMPTS['ic-card.parse-reservation']);
   });
 
   /**
@@ -978,15 +1014,19 @@ describe('セッションと会話履歴', () => {
     );
     expectSuccess(
       await invokeBoundary(
-        { taskId: 'ic-card.parse-reservation', prompt: '往路は16日でした' },
+        {
+          taskId: 'ic-card.parse-reservation',
+          prompt: '往路は16日でした',
+          input: RESERVATION_INPUT,
+        },
         sessionId,
       ),
     );
 
-    expect(userMessagesOf(fakeModelScript.calls[1])).toEqual([
-      PROMPTS['ic-card.parse-reservation'],
-      '往路は16日でした',
-    ]);
+    const messages = userMessagesOf(fakeModelScript.calls[1]);
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toContain(PROMPTS['ic-card.parse-reservation']);
+    expect(messages[1]).toContain('往路は16日でした');
   });
 
   it('異なる sessionId の間で履歴が交ざらない', async () => {
@@ -1006,12 +1046,13 @@ describe('セッションと会話履歴', () => {
       await invokeBoundary({
         taskId: 'ic-card.parse-reservation',
         prompt: '別の職員の出張です',
+        input: RESERVATION_INPUT,
       }),
     );
 
-    expect(userMessagesOf(fakeModelScript.calls[1])).toEqual([
-      '別の職員の出張です',
-    ]);
+    const messages = userMessagesOf(fakeModelScript.calls[1]);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain('別の職員の出張です');
   });
 
   it('同じセッションでもタブが違えば Skill が交ざらない', async () => {

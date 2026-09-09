@@ -110,8 +110,8 @@ export type TaskOutputs = TaskOutputMap;
 /**
  * taskId から構造化入力の型を引く表（ADR-0005）。`TaskOutputs` と対称に置く。
  *
- * 構造化入力を持たない taskId（交通IC）は `undefined` になり、**送らないことが
- * 型で決まる。**
+ * 構造化入力を持たない taskId は `undefined` になり、**送らないことが型で決まる。**
+ * いまは4タスクとも与件を持つ（ADR-0017）。
  */
 export type TaskInputs = TaskInputMap;
 

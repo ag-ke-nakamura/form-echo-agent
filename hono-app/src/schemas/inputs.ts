@@ -6,6 +6,7 @@ import {
   isoDateSchema,
   MAX_INPUT_CANDIDATES,
   meetingFormatSchema,
+  roundTripSchema,
 } from './fields.js'
 import type { TaskId } from './task-ids.js'
 
@@ -22,6 +23,37 @@ const participantSchema = z
   .string()
   .regex(PARTICIPANT)
   .describe('参加者の識別子。「参加者A」のような形')
+
+/**
+ * 職員が手で入れたかどうかを添えた与件（ADR-0018）。
+ *
+ * WHY 値だけで渡さないか: 与件は出力にも載る（追加指示で別の値が明示されたら AI が
+ * 直せる必要がある）が、**画面は手入力の欄を上書きしない**ので、値だけを渡すと
+ * 「フォームの値と運賃の計算根拠が違う」自己矛盾したフォームができる。手入力かどうかを
+ * 知っているのは画面だけなので、画面が渡す。食い違ったときの規則は Skill が持つ。
+ */
+function manualAware<T extends z.ZodType>(value: T) {
+  return z.object({
+    value,
+    is_manual: z
+      .boolean()
+      .describe(
+        '職員が手で入れた値なら true。既定値のまま、または前回 AI が入れた値なら false',
+      ),
+  })
+}
+
+/**
+ * `ic-card.parse-reservation` の入力（往復区分。#168）。
+ *
+ * **運賃の額を決める与件だけを載せる**（ADR-0017）。往復区分が無かった間、Skill の
+ * 「往復なら往復分」は AI が往復かどうかを知る手段が無く死んでいた。
+ */
+export const parseReservationInputSchema = z.object({
+  round_trip: manualAware(roundTripSchema),
+})
+
+export type ParseReservationInput = z.infer<typeof parseReservationInputSchema>
 
 /**
  * 会議の与件のうち、参加可否の選択肢と候補日程の長さを決める2つ。
@@ -131,12 +163,12 @@ export type RecommendScheduleInput = z.infer<
 /**
  * taskId から入力契約を引くための表。`OUTPUT_SCHEMAS` と対称に置く（ADR-0004）。
  *
- * `null` は「自然文だけを受け取る」ことを表す。省略せずに書くのは、まだ足していない
- * のか足さないと決めたのかを区別するため。交通ICが `null` のまま残るのは ADR-0005 の
- * 判断で、送るべき画面状態が無い（基準時刻は system prompt が持つ）。
+ * `null` は「自然文だけを受け取る」ことを表す。**いまは1つも無い** — 交通ICが
+ * フォーム主導になり（ADR-0017）、4タスクすべてが与件を受け取るようになった。
+ * 型は `null` を許したまま残す。
  */
 export const INPUT_SCHEMAS = {
-  'ic-card.parse-reservation': null,
+  'ic-card.parse-reservation': parseReservationInputSchema,
   'meeting.parse-candidates': parseCandidatesInputSchema,
   'meeting.parse-availability': parseAvailabilityInputSchema,
   'meeting.recommend-schedule': recommendScheduleInputSchema,

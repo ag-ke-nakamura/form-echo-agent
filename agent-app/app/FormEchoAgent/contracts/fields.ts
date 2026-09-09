@@ -154,3 +154,21 @@ export const availabilitySchema = z
   .describe(
     '参加可否。attend_onsite=現地で出席 / attend_remote=リモートで出席 / absent=欠席 / undecided=未定',
   );
+
+/**
+ * 往復区分の値域（`CONTEXT.md`「往復区分」）。
+ *
+ * `..._ORDER` と呼ばないのは並び順を使う消費者がいないため（`PURPOSE_VALUES` と同じ）。
+ * ラジオの並びは画面側の表示名の表が決める。
+ *
+ * 与件（`input`）と出力の両方に載るのでここに置く。**1人あたり運賃（見込み）を
+ * 片道分にするか往復分にするかを決める**唯一の材料で、これが無かった間は Skill の
+ * 「往復なら往復分」という指示が効きようがなかった（#168）。
+ */
+export const ROUND_TRIP_VALUES = ['one_way', 'round'] as const;
+
+export type RoundTrip = (typeof ROUND_TRIP_VALUES)[number];
+
+export const roundTripSchema = z
+  .enum(ROUND_TRIP_VALUES)
+  .describe('往復区分。one_way=片道 / round=往復');
