@@ -9,7 +9,7 @@
 ```mermaid
 graph LR
     subgraph browser["ブラウザ"]
-        UI["nextjs-app<br/>SSG フロントエンド :3000<br/>[[app/lib/contracts/]]"]
+        UI["nextjs-app<br/>SSG フロントエンド :3000<br/>[[src/lib/contracts/]]"]
     end
 
     subgraph bff_box["BFF"]
@@ -114,7 +114,7 @@ graph TD
 graph TD
     A["Runtime<br/>agent-app/app/FormEchoAgent/contracts/"] --> AU["Zod で検査する<br/>（リクエスト・Structured Output）"]
     B["BFF<br/>hono-app/src/schemas/"] --> BU["Zod で検査する<br/>（門・応答の再検査）"]
-    N["フロントエンド<br/>nextjs-app/app/lib/contracts/"] --> NU["ほぼ import type。値で引くのは<br/>zod を持たない meeting.ts /<br/>prompt-requirement.ts だけ<br/>（SSG のバンドルに zod を乗せない）"]
+    N["フロントエンド<br/>nextjs-app/src/lib/contracts/"] --> NU["ほぼ import type。値で引くのは<br/>zod を持たない meeting.ts /<br/>recommendation.ts / prompt-requirement.ts だけ<br/>（SSG のバンドルに zod を乗せない）"]
 ```
 
 3プロジェクトとも自分自身の `node_modules` から `zod` を通常どおり解決する（symlink も
@@ -227,7 +227,7 @@ graph LR
 本番想定（§7）と違うところ。
 
 - **オリジンは CloudFront 1つ。** `/api/*` がパス透過で BFF に届くので CORS が発生せず、`NEXT_PUBLIC_API_BASE_URL` は空文字（相対パス）でよい。**BFF の `cors`（`FORMECHO_ALLOWED_ORIGINS`）はここでは実質効かない**が、ローカルは :3000 → :8787 の2オリジンのままなので残してある
-- **コード改修0行では済まなかった。** ADR-0014 は「フロントのコード改修は0行」で採ったが、OAC 越しの POST は本文の SHA256 を呼び出し側が `x-amz-content-sha256` に載せる必要があり、`nextjs-app/app/lib/api.ts` が `hc` に渡す `fetch` を包んでいる。BFF 側も Lambda のエントリ `hono-app/src/lambda.ts` が増えた（ルーティングと判断は `src/index.ts` に残る）
+- **コード改修0行では済まなかった。** ADR-0014 は「フロントのコード改修は0行」で採ったが、OAC 越しの POST は本文の SHA256 を呼び出し側が `x-amz-content-sha256` に載せる必要があり、`nextjs-app/src/lib/api.ts` が `hc` に渡す `fetch` を包んでいる。BFF 側も Lambda のエントリ `hono-app/src/lambda.ts` が増えた（ルーティングと判断は `src/index.ts` に残る）
 - **Function URL は公開 DNS 名だが公開エンドポイントではない。** `authType` は `AWS_IAM` で、resource policy が principal と `AWS:SourceArn` の両方でこの CloudFront に絞る。**OAC は `Authorization` を自分の署名に差し替えるので、`/api/*` の origin request policy はビューアの `Authorization` を転送しない**（Basic 認証が読むのと同じヘッダ）
 - **BFF は VPC の外にいる。** Runtime を叩くのは VPC Endpoint ではなく Lambda の実行ロール（`bedrock-agentcore:InvokeAgentRuntime` を Runtime の ARN に限定）
 - **時間予算は本番想定と同じ。** Runtime の自己打ち切り55秒（#125）→ BFF 60秒 → 画面60秒。CloudFront の origin response timeout 60秒はこの外側

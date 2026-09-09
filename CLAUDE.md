@@ -41,7 +41,7 @@ BFF が Runtime を叩く宛先は `FORMECHO_RUNTIME_URL`、フロントエン�
 手で反映する必要がある。
 
 詳細（リクエストに何が載るか、zod を import してはいけないファイル）は `.claude/rules/contracts.md`。
-各プロジェクトのスキーマ定義・BFF・Runtime の invocation・`nextjs-app/app/lib` のいずれかを
+各プロジェクトのスキーマ定義・BFF・Runtime の invocation・`nextjs-app/src` のいずれかを
 触った時に自動で載る。
 
 ## agent-app（AgentCore）

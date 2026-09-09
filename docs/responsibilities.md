@@ -21,8 +21,8 @@
 ```mermaid
 graph TB
     subgraph fe["frontend チーム"]
-        F1["nextjs-app/app/**"]
-        F2["nextjs-app/app/lib/**"]
+        F1["nextjs-app/src/app/**<br/>nextjs-app/src/features/**"]
+        F2["nextjs-app/src/components/**<br/>nextjs-app/src/lib/**"]
     end
 
     subgraph be["BFF チーム"]
@@ -38,7 +38,7 @@ graph TB
         A4["agent-app/agentcore/agentcore.json"]
     end
 
-    F3["nextjs-app/app/lib/contracts/**"]
+    F3["nextjs-app/src/lib/contracts/**"]
     B4["hono-app/src/schemas/**"]
     A5["agent-app/app/FormEchoAgent/contracts/**"]
 
@@ -89,7 +89,7 @@ graph TB
 ### frontend
 
 - **契約の判断を書き写さない。** 「このタブは自然文が任意」を画面に直書きしない — `isPromptRequired(taskId)` を引く。書き写すと、契約が変わったとき送信ボタンだけが古い判断のまま残る
-- **`app/lib/contracts/` の他のモジュールを値として import しない。** zod が SSG のバンドルに丸ごと乗る。値で引いてよいのは zod を持たない `meeting.ts` と `prompt-requirement.ts` の2つだけ。他はすべて `import type`
+- **`src/lib/contracts/` の他のモジュールを値として import しない。** zod が SSG のバンドルに丸ごと乗る。値で引いてよいのは zod を持たない `meeting.ts` / `recommendation.ts` / `prompt-requirement.ts` の3つだけ。他はすべて `import type`
 - **`input` に自由文字列を置かない。** 構造化入力はサニタイズも Guardrail チェックも通らない。識別子は `/^candidate-\d{1,6}$/`、参加者は `/^参加者[A-Z]$/`（ADR-0004 / ADR-0008）
 - **`prompt` に与件を埋め込まない。** 「所要時間は60分です。以下の文から…」と連結すると、入力サニタイズと Guardrail チェックが何を検査しているのか曖昧になる。与件は `input` に載せる
 - **応答が来てもフォームを書き換えない。** 職員が反映を押すまでフォームは変わらない（ADR-0006）
@@ -99,7 +99,7 @@ graph TB
 
 - **AI の中身に触らない。** プロンプト、モデル、Skill、Guardrail チェックはすべて Runtime 側（ADR-0001）
 - **`input` の中身を解釈しない。** 検査は `checkTaskInput` に委ね、通ったものをそのまま渡す。BFF が中身を読み始めると、契約と Runtime と BFF の3箇所に同じ理解が要る
-- **画面の文言を持たない。** 返すのはエラーコードと開発者向けの `message` だけ。職員に見せる案内は `nextjs-app/app/lib/error-guidance.ts`
+- **画面の文言を持たない。** 返すのはエラーコードと開発者向けの `message` だけ。職員に見せる案内は `nextjs-app/src/lib/error-guidance.ts`
 - **未知のエラーコードを素通ししない。** `isAiErrorCode` で照合する。照合を飛ばすと `STATUS_BY_CODE[code]` が undefined になり、**エラー本文の入った 200** がブラウザへ届く
 - **Runtime の失敗を握り潰さない。** タイムアウト・接続不能・4xx・5xx はそれぞれ別のコードに写す（職員に出る案内が違う）
 
@@ -191,11 +191,11 @@ sequenceDiagram
 
 | チーム | 何をテストするか | 差し替えるもの |
 | --- | --- | --- |
-| frontend | 反映の写し方・手入力の保護・プレビューの一覧・参加可否表の導出 | なし（`app/lib/**` を素の関数として呼ぶ。コンポーネントは描かない） |
+| frontend | 反映の写し方・手入力の保護・プレビューの一覧・参加可否表の導出 | なし（判断を持つ `.ts` を素の関数として呼ぶ。コンポーネントは描かない） |
 | BFF | 門の判断・エラーコードへの写像・出力契約の再検査 | `FORMECHO_RUNTIME_CLIENT=fake` |
 | AI agent | invocation 境界・作り直し・与件の組み立て | `FORMECHO_MODEL=fake` |
 
-frontend が差し替えを持たないのは、AI 由来の判断が `app/lib/**` の純粋な関数に出してあり、そこを直接呼べば BFF も Runtime も要らないため。**タブごとの状態モデルをここへ出しておくことが、frontend にとってのシームの作り方になる。**
+frontend が差し替えを持たないのは、AI 由来の判断が各 feature の `.ts`（純関数）に出してあり、そこを直接呼べば BFF も Runtime も要らないため。**タブごとの状態モデルをここへ出しておくことが、frontend にとってのシームの作り方になる。**
 
 **テストのために新しいシームを作らない。** 差し替えるのは既にある設定の選択肢だけで、テストと実測は同じ境界を通る（#40 / #41）。`fake` に差し替わるのは「Runtime／モデルが何を返したか」であって「それをどう扱うか」ではない。
 

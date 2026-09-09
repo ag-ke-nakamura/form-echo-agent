@@ -106,7 +106,7 @@ export function candidateIdOf(sequence: number): string {
  * WHY 上限そのものは要るか: 構造化入力はサニタイズを通らないので、件数を縛らないと
  * 参照ドキュメント 13.1節の入力想定をいくらでも超えられる。
  *
- * **画面はこの上限を超える前に手を打つ責任を負う**（`nextjs-app/app/lib/candidate-limit.ts`）。
+ * **画面はこの上限を超える前に手を打つ責任を負う**（`nextjs-app/src/features/meeting/shared/candidate-limit.ts`）。
  * 超えたリクエストは BFF の門が INVALID_INPUT で弾くが、職員から見ると自分の書いた
  * 自然文が悪かったように読める。だから値として引ける場所に置いてある。
  */

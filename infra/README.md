@@ -57,7 +57,7 @@ deploy` の結果としてコミットされている）から読む。** デプ
 片方だけ古くなるのを防ぐため。
 
 **OAC 越しの POST は呼び出し側が本文ハッシュを載せる。** Lambda は unsigned payload を
-受け付けないので、`nextjs-app/app/lib/api.ts` が `x-amz-content-sha256` を付ける
+受け付けないので、`nextjs-app/src/lib/api.ts` が `x-amz-content-sha256` を付ける
 （ADR-0014）。ここが落ちると front door 越しの AI 機能が丸ごと 403 になる。
 
 `cdk synth` は esbuild で `hono-app/src/lambda.ts` の import グラフをバンドルする。
