@@ -10,10 +10,13 @@ import {
   cardCount,
   DEFAULT_ORIGIN,
   DEFAULT_ROUND_TRIP,
+  departAtParts,
   EMPTY_FORM,
   EMPTY_RESERVATION,
   type FormState,
+  joinDepartAt,
   PLACE_SUGGESTIONS,
+  preprintDepartDate,
   removeCompanion,
   type ReservationState,
   reservationBreakdown,
@@ -23,6 +26,7 @@ import {
   setCardCount,
   setCompanionName,
   setFieldValue,
+  todayOf,
 } from "./reservation-form";
 
 function output(
@@ -31,6 +35,7 @@ function output(
   return {
     borrow_at: null,
     return_at: null,
+    depart_at: null,
     origin: null,
     destination: null,
     origin_nearest: null,
@@ -105,6 +110,13 @@ describe("reservationPreviewItems", () => {
       {
         key: "return_at",
         label: "返す日時",
+        value: null,
+        preserved: false,
+        optional: true,
+      },
+      {
+        key: "depart_at",
+        label: "出発日時",
         value: null,
         preserved: false,
         optional: true,
@@ -509,6 +521,22 @@ describe("resetReservation", () => {
     expect(cardCount(reset)).toBe("1");
   });
 
+  /*
+    出発日時は初期状態（空）へ戻り、当日は画面が入れ直す（#175）。画面は描くときと
+    更新するときの両方で `preprintDepartDate` を通すので、戻した直後の状態にも当日が
+    入る — ここで見ているのはその composition が成り立つことである。
+  */
+  it("出発日時は空へ戻り、当日のプレプリントが入り直す", () => {
+    expect(resetReservation(filled).fields.depart_at).toEqual({
+      value: "",
+      source: "default",
+    });
+    expect(
+      preprintDepartDate(resetReservation(filled), "2026-09-09").fields
+        .depart_at,
+    ).toEqual({ value: "2026-09-09T", source: "default" });
+  });
+
   it("行番号は持ち越す", () => {
     expect(resetReservation(filled).nextCompanionNumber).toBe(
       filled.nextCompanionNumber,
@@ -859,5 +887,128 @@ describe("reservationBreakdown", () => {
     expect(section(sections, "route-candidate-1")?.lines).toContain(
       "定期重複区間：重複なし",
     );
+  });
+});
+
+/**
+ * 出発日時（#175。CONTEXT.md「出発日時」）。**運賃・経路の計算には使わない**ので
+ * 与件には載らず、画面が持って申請に載せるだけの欄である。
+ *
+ * WHY テストを持つか: 判断が3つある — 当日をプレプリントするのは日付だけ（時刻は
+ * 職員が選ぶ）・プレプリントは「既定値」なので AI が上書きできる・手で触った欄は
+ * 守る。どれも画面を描かない限り確かめられない。
+ */
+describe("出発日時（#175）", () => {
+  it("初期状態は空で、プレプリントは今日を知ってから入る", () => {
+    // 今日はブラウザで描くまで決まらない（SSG）。決まる前は空のまま。
+    expect(EMPTY_FORM.depart_at).toEqual({ value: "", source: "default" });
+    expect(preprintDepartDate(EMPTY_RESERVATION, null)).toBe(EMPTY_RESERVATION);
+  });
+
+  it("当日は日付だけがプレプリントされ、時刻は空のまま", () => {
+    const state = preprintDepartDate(EMPTY_RESERVATION, "2026-09-09");
+    expect(state.fields.depart_at).toEqual({
+      value: "2026-09-09T",
+      source: "default",
+    });
+    expect(departAtParts(state.fields.depart_at.value)).toEqual({
+      date: "2026-09-09",
+      time: "",
+    });
+  });
+
+  /* 既定値なので AI が追加指示（「明日の10時に出ます」）で直せる（ADR-0018）。 */
+  it("プレプリントは AI が上書きできる", () => {
+    const { next, report } = applyToReservation(
+      preprintDepartDate(EMPTY_RESERVATION, "2026-09-09"),
+      output({ depart_at: "2026-09-10T10:00" }),
+    );
+    expect(next.fields.depart_at).toEqual({
+      value: "2026-09-10T10:00",
+      source: "ai",
+    });
+    expect(report.updated).toEqual(["出発日時"]);
+  });
+
+  it("職員が選んだ出発日時は上書きしない", () => {
+    const current = setFieldValue(
+      preprintDepartDate(EMPTY_RESERVATION, "2026-09-09"),
+      "depart_at",
+      "2026-09-09T14:30",
+    );
+    const { next, report } = applyToReservation(
+      current,
+      output({ depart_at: "2026-09-10T10:00" }),
+    );
+    expect(next.fields.depart_at).toEqual({
+      value: "2026-09-09T14:30",
+      source: "manual",
+    });
+    expect(report.preserved).toEqual(["出発日時"]);
+  });
+
+  /*
+    読み取れないのが正しい回（追加指示に日時の言及が無い）が主な流れなので、
+    聞き返しの分母に入れない（#175）。分母は移動経路と運賃だけ。
+  */
+  it("読み取れなくても聞き返しにならない", () => {
+    const item = reservationPreviewItems(output(), EMPTY_RESERVATION).find(
+      (row) => row.key === "depart_at",
+    );
+    expect(item).toEqual({
+      key: "depart_at",
+      label: "出発日時",
+      value: null,
+      preserved: false,
+      optional: true,
+    });
+  });
+
+  /*
+    運賃の額を決めないので与件には載せない（ADR-0017 の線）。載せると、額を決めない
+    値のために `is_manual` の規則が1つ増える。
+  */
+  it("与件には載らない", () => {
+    expect(
+      Object.keys(
+        reservationInput(
+          preprintDepartDate(EMPTY_RESERVATION, "2026-09-09").fields,
+        ),
+      ),
+    ).toEqual(["origin", "destination", "round_trip"]);
+  });
+
+  /*
+    日付と時刻を別の入力に分けるので、片方だけ入った状態が普通に起きる（#175）。
+    与件に載らない欄なので契約の形（`YYYY-MM-DDTHH:mm`）を満たす必要が無い。
+  */
+  it("日付だけ・時刻だけの状態を往復できる", () => {
+    expect(joinDepartAt("2026-09-09", "10:15")).toBe("2026-09-09T10:15");
+    expect(departAtParts("2026-09-09T10:15")).toEqual({
+      date: "2026-09-09",
+      time: "10:15",
+    });
+
+    expect(joinDepartAt("2026-09-09", "")).toBe("2026-09-09T");
+    expect(departAtParts("2026-09-09T")).toEqual({
+      date: "2026-09-09",
+      time: "",
+    });
+
+    expect(joinDepartAt("", "10:15")).toBe("T10:15");
+    expect(departAtParts("T10:15")).toEqual({ date: "", time: "10:15" });
+
+    // どちらも空なら空。「消す」で空にした欄と同じ形に落ちる。
+    expect(joinDepartAt("", "")).toBe("");
+    expect(departAtParts("")).toEqual({ date: "", time: "" });
+  });
+
+  /*
+    UTC で切ると、日本時間の早朝（09:00 より前）に開いた職員に前日が入る。
+    ローカルの暦で組むので、テストもローカルの `Date` で書く。
+  */
+  it("今日は現地時刻の暦で決まる", () => {
+    expect(todayOf(new Date(2026, 8, 9, 0, 30))).toBe("2026-09-09");
+    expect(todayOf(new Date(2026, 0, 1, 23, 59))).toBe("2026-01-01");
   });
 });

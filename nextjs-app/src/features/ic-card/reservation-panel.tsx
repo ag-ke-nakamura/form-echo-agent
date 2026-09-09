@@ -2,7 +2,7 @@
 
 import type { ParseReservationOutput } from "@/lib/contracts/types";
 import { Plus, Trash2 } from "lucide-react";
-import { type ChangeEvent, useId, useState } from "react";
+import { type ChangeEvent, useId, useState, useSyncExternalStore } from "react";
 import { AiAssistant } from "@/components/ai-assistant/ai-assistant";
 import {
   AiBadge,
@@ -18,13 +18,18 @@ import {
   CHOICE_LABELS,
   type ChoiceFieldName,
   type CompanionRow,
+  DEPART_TIME_STEP_SECONDS,
+  departAtParts,
   EMPTY_RESERVATION,
   FIELD_LABELS,
   type FieldName,
   type FormState,
+  joinDepartAt,
   PLACE_PLACEHOLDER,
   PLACE_SUGGESTIONS,
+  preprintDepartDate,
   removeCompanion,
+  type ReservationState,
   reservationBreakdown,
   reservationInput,
   reservationPreviewItems,
@@ -32,6 +37,7 @@ import {
   setCardCount,
   setCompanionName,
   setFieldValue,
+  todayOf,
 } from "./reservation-form";
 import { ManualInputDivider, TabHeading } from "@/components/screen-layout";
 
@@ -41,11 +47,26 @@ export function ReservationPanel() {
     そこにある — 行の足し引きという判断を持つので、画面に置くと画面を描かない限り
     確かめられない。
   */
-  const [reservation, setReservation] = useState(EMPTY_RESERVATION);
+  /*
+    出発日時の当日プレプリント（#175）は `useState` の初期値には置けない。今日が
+    決まるのはブラウザで描くときで（SSG のサーバー側の描画でも初期値は1度作られ、
+    ビルド機の「今日」が HTML に焼き付く）、それは `useState` より後になる。
+
+    **だから描くときと更新するときの両方でプレプリントを通す。** `preprintDepartDate`
+    は既定値のまま空の欄しか埋めないので何度通しても同じで、「最初からやり直す」で
+    空へ戻った直後も次の描画で当日が入る。
+  */
+  const today = useToday();
+  const [stored, setStored] = useState(EMPTY_RESERVATION);
+  const reservation = preprintDepartDate(stored, today);
   const { fields } = reservation;
 
+  function update(next: (current: ReservationState) => ReservationState) {
+    setStored((current) => next(preprintDepartDate(current, today)));
+  }
+
   function setField(name: FieldName, value: string) {
-    setReservation((current) => setFieldValue(current, name, value));
+    update((current) => setFieldValue(current, name, value));
   }
 
   /**
@@ -55,7 +76,7 @@ export function ReservationPanel() {
    */
   function applyResult(result: ParseReservationOutput): ApplyReport {
     const { next, report } = applyToReservation(reservation, result);
-    setReservation(next);
+    setStored(next);
     return report;
   }
 
@@ -102,7 +123,7 @@ export function ReservationPanel() {
         */
         breakdown={reservationBreakdown}
         onApply={applyResult}
-        onReset={() => setReservation(resetReservation)}
+        onReset={() => update(resetReservation)}
       />
 
       <ManualInputDivider />
@@ -122,6 +143,16 @@ export function ReservationPanel() {
             state={fields.return_at}
             onChange={setField}
           />
+          {/*
+            出発日時は移動の話で、上の2欄（カードの貸借）とは別の概念（#175。
+            CONTEXT.md「出発日時」）。日付と時刻の2つの入力を持つので2列ぶん使う。
+          */}
+          <div className="sm:col-span-2">
+            <DepartAtField
+              state={fields.depart_at}
+              onChange={(value) => setField("depart_at", value)}
+            />
+          </div>
           {/*
             出発地・目的地は7駅から選べて自由記述もできる（#171）。同じ欄に両方を
             載せるので、選択肢は `<datalist>` の候補であって値域ではない。
@@ -168,19 +199,17 @@ export function ReservationPanel() {
           <CardCountField
             value={cardCount(reservation)}
             onChange={(override) =>
-              setReservation((current) => setCardCount(current, override))
+              update((current) => setCardCount(current, override))
             }
           />
         </div>
 
         <CompanionRows
           rows={reservation.companions}
-          onAdd={() => setReservation(addCompanion)}
-          onRemove={(id) =>
-            setReservation((current) => removeCompanion(current, id))
-          }
+          onAdd={() => update(addCompanion)}
+          onRemove={(id) => update((current) => removeCompanion(current, id))}
           onChangeName={(id, name) =>
-            setReservation((current) => setCompanionName(current, id, name))
+            update((current) => setCompanionName(current, id, name))
           }
         />
       </FormSection>
@@ -403,6 +432,95 @@ function SelectField({
       </select>
     </div>
   );
+}
+
+/**
+ * 出発日時（#175。CONTEXT.md「出発日時」）。**日付と時刻を別の入力に分ける。**
+ *
+ * WHY `datetime-local` 1つにしないか: プレプリントするのは当日の**日付だけ**である。
+ * `datetime-local` は日付だけの値を持てないので、時刻に `00:00` を置くことになり、
+ * 職員が決めていない深夜0時発が既定値として申請に乗る（Skill が `return_at` に
+ * 「`18:00` のような既定の時刻を置かない」と書いているのと同じ理由）。
+ *
+ * **15分刻みはネイティブの `step` で出す**（専用の部品を作らない）。契約は刻みを
+ * 縛らないので、AI が `10:07` を返した回はそのまま表示する — 刻みは職員が選ぶときの
+ * 目安であって、値を弾く条件ではない。
+ *
+ * **画面に但し書きを置かない。** 「運賃は出発日時では変わらない」という規則の置き場所は
+ * Skill である（#175 が Skill に書くことだけを求めている）。画面に足すと、同じ規則が
+ * 2箇所に住む。
+ */
+function DepartAtField({
+  state,
+  onChange,
+}: {
+  state: FormState["depart_at"];
+  onChange: (value: string) => void;
+}) {
+  const dateId = useId();
+  const { date, time } = departAtParts(state.value);
+  /*
+    見出しは他の欄と同じ `FieldHeader` を使い、`<fieldset>` にしない。2つの入力を
+    束ねる意味は「出発日時」という1つのラベルで足りており、並び（ラベル・AI バッジ・
+    「消す」）を legend として書き直すと、全欄で同じという `FieldHeader` の前提が崩れる。
+    見出しは日付側に結び付け、時刻側は `aria-label` で名乗る（用語集に無い「出発
+    時刻」を作らず、「出発日時」の一部として読み上げさせる）。
+  */
+  return (
+    <div>
+      <FieldHeader
+        htmlFor={dateId}
+        label={FIELD_LABELS.depart_at}
+        source={state.source}
+        onClear={state.value === "" ? undefined : () => onChange("")}
+      />
+      <div className="mt-1.5 grid gap-5 sm:grid-cols-2">
+        <input
+          id={dateId}
+          type="date"
+          value={date}
+          onChange={(event) => onChange(joinDepartAt(event.target.value, time))}
+          className={INPUT_CLASS}
+        />
+        <input
+          type="time"
+          step={DEPART_TIME_STEP_SECONDS}
+          aria-label="出発日時（時刻）"
+          value={time}
+          onChange={(event) => onChange(joinDepartAt(date, event.target.value))}
+          className={INPUT_CLASS}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 職員が見ている「今日」（`YYYY-MM-DD`）。**ブラウザで描くときだけ決まる**
+ * （`null` は未確定）。
+ *
+ * WHY こう取るか: SSG なのでビルド時に描いた HTML とブラウザの初回描画が食い違って
+ * はならず、ビルド機の「今日」は職員の「今日」ではない。`useSyncExternalStore` は
+ * サーバー側の値（`null`）とブラウザ側の値を別に取れるので、React が食い違いを
+ * 起こさずに描き直す。会議候補日設定タブのカレンダーの起点も同じ形で取る
+ * （`use-candidate-calendar.ts`）。**共有せず両方に置く** — 共有先は top-level の
+ * `lib/` しかなく（ADR-0016 の境界）、日付の整形1つのためにそこへ置くと、次の
+ * 「共有したい」も同じ理由で溜まる。
+ *
+ * 返すのは日付の**文字列**である。オブジェクトを作ると呼ばれるたびに別物になり、
+ * React が「snapshot が安定していない」と見て描き直し続ける。
+ */
+function useToday(): string | null {
+  return useSyncExternalStore(
+    subscribeToNothing,
+    () => todayOf(new Date()),
+    () => null,
+  );
+}
+
+/** 今日は時計を読むだけで、変わったことを知らせる相手がいない。 */
+function subscribeToNothing(): () => void {
+  return () => {};
 }
 
 /**

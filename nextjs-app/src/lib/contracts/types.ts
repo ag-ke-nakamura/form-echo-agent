@@ -67,6 +67,12 @@ export type RouteCandidate = {
 export type ParseReservationOutput = {
   borrow_at: string | null;
   return_at: string | null;
+  /**
+   * 出発日時（#175。CONTEXT.md「出発日時」）。移動を始める日時で、借りる日・
+   * 返す日時とは別の概念（あの2つはカードの貸借の話）。**運賃・経路の計算には
+   * 使わない**ので与件には載らず、画面が申請に載せる情報として持つだけである。
+   */
+  depart_at: string | null;
   origin: string | null;
   destination: string | null;
   /**

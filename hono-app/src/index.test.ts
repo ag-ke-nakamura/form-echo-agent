@@ -123,6 +123,7 @@ const VALID_RESULTS = {
   'ic-card.parse-reservation': {
     borrow_at: '2026-10-15',
     return_at: '2026-10-18T18:00',
+    depart_at: '2026-10-15T09:30',
     origin: '東京',
     destination: '大阪',
     origin_nearest: '東京駅',
@@ -827,6 +828,43 @@ describe('出力契約の再検査', () => {
 
     expect(response.status).toBe(502)
     expect((await expectError(response)).code).toBe('PARSE_FAILED')
+  })
+
+  it('出発日時が YYYY-MM-DDTHH:mm でない出力を通さない', async () => {
+    fakeRuntimeScript.write(
+      runtimeReturns({
+        ...VALID_RESULTS['ic-card.parse-reservation'],
+        depart_at: '2026-10-15',
+      }),
+    )
+
+    const response = await postTask({
+      ...REQUESTS['ic-card.parse-reservation'],
+      sessionId: SESSION_ID,
+    })
+
+    expect(response.status).toBe(502)
+    expect((await expectError(response)).code).toBe('PARSE_FAILED')
+  })
+
+  /*
+    #175: 15分刻みは画面だけの制約。契約で強制すると、刻みを無視するブラウザや
+    AI の読み取りで職員が `PARSE_FAILED` を見る（10:07 発でも経路は引ける）。
+  */
+  it('15分刻みでない出発日時の出力は通す', async () => {
+    const result = {
+      ...VALID_RESULTS['ic-card.parse-reservation'],
+      depart_at: '2026-10-15T10:07',
+    }
+    fakeRuntimeScript.write(runtimeReturns(result))
+
+    const response = await postTask({
+      ...REQUESTS['ic-card.parse-reservation'],
+      sessionId: SESSION_ID,
+    })
+
+    expect(response.status).toBe(200)
+    expect(await expectSuccess(response)).toMatchObject({ result })
   })
 
   /*

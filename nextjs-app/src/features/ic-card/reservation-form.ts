@@ -31,6 +31,7 @@ export type FieldName =
   | "round_trip"
   | "borrow_at"
   | "return_at"
+  | "depart_at"
   | "origin"
   | "destination"
   | "route"
@@ -99,6 +100,12 @@ export const EMPTY_FORM: FormState = {
   borrow_at: { value: "", source: "default" },
   return_at: { value: "", source: "default" },
   /*
+    出発日時は空で始まる。当日のプレプリント（#175）は職員の「今日」を知ってから
+    でないと作れず、それが決まるのはブラウザで描くときである（SSG なのでビルド機の
+    「今日」では描けない）。入れるのは `preprintDepartDate`。
+  */
+  depart_at: { value: "", source: "default" },
+  /*
     出発地だけプレプリントする（#171）。目的地は申請ごとに違うので、置くと毎回
     消してから打つことになる。`"default"` なので AI が追加指示（「新宿から行きます」）で
     直せる — `"manual"` だと職員が手を触れていない値が守られてしまう（ADR-0018）。
@@ -109,6 +116,82 @@ export const EMPTY_FORM: FormState = {
   transport_cost: { value: "", source: "default" },
   purpose: { value: "", source: "default" },
 };
+
+/**
+ * 出発日時の時刻の刻み（#175）。`<input type="time">` の `step` は**秒**で受け取る。
+ *
+ * **画面だけの制約である。** 契約は刻みを縛らない（10:07 発でも経路は引ける）ので、
+ * 刻みを無視するブラウザや AI の読み取りで 400 にはならない。専用の部品は作らず、
+ * ネイティブの `step` に任せる。
+ */
+export const DEPART_TIME_STEP_SECONDS = 15 * 60;
+
+/**
+ * 出発日時の日付と時刻（#175）。**片方だけ入った状態を表せる必要がある。**
+ *
+ * WHY 欄を1つに保つか: 出発日時は用語集の1語（CONTEXT.md「出発日時」）で、AI が返す
+ * `depart_at` も1つ、反映の報告も「更新: 出発日時」の1行である。状態を2つに割ると
+ * 語が2つに増え、写す先も2箇所になる。
+ *
+ * WHY 契約の形（`YYYY-MM-DDTHH:mm`）を満たさない値を許すか: 当日をプレプリントする
+ * のは日付だけで、時刻は職員が選ぶ（`09:00` のような既定の時刻を置くと、職員が
+ * 決めていない時刻が申請に乗る）。**出発日時は与件に載らない**ので、この欄の値が
+ * Runtime へ渡ることも契約で検査されることも無い — 画面の中だけで完結する。
+ *
+ * **日付だけ（`2026-09-09T`）も時刻だけ（`T10:15`）も許す。** 職員が日付を消して
+ * 時刻だけ残す順序も普通に起き、そこで値を捨てると打った時刻が黙って消える。
+ */
+export function departAtParts(value: string): { date: string; time: string } {
+  const [date = "", time = ""] = value.split("T");
+  return { date, time };
+}
+
+export function joinDepartAt(date: string, time: string): string {
+  // どちらも空なら空。「消す」で空にした欄と同じ形に落ちる（区切りだけを残さない）。
+  return date === "" && time === "" ? "" : `${date}T${time}`;
+}
+
+/**
+ * その時点の**現地時刻の**日付（`YYYY-MM-DD`）。出発日時のプレプリントに使う。
+ *
+ * WHY UTC で切らないか: `toISOString()` は UTC の日付を返すので、日本時間の早朝
+ * （09:00 より前）に開いた職員には前日がプレプリントされる。
+ *
+ * 会議候補日設定タブのカレンダーの起点（`isoDateOf`）と同じことをしているが、feature を
+ * 跨いで引けない（ADR-0016 の境界）ので共有しない。
+ */
+export function todayOf(now: Date): string {
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+/**
+ * 出発日時に当日をプレプリントする（#175）。**日付だけで、時刻は空のまま。**
+ *
+ * `today` が `null` なのは職員の「今日」がまだ決まっていない状態（SSG のサーバー側の
+ * 描画）で、そのときは何も入れない。
+ *
+ * **入れるのは `"default"` として**なので AI が追加指示で直せる（ADR-0018）。既に
+ * 職員が触った欄（`"manual"`）と AI が入れた欄（`"ai"`）には手を出さない — 前者は
+ * 「消す」で空にした意図まで含み、後者は反映の結果である。
+ */
+export function preprintDepartDate(
+  current: ReservationState,
+  today: string | null,
+): ReservationState {
+  const field = current.fields.depart_at;
+  if (today === null || field.source !== "default" || field.value !== "") {
+    return current;
+  }
+  return {
+    ...current,
+    fields: {
+      ...current.fields,
+      depart_at: { value: joinDepartAt(today, ""), source: "default" },
+    },
+  };
+}
 
 /**
  * 同行者の行ひとつ。**氏名は AI が埋めない**ので `FieldSource` を持たない（#176）。
@@ -174,6 +257,10 @@ export const EMPTY_RESERVATION: ReservationState = {
  * それは「番号を再利用しない」を行数に依存させることであり、依存させる理由が無い。
  */
 export function resetReservation(current: ReservationState): ReservationState {
+  /*
+    出発日時も初期状態（空）へ戻る。当日のプレプリント（#175）を入れ直すのは画面側で、
+    描くときと更新するときの両方で `preprintDepartDate` を通している。
+  */
   return {
     ...EMPTY_RESERVATION,
     nextCompanionNumber: current.nextCompanionNumber,
@@ -273,6 +360,11 @@ export const FIELD_LABELS: Record<FieldName, string> = {
   // 日付のみになった（#86）ので「日時」ではなく「日」と呼ぶ。返す日時と区別が付く。
   borrow_at: "借りる日",
   return_at: "返す日時",
+  /*
+    用語集の語をそのまま使う（CONTEXT.md「出発日時」）。「利用日時」と呼ばない —
+    カードの貸借の日時（借りる日・返す日時）と紛れる。
+  */
+  depart_at: "出発日時",
   origin: "出発地",
   destination: "目的地",
   // 交通手段の選択欄を置き換える（#86。CONTEXT.md「移動経路」）。
