@@ -10,6 +10,7 @@ import {
   applyToReservation,
   cardCount,
   DEFAULT_ORIGIN,
+  DEFAULT_PURPOSE,
   DEFAULT_ROUND_TRIP,
   departAtParts,
   EMPTY_FORM,
@@ -375,6 +376,24 @@ describe("applyToReservation", () => {
   /* プレプリントするのは出発地だけ（#171）。 */
   it("目的地はプレプリントしない", () => {
     expect(EMPTY_FORM.destination).toEqual({ value: "", source: "default" });
+  });
+
+  /*
+    利用目的のプレプリント（#196。指南書 1.3・#165 のストーリー5「ほとんどの申請が
+    打ち合わせ」）。**`"default"` であることが要点** — `"manual"` だと職員が手を
+    触れていない値が守られ、「研修で行きます」と書いても AI が直せなくなる（ADR-0018）。
+  */
+  it("利用目的は打ち合わせのプレプリントで、AI が上書きできる", () => {
+    expect(EMPTY_FORM.purpose).toEqual({
+      value: DEFAULT_PURPOSE,
+      source: "default",
+    });
+    const { next, report } = applyToReservation(
+      EMPTY_RESERVATION,
+      output({ purpose: "training" }),
+    );
+    expect(next.fields.purpose).toEqual({ value: "training", source: "ai" });
+    expect(report).toEqual({ updated: ["利用目的"], preserved: [] });
   });
 
   /*
@@ -842,7 +861,7 @@ describe("reservationBreakdown", () => {
       key: "selected-route",
       label: "採用移動経路",
       lines: [
-        "経路：霞ケ関駅(東京メトロ日比谷線) => 虎ノ門駅",
+        "移動経路：霞ケ関駅(東京メトロ日比谷線) => 虎ノ門駅",
         "1人あたり運賃：356円",
         "所要時間：12分",
         "乗換回数：1回",
@@ -880,7 +899,7 @@ describe("reservationBreakdown", () => {
         key: "route-candidate-1",
         label: "その他の移動経路候補1",
         lines: [
-          "経路：東京 => 名古屋 => 大阪",
+          "移動経路：東京 => 名古屋 => 大阪",
           "1人あたり運賃：15000円",
           "所要時間：2時間50分",
           "乗換回数：1回",
@@ -891,7 +910,7 @@ describe("reservationBreakdown", () => {
         key: "route-candidate-2",
         label: "その他の移動経路候補2",
         lines: [
-          "経路：東京 => 京都 => 大阪",
+          "移動経路：東京 => 京都 => 大阪",
           "1人あたり運賃：15200円",
           "所要時間：2時間40分",
           "乗換回数：2回",

@@ -85,6 +85,15 @@ export const PLACE_SUGGESTIONS: readonly string[] = [
   "溜池山王駅",
 ];
 
+/**
+ * 利用目的の既定値（#196）。ほとんどの申請が打ち合わせなので、指南書 1.3 と
+ * #165 のストーリー5 がこれをプレプリントに求める（正典 2.3節）。
+ *
+ * 型を `Purpose` で受けるのは、契約の値域から外れた文字列を置くと `<select>` の
+ * どの選択肢にも当たらず、欄が空に見えるまま与件だけが埋まるため。
+ */
+export const DEFAULT_PURPOSE: Purpose = "discussion";
+
 /** 出発地・目的地のプレースホルダ（#171）。駅名に限らないことを職員に言う。 */
 export const PLACE_PLACEHOLDER = "駅名・地名・建物名など";
 
@@ -116,7 +125,11 @@ export const EMPTY_FORM: FormState = {
   destination: { value: "", source: "default" },
   route: { value: "", source: "default" },
   transport_cost: { value: "", source: "default" },
-  purpose: { value: "", source: "default" },
+  /*
+    利用目的も「打ち合わせ」で始まる（#196）。出発地と同じく `"default"` なので、
+    追加指示（「研修で行きます」）で AI が直せる。
+  */
+  purpose: { value: DEFAULT_PURPOSE, source: "default" },
 };
 
 /**
@@ -686,11 +699,12 @@ function candidateLines(
 ): string[] {
   const overlap = candidate.commuter_pass_overlap_sections;
   return [
-    `経路：${candidate.route}`,
     /*
-      欄名と同じ定数から引く（#192）。欄の額は採用候補の `fare` そのものなので、
-      文言が2つに割れると同じ額を2通りに呼ぶことになる。
+      欄名と同じ定数から引く（#192・#196）。欄の値は採用候補の `route`・`fare`
+      そのものなので、文言が2つに割れると同じものを欄と内訳で別の語で呼ぶことになる
+      （「経路」単独は用語集の _Avoid_。CONTEXT.md「移動経路」）。
     */
+    `${FIELD_LABELS.route}：${candidate.route}`,
     `${FIELD_LABELS.transport_cost}：${fareText(candidate.fare)}`,
     `所要時間：${candidate.duration}`,
     `乗換回数：${candidate.transfer_count}回`,
