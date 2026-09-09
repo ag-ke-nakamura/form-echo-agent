@@ -4,13 +4,14 @@ AWS Bedrock AgentCore を使ったエージェントと、それに付随する�
 
 ## 構成
 
-3つのプロジェクトを並べています。`hono-app` と `nextjs-app` の2つはルートの pnpm workspace のメンバーで、`agent-app` は npm 管理のまま外にいます（ADR-0015）。
+3つのプロジェクトと、デプロイ済み検証環境の CDK アプリ `infra/`（ADR-0014）を並べています。`hono-app` と `nextjs-app` の2つはルートの pnpm workspace のメンバーで、`agent-app` は npm 管理のまま外にいます（ADR-0015）。
 
 | ディレクトリ | 内容 | パッケージ管理 |
 | --- | --- | --- |
 | `agent-app/` | AgentCore プロジェクト本体。`agentcore` CLI の生成物一式 | npm |
 | `hono-app/` | Hono スキャフォールド（`dev` のみ Bun ランタイム） | pnpm |
 | `nextjs-app/` | Next.js 16 スキャフォールド | pnpm |
+| `infra/` | デプロイ済み検証環境の front door（S3 + CloudFront）。デプロイは `mise run deploy` | npm |
 
 ## セットアップ
 
@@ -27,6 +28,7 @@ lefthook install      # pre-commit / pre-push フックを有効化
 pnpm install
 (cd agent-app/agentcore/cdk && npm ci)
 (cd agent-app/app/FormEchoAgent && npm ci)
+(cd infra && npm ci)
 ```
 
 ## agent-app

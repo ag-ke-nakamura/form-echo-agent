@@ -69,3 +69,29 @@ FORMECHO_RUNTIME_ARN = "arn:aws:bedrock-agentcore:ap-northeast-1:122664578519:ru
 description = "フロントエンドを起動する (http://localhost:3000)"
 dir = "nextjs-app"
 run = "pnpm run dev"
+
+# フロントエンドのビルドと `cdk deploy` を1コマンドにまとめる（#137）。
+#
+# WHY 分けないか: 手順書に2つ並べると、ビルドを忘れた回に古い成果物がそのまま
+# 配信され、しかも `cdk deploy` は成功して見える。CDK 側にも成果物の存在確認は
+# あるが、それが捕まえるのは「一度もビルドしていない」場合だけで「古い」は通る。
+#
+# デプロイは人が手元から実行する（`agentcore deploy` と同じ慣習。CI にデプロイ用の
+# OIDC ロールは作らない）。AWS 認証はローカルの ambient credential provider chain に
+# 任せる。
+[tasks.deploy]
+description = "フロントエンドをビルドして CloudFront + S3 へデプロイする"
+depends = ["deploy:web"]
+dir = "infra"
+run = "npm run cdk -- deploy"
+
+# `NEXT_PUBLIC_API_BASE_URL` を空文字にすると `hc` が相対パスを叩く（空文字は
+# nullish ではないので既定値の localhost には落ちない）。単一オリジンなので
+# これでフロントエンドのコード改修は0行になる。ローカル起動は既定値のまま。
+[tasks."deploy:web"]
+description = "デプロイ用にフロントエンドをビルドする（API は相対パス）"
+dir = "nextjs-app"
+run = "pnpm run build"
+
+[tasks."deploy:web".env]
+NEXT_PUBLIC_API_BASE_URL = ""

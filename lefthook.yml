@@ -44,6 +44,12 @@ pre-commit:
       run: mise exec -- npm exec prettier -- --write {staged_files}
       stage_fixed: true
 
+    - name: front-door-infra-format
+      root: "infra/"
+      glob: "*.{ts,json}"
+      run: mise exec -- npm exec prettier -- --write {staged_files}
+      stage_fixed: true
+
     - name: formecho-agent-format
       root: "agent-app/app/FormEchoAgent/"
       glob: "*.ts"
