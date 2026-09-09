@@ -5,12 +5,14 @@ import type {
 import { describe, expect, it } from "vitest";
 import {
   addCompanion,
-  applyToForm,
+  applyToReservation,
+  cardCount,
   DEFAULT_ROUND_TRIP,
   EMPTY_FORM,
   EMPTY_RESERVATION,
   type FormState,
   removeCompanion,
+  type ReservationState,
   reservationInput,
   reservationPreviewItems,
   resetReservation,
@@ -29,6 +31,7 @@ function output(
     destination: null,
     round_trip: null,
     purpose: null,
+    companion_count: null,
     route_candidates: [],
     message: "",
     sources: [],
@@ -52,6 +55,11 @@ function selectedCandidate(
   };
 }
 
+/** 欄だけを埋めたタブの状態。同行者・利用枚数は初期状態のまま。 */
+function stateWith(fields: Partial<FormState>): ReservationState {
+  return { ...EMPTY_RESERVATION, fields: { ...EMPTY_FORM, ...fields } };
+}
+
 /**
  * プレビューの一覧（ADR-0006）。押す前に何が入るのかを職員が読む唯一の場所。
  *
@@ -64,7 +72,7 @@ describe("reservationPreviewItems", () => {
   it("読み取れなかった欄も行として残す", () => {
     const items = reservationPreviewItems(
       output({ origin: "東京", destination: "大阪" }),
-      EMPTY_FORM,
+      EMPTY_RESERVATION,
     );
     expect(items).toEqual([
       {
@@ -132,7 +140,7 @@ describe("reservationPreviewItems", () => {
     この往復で AI が調べてくるものなので、欠けていれば本当に聞き返すべき回。
   */
   it("移動経路と運賃だけが聞き返しの分母に入る", () => {
-    const items = reservationPreviewItems(output(), EMPTY_FORM);
+    const items = reservationPreviewItems(output(), EMPTY_RESERVATION);
     const denominator = items
       .filter((item) => item.optional !== true)
       .map((item) => item.key);
@@ -142,7 +150,7 @@ describe("reservationPreviewItems", () => {
   it("往復区分は職員が読む語に写す", () => {
     const items = reservationPreviewItems(
       output({ round_trip: "one_way" }),
-      EMPTY_FORM,
+      EMPTY_RESERVATION,
     );
     expect(items.find((item) => item.key === "round_trip")?.value).toBe("片道");
   });
@@ -150,20 +158,17 @@ describe("reservationPreviewItems", () => {
   it("利用目的は職員が読む語に写す", () => {
     const items = reservationPreviewItems(
       output({ purpose: "training" }),
-      EMPTY_FORM,
+      EMPTY_RESERVATION,
     );
     expect(items.find((item) => item.key === "purpose")?.value).toBe("研修");
   });
 
   /*
     プレビューが「押したら入る」と偽らないことの検査（ADR-0006）。判定は
-    `applyToForm` と同じ条件を引いているので、片方だけ動けばここが落ちる。
+    `applyToReservation` と同じ条件を引いているので、片方だけ動けばここが落ちる。
   */
   it("手で入れた欄は、読み取れていても変わらない印を付ける", () => {
-    const current: FormState = {
-      ...EMPTY_FORM,
-      origin: { value: "横浜", source: "manual" },
-    };
+    const current = stateWith({ origin: { value: "横浜", source: "manual" } });
     const items = reservationPreviewItems(output({ origin: "東京" }), current);
     const origin = items.find((item) => item.key === "origin");
     expect(origin).toEqual({
@@ -175,15 +180,13 @@ describe("reservationPreviewItems", () => {
     });
     // 実際に反映しても変わらない。
     expect(
-      applyToForm(current, output({ origin: "東京" })).next.origin,
+      applyToReservation(current, output({ origin: "東京" })).next.fields
+        .origin,
     ).toEqual({ value: "横浜", source: "manual" });
   });
 
   it("手で空にした欄にも守る印を付ける（消したのは意図）", () => {
-    const current: FormState = {
-      ...EMPTY_FORM,
-      origin: { value: "", source: "manual" },
-    };
+    const current = stateWith({ origin: { value: "", source: "manual" } });
     const items = reservationPreviewItems(output({ origin: "東京" }), current);
     expect(items.find((item) => item.key === "origin")?.preserved).toBe(true);
   });
@@ -197,20 +200,23 @@ describe("reservationPreviewItems", () => {
  * ない限り画面には出ない。手入力の保護が壊れると、待っている間に職員が書いた値を
  * 黙って踏み潰す。
  */
-describe("applyToForm", () => {
+describe("applyToReservation", () => {
   it("読み取れた欄だけを AI 由来として入れる", () => {
-    const { next, report } = applyToForm(
-      EMPTY_FORM,
+    const { next, report } = applyToReservation(
+      EMPTY_RESERVATION,
       output({
         origin: "東京",
         route_candidates: [selectedCandidate({ route: "東京 => 大阪" })],
       }),
     );
-    expect(next.origin).toEqual({ value: "東京", source: "ai" });
-    expect(next.route).toEqual({ value: "東京 => 大阪", source: "ai" });
-    expect(next.transport_cost).toEqual({ value: "14720円", source: "ai" });
+    expect(next.fields.origin).toEqual({ value: "東京", source: "ai" });
+    expect(next.fields.route).toEqual({ value: "東京 => 大阪", source: "ai" });
+    expect(next.fields.transport_cost).toEqual({
+      value: "14720円",
+      source: "ai",
+    });
     // 読み取れなかった欄は触らない。
-    expect(next.destination).toEqual(EMPTY_FORM.destination);
+    expect(next.fields.destination).toEqual(EMPTY_FORM.destination);
     expect(report).toEqual({
       updated: ["出発地", "移動経路", "交通費"],
       preserved: [],
@@ -223,12 +229,12 @@ describe("applyToForm", () => {
    * 何も見つけられず、`route`/`transport_cost` は触らない。
    */
   it("経路候補が0件のときは移動経路・交通費を触らない", () => {
-    const { next, report } = applyToForm(
-      EMPTY_FORM,
+    const { next, report } = applyToReservation(
+      EMPTY_RESERVATION,
       output({ origin: "東京", route_candidates: [] }),
     );
-    expect(next.route).toEqual(EMPTY_FORM.route);
-    expect(next.transport_cost).toEqual(EMPTY_FORM.transport_cost);
+    expect(next.fields.route).toEqual(EMPTY_FORM.route);
+    expect(next.fields.transport_cost).toEqual(EMPTY_FORM.transport_cost);
     expect(report.updated).toEqual(["出発地"]);
   });
 
@@ -238,25 +244,28 @@ describe("applyToForm", () => {
     整形を挟むと契約の形と画面の形が二重定義になる。
   */
   it("日付・日時は出力契約の形のままフォームへ入る", () => {
-    const { next, report } = applyToForm(
-      EMPTY_FORM,
+    const { next, report } = applyToReservation(
+      EMPTY_RESERVATION,
       output({ borrow_at: "2026-10-15", return_at: "2026-10-18T18:00" }),
     );
-    expect(next.borrow_at).toEqual({
+    expect(next.fields.borrow_at).toEqual({
       value: "2026-10-15",
       source: "ai",
     });
-    expect(next.return_at).toEqual({ value: "2026-10-18T18:00", source: "ai" });
+    expect(next.fields.return_at).toEqual({
+      value: "2026-10-18T18:00",
+      source: "ai",
+    });
     expect(report.updated).toEqual(["借りる日", "返す日時"]);
   });
 
   it("手で書いた欄は上書きせず、守ったことを報告に載せる", () => {
-    const current: FormState = {
-      ...EMPTY_FORM,
-      origin: { value: "横浜", source: "manual" },
-    };
-    const { next, report } = applyToForm(current, output({ origin: "東京" }));
-    expect(next.origin).toEqual({ value: "横浜", source: "manual" });
+    const current = stateWith({ origin: { value: "横浜", source: "manual" } });
+    const { next, report } = applyToReservation(
+      current,
+      output({ origin: "東京" }),
+    );
+    expect(next.fields.origin).toEqual({ value: "横浜", source: "manual" });
     expect(report).toEqual({ updated: [], preserved: ["出発地"] });
   });
 
@@ -265,36 +274,33 @@ describe("applyToForm", () => {
     `"default"` になったことでこれと区別が付き、消したまま残せる（ADR-0018）。
   */
   it("手で空にした欄は埋め直さず、守ったことを報告に載せる", () => {
-    const current: FormState = {
-      ...EMPTY_FORM,
-      origin: { value: "", source: "manual" },
-    };
-    const { next, report } = applyToForm(current, output({ origin: "東京" }));
-    expect(next.origin).toEqual({ value: "", source: "manual" });
+    const current = stateWith({ origin: { value: "", source: "manual" } });
+    const { next, report } = applyToReservation(
+      current,
+      output({ origin: "東京" }),
+    );
+    expect(next.fields.origin).toEqual({ value: "", source: "manual" });
     expect(report).toEqual({ updated: [], preserved: ["出発地"] });
   });
 
   /* 初期状態は「既定値」。手入力ではないので AI が上書きできる（ADR-0018）。 */
   it("フォームの初期状態は既定値で、AI が上書きできる", () => {
     expect(EMPTY_FORM.origin).toEqual({ value: "", source: "default" });
-    const { next, report } = applyToForm(
-      EMPTY_FORM,
+    const { next, report } = applyToReservation(
+      EMPTY_RESERVATION,
       output({ origin: "東京" }),
     );
-    expect(next.origin).toEqual({ value: "東京", source: "ai" });
+    expect(next.fields.origin).toEqual({ value: "東京", source: "ai" });
     expect(report.preserved).toEqual([]);
   });
 
   it("同じ値を読み取り直した欄は更新に数えない", () => {
-    const current: FormState = {
-      ...EMPTY_FORM,
-      origin: { value: "東京", source: "ai" },
-    };
-    const { next, report } = applyToForm(
+    const current = stateWith({ origin: { value: "東京", source: "ai" } });
+    const { next, report } = applyToReservation(
       current,
       output({ origin: "東京", destination: "大阪" }),
     );
-    expect(next.origin).toEqual({ value: "東京", source: "ai" });
+    expect(next.fields.origin).toEqual({ value: "東京", source: "ai" });
     expect(report).toEqual({ updated: ["目的地"], preserved: [] });
   });
 });
@@ -323,8 +329,11 @@ describe("reservationInput", () => {
 
   /* AI バッジは「再生成で上書きされる範囲」の印でもある（#38）ので false 側。 */
   it("前回 AI が入れた値は手入力ではない", () => {
-    const { next } = applyToForm(EMPTY_FORM, output({ round_trip: "one_way" }));
-    expect(reservationInput(next)).toEqual({
+    const { next } = applyToReservation(
+      EMPTY_RESERVATION,
+      output({ round_trip: "one_way" }),
+    );
+    expect(reservationInput(next.fields)).toEqual({
       round_trip: { value: "one_way", is_manual: false },
     });
   });
@@ -339,24 +348,26 @@ describe("往復区分", () => {
       value: "round",
       source: "default",
     });
-    const { next, report } = applyToForm(
-      EMPTY_FORM,
+    const { next, report } = applyToReservation(
+      EMPTY_RESERVATION,
       output({ round_trip: "one_way" }),
     );
-    expect(next.round_trip).toEqual({ value: "one_way", source: "ai" });
+    expect(next.fields.round_trip).toEqual({ value: "one_way", source: "ai" });
     expect(report).toEqual({ updated: ["往復区分"], preserved: [] });
   });
 
   it("職員が選んだ値は上書きしない", () => {
-    const current: FormState = {
-      ...EMPTY_FORM,
+    const current = stateWith({
       round_trip: { value: "one_way", source: "manual" },
-    };
-    const { next, report } = applyToForm(
+    });
+    const { next, report } = applyToReservation(
       current,
       output({ round_trip: "round" }),
     );
-    expect(next.round_trip).toEqual({ value: "one_way", source: "manual" });
+    expect(next.fields.round_trip).toEqual({
+      value: "one_way",
+      source: "manual",
+    });
     expect(report).toEqual({ updated: [], preserved: ["往復区分"] });
   });
 });
@@ -422,12 +433,181 @@ describe("resetReservation", () => {
     const reset = resetReservation(filled);
     expect(reset.fields).toEqual(EMPTY_FORM);
     expect(reset.companions).toEqual([]);
-    expect(reset.cardCount).toBe("");
+    // 利用枚数は手入力の固定が外れ、導出（同行者0人 + 職員）へ戻る。
+    expect(cardCount(reset)).toBe("1");
   });
 
   it("行番号は持ち越す", () => {
     expect(resetReservation(filled).nextCompanionNumber).toBe(
       filled.nextCompanionNumber,
+    );
+  });
+});
+
+/**
+ * 同行者の人数の反映（#176）。**氏名は受けない**ので、AI が作るのは空の行だけである。
+ *
+ * WHY テストを持つか: 数え方の取り違え（「Xさんと2人で」＝同行者1人）も、行を作る
+ * 条件（1つでもあれば触らない）も、**行のラベルが連番なので画面を見ても気付けない。**
+ * 職員が名前を書いた行を AI が消すのはこの規則が1つ崩れるだけで起きる。
+ */
+describe("同行者の人数の反映", () => {
+  it("人数が読み取れなければ行を作らず、報告にも載せない", () => {
+    const { next, report } = applyToReservation(
+      EMPTY_RESERVATION,
+      output({ companion_count: null }),
+    );
+    expect(next.companions).toEqual([]);
+    expect(report).toEqual({ updated: [], preserved: [] });
+  });
+
+  it("行が1つも無いときだけ、人数ぶんの空の行を作る", () => {
+    const { next, report } = applyToReservation(
+      EMPTY_RESERVATION,
+      output({ companion_count: 2 }),
+    );
+    expect(next.companions).toEqual([
+      { id: "companion-0", name: "" },
+      { id: "companion-1", name: "" },
+    ]);
+    expect(next.nextCompanionNumber).toBe(2);
+    expect(report).toEqual({ updated: ["同行者"], preserved: [] });
+  });
+
+  /* 0人は「一人で行く」と書かれた回。作る行が無いので報告にも載らない。 */
+  it("0人なら行を作らない", () => {
+    const { next, report } = applyToReservation(
+      EMPTY_RESERVATION,
+      output({ companion_count: 0 }),
+    );
+    expect(next.companions).toEqual([]);
+    expect(report).toEqual({ updated: [], preserved: [] });
+  });
+
+  it("行が1つでもあれば触らず、守ったことを報告に載せる", () => {
+    const current = setCompanionName(
+      addCompanion(EMPTY_RESERVATION),
+      "companion-0",
+      "田中",
+    );
+    const { next, report } = applyToReservation(
+      current,
+      output({ companion_count: 3 }),
+    );
+    expect(next.companions).toEqual([{ id: "companion-0", name: "田中" }]);
+    expect(report).toEqual({ updated: [], preserved: ["同行者"] });
+  });
+
+  /* 総数に合わせて減らすことはしない（職員が足した行を消さない）。 */
+  it("読み取れた人数より行が多くても減らさない", () => {
+    const current = addCompanion(addCompanion(EMPTY_RESERVATION));
+    const { next } = applyToReservation(
+      current,
+      output({ companion_count: 1 }),
+    );
+    expect(next.companions).toHaveLength(2);
+  });
+
+  /* 行番号は消した行のぶんを飛ばして続く（React の key が衝突しない）。 */
+  it("作る行の番号は消した行のぶんを飛ばして続く", () => {
+    const emptied = removeCompanion(
+      addCompanion(EMPTY_RESERVATION),
+      "companion-0",
+    );
+    const { next } = applyToReservation(
+      emptied,
+      output({ companion_count: 2 }),
+    );
+    expect(next.companions.map((row) => row.id)).toEqual([
+      "companion-1",
+      "companion-2",
+    ]);
+  });
+});
+
+/**
+ * ICカード利用枚数（#176）。**同行者の行数から導く。**
+ *
+ * WHY テストを持つか: 同じ数を2箇所に入れさせないための導出なので、**放置すれば必ず
+ * 食い違う**側（AI が2行作ったのを見てから隣の欄に手で3と打つ）を再現できないと、
+ * 導出が壊れても画面は前と同じに見える。職員が上書きできることは、自分のICカードを
+ * 持っている同行者がいる回のために要る。
+ */
+describe("ICカード利用枚数", () => {
+  it("既定は同行者の行数 + 1（職員のぶん）", () => {
+    expect(cardCount(EMPTY_RESERVATION)).toBe("1");
+    expect(cardCount(addCompanion(addCompanion(EMPTY_RESERVATION)))).toBe("3");
+  });
+
+  it("AI が作った行にも追随する", () => {
+    const { next } = applyToReservation(
+      EMPTY_RESERVATION,
+      output({ companion_count: 2 }),
+    );
+    expect(cardCount(next)).toBe("3");
+  });
+
+  it("職員が触ったら固定され、行が増えても動かない", () => {
+    const fixed = setCardCount(EMPTY_RESERVATION, "2");
+    expect(cardCount(fixed)).toBe("2");
+    expect(cardCount(addCompanion(fixed))).toBe("2");
+  });
+
+  /* 「消す」で空にしたのは意図（ADR-0018）。行が増えても埋め直さない。 */
+  it("手で空にしたら空のまま残る", () => {
+    const cleared = setCardCount(EMPTY_RESERVATION, "");
+    expect(cardCount(addCompanion(cleared))).toBe("");
+  });
+});
+
+/**
+ * プレビューの同行者の行（#176）。
+ *
+ * WHY テストを持つか: **読み取れなかったときに行を出さない**ことが要件である。普通の
+ * 出張は同行者がいないので、毎回「同行者: （未入力）」が並ぶと聞き返しが意味を失う。
+ */
+describe("プレビューの同行者の行", () => {
+  it("人数が読み取れたときだけ出る", () => {
+    expect(
+      reservationPreviewItems(output(), EMPTY_RESERVATION).some(
+        (item) => item.key === "companions",
+      ),
+    ).toBe(false);
+    const items = reservationPreviewItems(
+      output({ companion_count: 2 }),
+      EMPTY_RESERVATION,
+    );
+    expect(items.find((item) => item.key === "companions")).toEqual({
+      key: "companions",
+      label: "同行者",
+      value: "2人",
+      preserved: false,
+      optional: true,
+    });
+  });
+
+  /* 0人は作る行が無い。錠が無いと反映のボタンが生きる（`hasApplicableItems`）。 */
+  it("0人には錠を付ける（押しても何も起きない）", () => {
+    const items = reservationPreviewItems(
+      output({ companion_count: 0 }),
+      EMPTY_RESERVATION,
+    );
+    const companions = items.find((item) => item.key === "companions");
+    expect(companions?.value).toBe("0人");
+    expect(companions?.preserved).toBe(true);
+    expect(companions?.preservedReason).toBe("作る行はありません");
+  });
+
+  it("既に行があるときは変わらないと分かる", () => {
+    const current = addCompanion(EMPTY_RESERVATION);
+    const items = reservationPreviewItems(
+      output({ companion_count: 2 }),
+      current,
+    );
+    const companions = items.find((item) => item.key === "companions");
+    expect(companions?.preserved).toBe(true);
+    expect(companions?.preservedReason).toBe(
+      "同行者の行が既にあるため変更しません",
     );
   });
 });
