@@ -7,6 +7,7 @@ import {
 } from "@/components/ai-assistant/ai-notice";
 import { TabHeading } from "@/components/screen-layout";
 import { FREE_PROMPT_TASK_ID, requestAiTask } from "@/lib/api";
+import { MAX_PROMPT_LENGTH } from "@/lib/contracts/limits";
 import { isPromptRequired } from "@/lib/contracts/prompt-requirement";
 import { type ErrorGuidance, errorGuidanceFor } from "@/lib/error-guidance";
 
@@ -21,10 +22,7 @@ import { type ErrorGuidance, errorGuidanceFor } from "@/lib/error-guidance";
  * **検証メッセージ**（user message になる）の2つで、返るのは**回答本文**だけである。
  */
 
-/** 契約と同じ上限（`MAX_PROMPT_LENGTH`）。打ち切ってから BFF に弾かれるより短い。 */
-const MAX_LENGTH = 10000;
-
-export function PromptLabPanel() {
+export function FreePromptPanel() {
   const systemPromptId = useId();
   const messageId = useId();
 
@@ -50,7 +48,8 @@ export function PromptLabPanel() {
   /*
     どちらかが空なら送れない（ADR-0022）。検証メッセージの可否は契約の表から引く
     — 画面に「必須」と書き写すと、表が変わったときにここだけ古い判断で残る。
-    持ち込みシステムプロンプトのほうは入力契約が `min(1)` で縛っている。
+    持ち込みシステムプロンプトのほうは必須が入力契約に埋まっている（空文字も
+    空白だけも `freePromptInputSchema` が弾く）ので、ここは同じ判断を先に出すだけ。
   */
   const submittable =
     systemPrompt.trim() !== "" && (!promptRequired || message.trim() !== "");
@@ -106,7 +105,7 @@ export function PromptLabPanel() {
           value={systemPrompt}
           onChange={(event) => setSystemPrompt(event.target.value)}
           rows={10}
-          maxLength={MAX_LENGTH}
+          maxLength={MAX_PROMPT_LENGTH}
           placeholder="あなたは自治体職員の業務を支援するアシスタントです。..."
           className="mt-2 w-full rounded-md border border-solid-gray-600 bg-white p-3 text-dns-16N-130 text-solid-gray-900 focus:outline-none focus:ring-2 focus:ring-solid-blue-700"
         />
@@ -122,11 +121,16 @@ export function PromptLabPanel() {
           value={message}
           onChange={(event) => setMessage(event.target.value)}
           rows={4}
-          maxLength={MAX_LENGTH}
+          maxLength={MAX_PROMPT_LENGTH}
           placeholder="出張の準備で気を付けることを教えてください"
           className="mt-2 w-full rounded-md border border-solid-gray-600 bg-white p-3 text-dns-16N-130 text-solid-gray-900 focus:outline-none focus:ring-2 focus:ring-solid-blue-700"
         />
 
+        {!submittable && (
+          <p className="mt-2 text-dns-12N-130 text-solid-gray-600">
+            2欄とも書くと送信できます。
+          </p>
+        )}
         <div className="mt-3 flex justify-end">
           <button
             type="submit"

@@ -1529,6 +1529,22 @@ describe('playground.free-prompt（ADR-0020）', () => {
     expect(fakeModelScript.calls).toHaveLength(0);
   });
 
+  it('空白だけの持ち込みシステムプロンプトも弾かれる', async () => {
+    /*
+      こちらは必須の構造化入力なので、`prompt` と違って「無かったこと」にできない
+      （無かったことにすると、何も指示していない状態の応答が返る）。curl で直接
+      叩かれる経路が残るので、画面の送信ボタンだけでは塞がらない。
+    */
+    const response = await invokeBoundary({
+      taskId: FREE_PROMPT_TASK_ID,
+      prompt: FREE_PROMPT_MESSAGE,
+      input: { system_prompt: '  \n  ' },
+    });
+
+    expect(expectError(response).code).toBe('INVALID_INPUT');
+    expect(fakeModelScript.calls).toHaveLength(0);
+  });
+
   it('検証メッセージが無いと INVALID_INPUT になり、モデルを呼ばない', async () => {
     /*
       #199 で ADR-0020 の「検証メッセージは空でもよい」を狭めた。空だと user message が

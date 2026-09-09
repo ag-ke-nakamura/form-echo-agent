@@ -10,16 +10,20 @@ import { errorGuidanceFor } from "./error-guidance";
  * なった。ここで守るのは**渡された側の案内に非AI経路が漏れないこと**である。
  */
 
-/** 画面が受け取りうるエラーコード。契約側（`AppType`）に対して型で照合する。 */
-const CODES = [
-  "INVALID_INPUT",
-  "INVALID_TASK_ID",
-  "PARSE_FAILED",
-  "TIMEOUT",
-  "RUNTIME_UNAVAILABLE",
-  "GUARDRAIL_BLOCKED",
-  "INTERNAL_ERROR",
-] as const satisfies readonly AiErrorCode[];
+/**
+ * 画面が受け取りうるエラーコード。**`Record` のキーから起こす**ので、BFF がコードを
+ * 足すと（`AppType` 経由で型が届き）ここが型検査で追加を要求する。配列に
+ * `satisfies readonly AiErrorCode[]` と書くだけでは、足された1つが黙って未検査になる。
+ */
+const CODES = Object.keys({
+  INVALID_INPUT: true,
+  INVALID_TASK_ID: true,
+  PARSE_FAILED: true,
+  TIMEOUT: true,
+  RUNTIME_UNAVAILABLE: true,
+  GUARDRAIL_BLOCKED: true,
+  INTERNAL_ERROR: true,
+} satisfies Record<AiErrorCode, true>) as AiErrorCode[];
 
 const WITH_PATH = { hasNonAiPath: true };
 const WITHOUT_PATH = { hasNonAiPath: false };
@@ -31,6 +35,16 @@ describe("非AI経路を持つタブ", () => {
     expect(guidance.offersNonAiPath).toBe(true);
     expect(guidance.nextStep).toContain("フォーム");
   });
+
+  it.each(["INVALID_TASK_ID", "PARSE_FAILED", "INTERNAL_ERROR"] as const)(
+    "%s は導線を出したままである（既存4タブの回帰）",
+    (code) => {
+      const guidance = errorGuidanceFor(code, WITH_PATH);
+
+      expect(guidance.offersNonAiPath).toBe(true);
+      expect(guidance.nextStep).toContain("フォーム");
+    },
+  );
 
   it("タイムアウトと Runtime 障害で案内が違う", () => {
     // もう一度送れば直るのかどうかが、赤い枠の中から読めること。

@@ -207,10 +207,23 @@ export type RecommendScheduleInput = z.infer<
  * 誤読させないため。上限は `prompt` と同じ（既存の Skill 全文を貼っても収まる）。
  */
 export const freePromptInputSchema = z.object({
+  /*
+    空白だけも「書かれなかった」として扱う（ADR-0022 が `prompt` に置いたのと同じ
+    判断を、必須の構造化入力であるこちらにも置く）。`min(1)` は空文字しか弾かないので
+    足りない。**弾く側に倒す**のは、こちらが必須だからである — 任意の taskId を
+    巻き込む `prompt` 側と違い、無かったことにする先が無い。
+
+    画面が送信ボタンで止めるだけでは足りない。この Runtime は curl で直接叩かれる
+    （`agentcore dev` の備え付け UI は `taskId` を付けられない）ので、塞ぎたかった
+    「指示していない状態の応答をプロンプトの効きと誤読する」がそこで再現する。
+  */
   system_prompt: z
     .string()
     .min(1)
     .max(MAX_PROMPT_LENGTH)
+    .refine((value) => value.trim() !== '', {
+      error: '持ち込みシステムプロンプトが空白だけです',
+    })
     .describe('職員が持ち込む system prompt。そのままモデルへ渡る'),
 })
 

@@ -5,7 +5,7 @@ import { AvailabilityPanel } from "@/features/meeting/availability/availability-
 import { CandidatesPanel } from "@/features/meeting/candidates/candidates-panel";
 import { MeetingProvider } from "@/features/meeting/meeting-provider";
 import { RecommendPanel } from "@/features/meeting/recommend/recommend-panel";
-import { PromptLabPanel } from "@/features/playground/prompt-lab-panel";
+import { FreePromptPanel } from "@/features/playground/free-prompt-panel";
 import { ReservationPanel } from "@/features/ic-card/reservation-panel";
 
 /**
@@ -46,7 +46,7 @@ export function FormEchoTabs() {
     "meeting-recommend": (
       <RecommendPanel active={activeTabId === "meeting-recommend"} />
     ),
-    playground: <PromptLabPanel />,
+    playground: <FreePromptPanel />,
   };
 
   return (

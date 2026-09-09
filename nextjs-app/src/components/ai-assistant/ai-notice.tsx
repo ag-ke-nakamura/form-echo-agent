@@ -133,7 +133,7 @@ export function ApplyReportView({ report }: { report: ApplyReport }) {
 export function AiErrorNotice({
   guidance,
   taskId,
-  nonAiPathHint = "",
+  nonAiPathHint,
   exhausted = false,
 }: {
   guidance: ErrorGuidance;

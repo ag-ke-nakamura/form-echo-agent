@@ -406,6 +406,17 @@ describe('入力の門', () => {
     expect(fakeRuntimeScript.calls).toHaveLength(0)
   })
 
+  it('持ち込みシステムプロンプトが空白だけなら拒否する', async () => {
+    // 必須の欄なので「書かれなかった」＝弾く（ADR-0022 と同じ判断を `input` 側にも）。
+    const response = await postTask({
+      ...REQUESTS['playground.free-prompt'],
+      input: { system_prompt: '  \n  ' },
+    })
+
+    expect((await expectError(response)).code).toBe('INVALID_INPUT')
+    expect(fakeRuntimeScript.calls).toHaveLength(0)
+  })
+
   it('検証メッセージが空白だけなら拒否する', async () => {
     // 必須（ADR-0022）。空白だけは「書かれなかった」として扱われるので、
     // `min(1)` ではなくこの経路で落ちる。
