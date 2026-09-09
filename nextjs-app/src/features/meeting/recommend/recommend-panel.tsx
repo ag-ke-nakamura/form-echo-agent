@@ -78,6 +78,7 @@ import {
   type MeetingInfo,
 } from "../shared/meeting-info";
 import { TabHeading } from "@/components/screen-layout";
+import { useMeeting } from "../meeting-provider";
 
 /**
  * AI評価ラベルの chip の配色（設計書 4.3節）。
@@ -128,10 +129,8 @@ const REJECTED_STILL_SELECTABLE =
   "これらの候補は参加可能人数が少ないため却下候補となっていますが、状況に応じて選択することも可能です。";
 
 export function RecommendPanel({
-  meetingInfo,
   active,
 }: {
-  meetingInfo: MeetingInfo;
   /**
    * このタブが表示されているか。**AI 推論を始める合図**（設計書 10.1節）。
    *
@@ -142,6 +141,16 @@ export function RecommendPanel({
    */
   active: boolean;
 }) {
+  /*
+    会議情報は会議 feature の `MeetingProvider` から読む（#159）。参加形式と所要時間は
+    参加可否表とともに Runtime へ渡す与件であり（ADR-0005）、モックの表が持つべき
+    ものではない。**候補日程は読まない** — この画面の参加可否表は自分のモックで
+    （`availability-table.ts`）、候補日設定・参加可否タブとは連動しない（#58）。
+    連動させると、焼いた行が手入力として扱われ、AI が候補日程を作り直したときに
+    サンプル行の上へ積み上がる。
+  */
+  const meetingInfo = useMeeting().meetingInfo.info;
+
   const [tableSeed, setTableSeed] = useState(INITIAL_TABLE_SEED);
   const [tableMode, setTableMode] = useState<TableMode>("complete");
   const table = useMemo(

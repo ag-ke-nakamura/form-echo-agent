@@ -8,10 +8,8 @@ import { ManualInputDivider, TabHeading } from "@/components/screen-layout";
 import { CANDIDATES_TASK_ID } from "@/lib/api";
 import { candidateLimitReason } from "../shared/candidate-limit";
 import { candidateLabel, type MeetingInfo } from "../shared/meeting-info";
-import {
-  type MeetingInfoApi,
-  MeetingInfoFields,
-} from "../shared/meeting-info-fields";
+import { MeetingInfoFields } from "../shared/meeting-info-fields";
+import { useMeeting } from "../meeting-provider";
 import {
   type CalendarCandidate,
   candidateConflicts,
@@ -27,15 +25,13 @@ import {
   type SlotState,
 } from "./candidate-calendar";
 import { newCandidatePreviewItems } from "./candidates-form";
-import type { CandidateCalendarApi } from "./use-candidate-calendar";
 
-export function CandidatesPanel({
-  candidates,
-  meetingInfo,
-}: {
-  candidates: CandidateCalendarApi;
-  meetingInfo: MeetingInfoApi;
-}) {
+export function CandidatesPanel() {
+  /*
+    会議情報と候補日程は会議 feature の `MeetingProvider` が持つ（#159）。参加可否
+    タブが同じ候補日程を読み、参加可否・候補日提案タブが同じ会議情報を読むため。
+  */
+  const { candidates, meetingInfo } = useMeeting();
   const durationMinutes = meetingInfo.info.durationMinutes;
 
   /**

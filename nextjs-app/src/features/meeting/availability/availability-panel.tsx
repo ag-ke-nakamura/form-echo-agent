@@ -5,7 +5,10 @@ import type { Availability } from "@/lib/contracts/meeting";
 import { AlertCircle } from "lucide-react";
 import { useId, useState } from "react";
 import { AiAssistant } from "@/components/ai-assistant/ai-assistant";
-import type { SelectedCandidate } from "../candidates/candidate-calendar";
+import {
+  type SelectedCandidate,
+  selectedCandidates,
+} from "../candidates/candidate-calendar";
 import {
   AiBadge,
   type ApplyReport,
@@ -27,41 +30,36 @@ import {
   candidateLabel,
   candidateRangeText,
   dateHeadingText,
-  type MeetingInfo,
 } from "../shared/meeting-info";
 import { MeetingInfoHeader } from "../shared/meeting-info-fields";
+import { useMeeting } from "../meeting-provider";
 import { ManualInputDivider, TabHeading } from "@/components/screen-layout";
 
-type AvailabilityPanelProps = {
+export function AvailabilityPanel() {
+  const meeting = useMeeting();
   /**
-   * 参加可否を答える対象の候補日程。候補日程タブが持っているものを受け取る。
+   * 参加可否を答える対象の候補日程。候補日設定タブが選んだものを会議 feature の
+   * `MeetingProvider` から読む（#159）。
    *
    * WHY: このタブの AI は既にある候補日程へ可否を付けるだけで、候補日程そのものを
    * 作らない。対象が無ければ AI が何を答えても当てる先が無く、必ず空振りする。
-   * 候補日程を作る場所はこの画面に既にあるので、そこから引く。
+   * 候補日程を作る場所はこの画面の隣に既にあるので、そこから引く。
    *
-   * **日付だけでなく識別子と開始時刻ごと受け取る**（ADR-0005）。この一覧をそのまま
+   * **日付だけでなく識別子と開始時刻ごと読む**（ADR-0005）。この一覧をそのまま
    * 与件として Runtime へ渡すので、画面の表示に要る分だけに削ると渡せなくなる。
    */
-  candidates: readonly SelectedCandidate[];
+  const candidates = selectedCandidates(meeting.candidates.candidates);
   /**
-   * ヘッダーに出す会議情報。タブ2で職員が入れたものを受け取る。
+   * ヘッダーに出す会議情報。タブ2で職員が入れたもの。
    *
    * WHY: 参加者は「何の会議に答えているのか」を知らずにこの画面へ来る（本来は
-   * メールのリンクから開く画面）。会議情報を持つのはタブ2なので、候補日程と同じ
-   * 経路で受け取る。**書き換えはしない** — 参加者が会議の性質を変える画面ではない
-   * ので、`MeetingInfoApi` ではなく値だけを受ける。
+   * メールのリンクから開く画面）。**書き換えはしない** — 参加者が会議の性質を変える
+   * 画面ではないので、`MeetingInfoApi` ではなく値（`info`）だけを読む。
    *
    * 参加形式はここでは表示だけの値ではない。**参加可否の選択肢を決める**
    * （`CONTEXT.md`「参加形式」）ので、ラジオの組み立てと AI 出力の正規化が引く。
    */
-  meetingInfo: MeetingInfo;
-};
-
-export function AvailabilityPanel({
-  candidates,
-  meetingInfo,
-}: AvailabilityPanelProps) {
+  const meetingInfo = meeting.meetingInfo.info;
   /**
    * 候補日程の識別子をキーにした回答。
    *
