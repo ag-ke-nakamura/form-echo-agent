@@ -274,17 +274,35 @@ function toRoundTrip(value: string): RoundTrip {
 /**
  * Runtime へ渡す与件（ADR-0017）。**値と「職員が手で入れたか」の組で渡す**（ADR-0018）。
  *
- * WHY 画面（`.tsx`）で組み立てないか: `is_manual` の導出（`source === "manual"`）は
- * 判断である。AI が入れた値（`"ai"`）と既定値（`"default"`）がどちらも `false` に
- * なるのは、**AI バッジが「再生成で上書きされる範囲」の印でもある**から（#38）で、
- * この対応が崩れると AI が直せる欄と画面が守る欄が食い違う。
+ * 載せるのは運賃の額を決める3欄だけ（出発地・目的地・往復区分）。借りる日・返す日時・
+ * 利用目的は経路計算に使わないので、手入力が守られて AI の抽出が入らなくても
+ * フォームは自己矛盾しない。
+ *
+ * WHY 画面（`.tsx`）で組み立てないか: `is_manual` の導出が判断だからである。**`isPreserved`
+ * から引く** — 「AI が直せる欄」と「画面が守る欄」は同じ条件でなければならず、2箇所に
+ * 書くと片方だけ動いたときに AI が直した値が黙って捨てられる。AI が入れた値（`"ai"`）と
+ * 既定値（`"default"`）がどちらも `false` になるのは、**AI バッジが「再生成で上書きされる
+ * 範囲」の印でもある**から（#38）。
  */
 export function reservationInput(fields: FormState): ParseReservationInput {
   const roundTrip = fields.round_trip;
   return {
+    /*
+      出発地・目的地は打たれた文字列をそのまま渡す（#170）。空なら空文字列で、
+      「打っていない」も与件である — 何も渡さないと、AI は前回の会話に残った
+      古いフォームの値を最後の与件として読む。
+    */
+    origin: {
+      value: fields.origin.value,
+      is_manual: isPreserved(fields.origin),
+    },
+    destination: {
+      value: fields.destination.value,
+      is_manual: isPreserved(fields.destination),
+    },
     round_trip: {
       value: toRoundTrip(roundTrip.value),
-      is_manual: roundTrip.source === "manual",
+      is_manual: isPreserved(roundTrip),
     },
   };
 }

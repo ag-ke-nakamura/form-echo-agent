@@ -21,7 +21,11 @@ import type {
   RecommendScheduleInput,
   TaskId,
 } from './schemas/index.js'
-import { ALLOWED_TASK_IDS, MAX_PROMPT_LENGTH } from './schemas/index.js'
+import {
+  ALLOWED_TASK_IDS,
+  MAX_PLACE_LENGTH,
+  MAX_PROMPT_LENGTH,
+} from './schemas/index.js'
 
 /**
  * BFF の HTTP 境界（#23 のシームその2、#41）。
@@ -34,10 +38,12 @@ import { ALLOWED_TASK_IDS, MAX_PROMPT_LENGTH } from './schemas/index.js'
  */
 
 /**
- * 交通ICの与件。往復区分は職員が「移動の条件」で選ぶもので、既定値は往復（#168）。
- * `is_manual` は職員が手で選んだかどうか（ADR-0018）。
+ * 交通ICの与件（#168・#170）。出発地・目的地・往復区分を職員が「移動の条件」で決める。
+ * `is_manual` は職員が手で入れたかどうか（ADR-0018）。
  */
 const RESERVATION_INPUT: ParseReservationInput = {
+  origin: { value: '霞ヶ関駅（東京都）', is_manual: false },
+  destination: { value: '虎ノ門ヒルズ', is_manual: true },
   round_trip: { value: 'round', is_manual: false },
 }
 
@@ -428,7 +434,33 @@ describe('構造化入力', () => {
     await expectSuccess(response)
     // 空白だけの追加指示は「書かれなかった」として落ちる（Runtime へ渡さない）。
     expect(lastInvocation().prompt).toBeUndefined()
+    // 出発地・目的地は値と「職員が手で入れたか」の組でそのまま届く（#170）。
     expect(lastInvocation().input).toEqual(RESERVATION_INPUT)
+  })
+
+  it('出発地・目的地が空でも与件として通す', async () => {
+    /*
+      #170: 空文字列は未入力を表す与件で、不適合ではない。ここで弾くと、追加指示に
+      場所を書いてフォームを空のままにする使い方（AI が両欄を埋める向き）が消える。
+    */
+    fakeRuntimeScript.write(
+      runtimeReturns(VALID_RESULTS['ic-card.parse-reservation']),
+    )
+    const emptyPlaces: ParseReservationInput = {
+      ...RESERVATION_INPUT,
+      origin: { value: '', is_manual: false },
+      destination: { value: '', is_manual: false },
+    }
+
+    const response = await postTask({
+      taskId: 'ic-card.parse-reservation',
+      prompt: '来月15日に霞ヶ関から虎ノ門ヒルズへ',
+      input: emptyPlaces,
+      sessionId: SESSION_ID,
+    })
+
+    await expectSuccess(response)
+    expect(lastInvocation().input).toEqual(emptyPlaces)
   })
 
   it.each(NEEDS_INPUT)('%s に構造化入力が無ければ拒否する', async (taskId) => {
@@ -444,18 +476,46 @@ describe('構造化入力', () => {
     {
       name: '往復区分が値域の外',
       taskId: 'ic-card.parse-reservation',
-      input: { round_trip: { value: 'one', is_manual: false } },
+      input: {
+        ...RESERVATION_INPUT,
+        round_trip: { value: 'one', is_manual: false },
+      },
     },
     {
       // ADR-0018: 印が落ちると、AI は手入力の欄を直してよいと読む。
       name: '往復区分に手入力かどうかが無い',
       taskId: 'ic-card.parse-reservation',
-      input: { round_trip: { value: 'round' } },
+      input: { ...RESERVATION_INPUT, round_trip: { value: 'round' } },
     },
     {
       name: '往復区分そのものが無い',
       taskId: 'ic-card.parse-reservation',
       input: {},
+    },
+    {
+      // #170: 欄が空なのか届いていないのかは、AI からは区別が付かない。
+      name: '出発地そのものが無い',
+      taskId: 'ic-card.parse-reservation',
+      input: {
+        destination: RESERVATION_INPUT.destination,
+        round_trip: RESERVATION_INPUT.round_trip,
+      },
+    },
+    {
+      /*
+        #170: 出発地・目的地は Runtime で Guardrail チェックに通るが、あれは内容の
+        検査であって長さは見ない。**BFF がここを通すと、上限の無い自由文字列が
+        そのまま Guardrail の往復とモデルの文脈を太らせる。**
+      */
+      name: '目的地が長すぎる',
+      taskId: 'ic-card.parse-reservation',
+      input: {
+        ...RESERVATION_INPUT,
+        destination: {
+          value: 'あ'.repeat(MAX_PLACE_LENGTH + 1),
+          is_manual: true,
+        },
+      },
     },
     {
       name: '所要時間が選択肢の外',

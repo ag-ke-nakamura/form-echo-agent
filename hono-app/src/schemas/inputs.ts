@@ -44,12 +44,44 @@ function manualAware<T extends z.ZodType>(value: T) {
 }
 
 /**
- * `ic-card.parse-reservation` の入力（往復区分。#168）。
+ * 出発地・目的地の長さの上限（#170）。
+ *
+ * WHY 縛るか: この2欄は形で縛れない（駅名・建物名・組織名を許す）ので、`input` に
+ * 自由文字列を置かないという ADR-0004 の縛りが使えない。代わりに Runtime の Guardrail
+ * チェックへ通す（ADR-0017）が、それは内容の検査であって長さは見ない。上限が無いと
+ * 1つの欄で Guardrail の往復とモデルの文脈をいくらでも太らせられる（`MAX_PROMPT_LENGTH`
+ * が `prompt` に掛かっているのと同じ理由）。Runtime も自分の複製で同じ上限を持つ
+ * （ADR-0011）が、**画面から来た値を Runtime へ渡す前に見るのは BFF だけである。**
+ */
+export const MAX_PLACE_LENGTH = 200
+
+/**
+ * 出発地または目的地（#170）。**職員がフォームに打った自由文字列。**
+ *
+ * **空文字列は未入力**を表す。フォームの欄が空のまま生成を押す回があるので、
+ * 「打っていない」をそのまま渡せる必要がある。
+ */
+const placeSchema = z.string().max(MAX_PLACE_LENGTH)
+
+/**
+ * `ic-card.parse-reservation` の入力（出発地・目的地・往復区分。#168・#170）。
  *
  * **運賃の額を決める与件だけを載せる**（ADR-0017）。往復区分が無かった間、Skill の
- * 「往復なら往復分」は AI が往復かどうかを知る手段が無く死んでいた。
+ * 「往復なら往復分」は AI が往復かどうかを知る手段が無く死んでいた。出発地・目的地が
+ * 無かった間は、**追加指示を空にして生成を押すと AI に材料が何も無く経路が空で
+ * 返った**（#170）。
  */
 export const parseReservationInputSchema = z.object({
+  origin: manualAware(
+    placeSchema.describe(
+      '出発地。駅名・建物名・組織名など。職員が入れていなければ空文字列',
+    ),
+  ),
+  destination: manualAware(
+    placeSchema.describe(
+      '目的地。駅名・建物名・組織名など。職員が入れていなければ空文字列',
+    ),
+  ),
   round_trip: manualAware(roundTripSchema),
 })
 
