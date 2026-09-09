@@ -92,7 +92,7 @@ type AiAssistantProps<TTaskId extends TaskId> = {
   pendingLabel: string;
   /** 送信中の読み上げ文（設計書 3.5節）。「AIが候補日程を生成しています...」など。 */
   generatingMessage: string;
-  /** 反映のボタンの文言（設計書 3.6.4節）。「この内容でフォームに入力」など。 */
+  /** 反映のボタンの文言（設計書 3.6.5節）。「この内容でフォームに入力」など。 */
   applyLabel: string;
   /** 抽出・判定できなかった行に添える文字列（設計書 3.6.1節・4.6.1節）。 */
   emptyItemText: string;
@@ -343,7 +343,7 @@ export function AiAssistant<TTaskId extends TaskId>({
     if (preview === null) return;
     setApplied(handlers.current.onApply(preview.result));
     setPreview(null);
-    // 設計書 3.6.4節・5.1節: 反映するとアシスタントが縮む。下のフォームを見せる。
+    // 設計書 3.6.5節・5.1節: 反映するとアシスタントが縮む。下のフォームを見せる。
     setExpanded(false);
     /*
       縮めると、いま押したボタンごと `hidden` の内側に入る。フォーカスは行き先を
@@ -354,7 +354,7 @@ export function AiAssistant<TTaskId extends TaskId>({
   }
 
   /**
-   * 書き直しへ戻る（設計書 3.6.4節）。**プレビューは残す。**
+   * 書き直しへ戻る（設計書 3.6.5節）。**プレビューは残す。**
    *
    * 前の結果を見ながら書き直せるようにするため。消してから書かせると、何が足りな
    * かったのかを思い出しながら打つことになる。

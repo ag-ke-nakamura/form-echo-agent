@@ -49,7 +49,7 @@ export type FormState = Record<
   { value: string; source: FieldSource }
 >;
 
-/** 往復区分の既定値（#168）。出張はほとんど往復なので指南書がこれをプレプリントする。 */
+/** 往復区分の既定値（#168）。出張はほとんど往復なので正典がこれをプレプリントする（2.3節）。 */
 export const DEFAULT_ROUND_TRIP: RoundTrip = "round";
 
 /**
@@ -94,9 +94,9 @@ export const PLACE_PLACEHOLDER = "駅名・地名・建物名など";
  */
 export const EMPTY_FORM: FormState = {
   /*
-    往復区分だけは空で始まらない。出張はほとんど往復なので指南書が往復のプレプリントを
-    求めており、2択のラジオに「未選択」を足すと、職員が選んでいない状態と片道を選んだ
-    状態が同じ見た目になる（#168）。
+    往復区分だけは空で始まらない。出張はほとんど往復なので正典が往復のプレプリントを
+    求めており（設計書 2.3節）、2択のラジオに「未選択」を足すと、職員が選んでいない
+    状態と片道を選んだ状態が同じ見た目になる（#168）。
   */
   round_trip: { value: DEFAULT_ROUND_TRIP, source: "default" },
   borrow_at: { value: "", source: "default" },
@@ -667,7 +667,7 @@ function searchConditionLine(
 const NO_COMMUTER_PASS_OVERLAP = "重複なし";
 
 /**
- * 移動経路候補1件の行（#173。設計書 2.2・2.3節。CONTEXT.md「移動経路候補」）。職員が AI の判断を検算するので、
+ * 移動経路候補1件の行（#173。設計書 3.6.3節。CONTEXT.md「移動経路候補」）。職員が AI の判断を検算するので、
  * 運賃だけでなく所要時間・乗換回数も並べる（少し高いが乗換が少ない候補を自分で選び
  * 直せる）。
  *
@@ -722,7 +722,7 @@ function candidateLines(
 const UNRESOLVED_CITATION = "確認できませんでした";
 
 /**
- * AI提案の内訳（#172・#173。設計書 2節）。**欄の一覧とは別の領域**で、AI が何を
+ * AI提案の内訳（#172・#173。設計書 3.6.3節）。**欄の一覧とは別の領域**で、AI が何を
  * 調べてなぜそれを選んだかを見せる。検索条件（出発地・目的地とその最寄）と、採用
  * 移動経路・その他の移動経路候補が並ぶ。
  *
