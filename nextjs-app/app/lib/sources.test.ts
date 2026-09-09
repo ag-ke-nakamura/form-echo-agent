@@ -1,4 +1,4 @@
-import type { WebSearchCitation } from "./contracts/types";
+import type { WebSearchCitation } from "./api";
 import { describe, expect, it } from "vitest";
 import { linkableSources } from "./sources";
 

@@ -47,6 +47,7 @@ _Avoid_: レスポンス型、スキーマ（単独）、Structured Output（機
 **応答封筒**:
 BFF が画面へ返す JSON のうち、**出力契約**の外側にある取り決め。`sessionId`・`usage`・`citations`・
 エラーの `code` と `message` からなる。AI は関与せず、BFF と画面の2者だけで決まる。
+**この1辺だけは複製ではなく Hono RPC の `AppType` で型が届く**（ADR-0015）。
 _Avoid_: 契約（単独。出力契約と紛れる）、レスポンス（単独）、メタデータ（`citations` は表示義務が掛かる本体であって付随情報ではない）
 
 **Guardrail チェック**:

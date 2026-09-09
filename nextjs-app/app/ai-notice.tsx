@@ -1,4 +1,5 @@
-import type { TaskId, WebSearchCitation } from "./lib/contracts/types";
+import type { WebSearchCitation } from "./lib/api";
+import type { TaskId } from "./lib/contracts/types";
 import {
   AlertCircle,
   Check,

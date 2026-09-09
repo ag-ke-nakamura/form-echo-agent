@@ -1,6 +1,9 @@
 {
   "compilerOptions": {
-    "target": "ES2017",
+    // hono-app のソースが型グラフに入る（ADR-0015）ので、あちらが使う構文まで
+    // 通る必要がある。ES2017 のままだと正規表現の `s` フラグが TS1501 で落ちる。
+    // noEmit なのでブラウザ向けの出力には影響しない（SWC が別に面倒を見る）。
+    "target": "ES2022",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,

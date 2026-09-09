@@ -1,6 +1,6 @@
 "use client";
 
-import type { TaskId, WebSearchCitation } from "./lib/contracts/types";
+import type { TaskId } from "./lib/contracts/types";
 import { isPromptRequired } from "./lib/contracts/prompt-requirement";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
@@ -13,7 +13,12 @@ import {
 import type { ApplyReport } from "./field-source";
 import { formSectionId } from "./form-section";
 import { MAX_CONSECUTIVE_FAILURES, type PreviewItem } from "./lib/ai-preview";
-import { requestAiTask, type TaskInputs, type TaskOutputs } from "./lib/api";
+import {
+  requestAiTask,
+  type TaskInputs,
+  type TaskOutputs,
+  type WebSearchCitation,
+} from "./lib/api";
 import { type ErrorGuidance, errorGuidanceFor } from "./lib/error-guidance";
 
 /**
