@@ -169,7 +169,7 @@ describe("reservationPreviewItems", () => {
       },
       {
         key: "transport_cost",
-        label: "交通費",
+        label: "1人あたり運賃",
         value: null,
         preserved: false,
         optional: false,
@@ -278,7 +278,7 @@ describe("applyToReservation", () => {
     // 読み取れなかった欄は触らない。
     expect(next.fields.borrow_at).toEqual(EMPTY_FORM.borrow_at);
     expect(report).toEqual({
-      updated: ["出発地", "目的地", "移動経路", "交通費"],
+      updated: ["出発地", "目的地", "移動経路", "1人あたり運賃"],
       preserved: [],
     });
   });
@@ -288,7 +288,7 @@ describe("applyToReservation", () => {
    * こと（#100）。`route_candidates` が空配列なら `selectedRouteCandidate` は
    * 何も見つけられず、`route`/`transport_cost` は触らない。
    */
-  it("経路候補が0件のときは移動経路・交通費を触らない", () => {
+  it("経路候補が0件のときは移動経路・1人あたり運賃を触らない", () => {
     const { next, report } = applyToReservation(
       EMPTY_RESERVATION,
       output({ origin: "東京", route_candidates: [] }),
@@ -828,7 +828,7 @@ describe("reservationBreakdown", () => {
       label: "採用移動経路",
       lines: [
         "経路：霞ケ関駅(東京メトロ日比谷線) => 虎ノ門駅",
-        "1人あたり合計運賃：356円",
+        "1人あたり運賃：356円",
         "所要時間：12分",
         "乗換回数：1回",
         "採用理由：運賃が最も安いため",
@@ -866,7 +866,7 @@ describe("reservationBreakdown", () => {
         label: "その他の移動経路候補1",
         lines: [
           "経路：東京 => 名古屋 => 大阪",
-          "1人あたり合計運賃：15000円",
+          "1人あたり運賃：15000円",
           "所要時間：2時間50分",
           "乗換回数：1回",
           "経路検索結果：出典1",
@@ -877,7 +877,7 @@ describe("reservationBreakdown", () => {
         label: "その他の移動経路候補2",
         lines: [
           "経路：東京 => 京都 => 大阪",
-          "1人あたり合計運賃：15200円",
+          "1人あたり運賃：15200円",
           "所要時間：2時間40分",
           "乗換回数：2回",
           "経路検索結果：出典1",
@@ -952,7 +952,7 @@ describe("reservationBreakdown", () => {
       "経路検索結果：確認できませんでした",
     );
     expect(section(sections, "selected-route")?.lines).toContain(
-      "1人あたり合計運賃：14720円",
+      "1人あたり運賃：14720円",
     );
     expect(section(sections, "route-candidate-1")?.lines).toContain(
       "経路検索結果：出典2",

@@ -61,7 +61,7 @@ describe("previewTone", () => {
   it("分母から外れる行は、空でも聞き返しに数えない", () => {
     const items: PreviewItem[] = [
       { key: "route", label: "移動経路", value: "東京 => 大阪" },
-      { key: "transport_cost", label: "交通費", value: "14720円" },
+      { key: "transport_cost", label: "1人あたり運賃", value: "14720円" },
       { key: "borrow_at", label: "借りる日", value: null, optional: true },
     ];
     expect(previewTone(items)).toBe("filled");
@@ -70,7 +70,7 @@ describe("previewTone", () => {
   it("分母の行が空なら聞き返し", () => {
     const items: PreviewItem[] = [
       { key: "route", label: "移動経路", value: null },
-      { key: "transport_cost", label: "交通費", value: null },
+      { key: "transport_cost", label: "1人あたり運賃", value: null },
       { key: "borrow_at", label: "借りる日", value: null, optional: true },
     ];
     expect(previewTone(items)).toBe("incomplete");
