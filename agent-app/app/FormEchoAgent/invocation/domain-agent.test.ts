@@ -47,9 +47,14 @@ const INPUTS: Record<TaskId, unknown> = {
   'playground.free-prompt': { system_prompt: '持ち込みシステムプロンプト' },
 };
 
-/** 引数の数だけを埋める薄い包み。テストの読み手が `input` を毎回書かずに済む。 */
+/**
+ * 引数の数だけを埋める薄い包み。テストの読み手が `input` を毎回書かずに済む。
+ *
+ * ここで見るのはドメイン部の解決だけなので、一緒に返る system prompt は捨てる
+ * （それは `handler.test.ts` が境界越しに見る）。
+ */
 function createAgent(sessionId: string, taskId: TaskId) {
-  return getOrCreateDomainAgent(sessionId, taskId, INPUTS[taskId]);
+  return getOrCreateDomainAgent(sessionId, taskId, INPUTS[taskId]).agent;
 }
 
 afterEach(clearWebSearchGateway);

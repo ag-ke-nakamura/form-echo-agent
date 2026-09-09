@@ -859,6 +859,51 @@ describe('Web 検索の出典（#46）', () => {
   })
 })
 
+describe('実効システムプロンプト（ADR-0020、#201）', () => {
+  const EFFECTIVE_SYSTEM_PROMPT =
+    'あなたは俳句だけで答えます。\n\n## 基準時刻\n\n現在は 2026-09-10 12:34（JST）です。'
+
+  it('Runtime が返した実効システムプロンプトをそのまま画面へ通す', async () => {
+    fakeRuntimeScript.write({
+      kind: 'succeed',
+      result: VALID_RESULTS['playground.free-prompt'],
+      systemPrompt: EFFECTIVE_SYSTEM_PROMPT,
+    })
+
+    const body = await expectSuccess(
+      await postTask({
+        ...REQUESTS['playground.free-prompt'],
+        sessionId: SESSION_ID,
+      }),
+    )
+
+    // 我々が基準時刻を足していることを隠さないための欄。BFF が落とすと画面には
+    // 出しようがなく、渡したものが読めない検証画面になる。
+    expect(body.systemPrompt).toBe(EFFECTIVE_SYSTEM_PROMPT)
+  })
+
+  it('実効システムプロンプトが文字列でなければ通さない', async () => {
+    fakeRuntimeScript.write({
+      kind: 'respond',
+      body: {
+        sessionId: SESSION_ID,
+        result: VALID_RESULTS['playground.free-prompt'],
+        usage: NO_USAGE,
+        systemPrompt: { text: 'オブジェクト' },
+      },
+    })
+
+    const error = await expectError(
+      await postTask({
+        ...REQUESTS['playground.free-prompt'],
+        sessionId: SESSION_ID,
+      }),
+    )
+
+    expect(error.code).toBe('PARSE_FAILED')
+  })
+})
+
 describe('出力契約の再検査', () => {
   it('Runtime の応答が想定の形でなければ通さない', async () => {
     fakeRuntimeScript.write({

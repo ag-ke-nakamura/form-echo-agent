@@ -52,6 +52,16 @@ export interface AiTaskSuccessResponse<TResult = unknown> {
    * Web 検索を使わなかった応答では空配列。持たないドメイン（会議ロジ）でも空配列。
    */
   citations: WebSearchCitation[]
+  /**
+   * モデルへ実際に渡した system prompt の全文（**実効システムプロンプト**。ADR-0020）。
+   *
+   * **`playground.free-prompt` のときだけ値が入る。** 職員が書いた文に Runtime が基準
+   * 時刻の付記を足していることを隠さないための欄で、渡したものが読めない検証画面は
+   * 成立しない。他4タブでは Runtime が載せないので `undefined` のまま。
+   *
+   * この欄は複製せず Hono RPC で `nextjs-app` へ型が届く（ADR-0015）。
+   */
+  systemPrompt?: string
 }
 
 export interface AiErrorResponse {

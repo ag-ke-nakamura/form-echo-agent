@@ -129,6 +129,14 @@ export type AiTaskOutcome<TTaskId extends TaskId> =
        * `result.sources` はモデルの申告なので、遵守をそちらに依存させない。
        */
       citations: WebSearchCitation[];
+      /**
+       * Runtime が実際にモデルへ渡した system prompt の全文（**実効システム
+       * プロンプト**。ADR-0020）。
+       *
+       * **プロンプト検証のときだけ値が入る。** 他4タブの応答には載らない
+       * （Skill 全文が毎回ネットワークに乗るのを避ける）。
+       */
+      systemPrompt?: string;
     }
   | { ok: false; code: AiErrorCode };
 
@@ -243,6 +251,7 @@ export async function requestAiTask<TTaskId extends TaskId>({
       // 静的ファイルが、この欄を持たない版の BFF を叩く並びは残るので、欄の不在は
       // 実行時に受け止める（出典が無いことと検索を使わなかったことは同じ表示になる）。
       citations: body.citations ?? [],
+      systemPrompt: body.systemPrompt,
     };
   } finally {
     clearTimeout(timer);

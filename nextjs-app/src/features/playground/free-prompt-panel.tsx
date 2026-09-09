@@ -30,6 +30,12 @@ export function FreePromptPanel() {
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
   const [answer, setAnswer] = useState<string | null>(null);
+  /**
+   * 実効システムプロンプト（ADR-0020）。**我々が基準時刻の付記を足していることを
+   * 隠さないための欄**なので、送信するまでは無い（何が足されたかは送ってみないと
+   * 分からない）。
+   */
+  const [effectivePrompt, setEffectivePrompt] = useState<string | null>(null);
   const [failure, setFailure] = useState<ErrorGuidance | null>(null);
   /**
    * 会話の継続（ADR-0020）。**持ち込みシステムプロンプトが変わったかを見るのは
@@ -65,6 +71,7 @@ export function FreePromptPanel() {
     // 前の回答本文は残さない。新しい送信の下に古い答えが並ぶと、どちらが今の
     // プロンプトの効きなのか読めない。
     setAnswer(null);
+    setEffectivePrompt(null);
 
     const outcome = await requestAiTask({
       taskId: FREE_PROMPT_TASK_ID,
@@ -76,6 +83,7 @@ export function FreePromptPanel() {
 
     if (outcome.ok) {
       setAnswer(outcome.result.text);
+      setEffectivePrompt(outcome.systemPrompt ?? null);
       setSessionId(outcome.sessionId);
     } else {
       // 書いた2欄はどちらも消さない。書き直して送り直すのがこの画面の使い方である。
@@ -163,6 +171,23 @@ export function FreePromptPanel() {
             {answer}
           </p>
         </div>
+      )}
+
+      {effectivePrompt !== null && (
+        /*
+          折りたたんで**回答本文の下**に置く（ADR-0020、#201）。Skill 全文のような
+          長いプロンプトを貼っても、読みたい回答本文が画面の下へ押し出されない。
+          素の `<details>` で足りるので開閉の状態は持たない。
+        */
+        <details className="mt-6">
+          <summary className="cursor-pointer text-dns-14M-130 text-solid-gray-900">
+            実効システムプロンプト（基準時刻の付記を含む全文）
+          </summary>
+          {/* 回答本文と同じく改行を保ち、HTML としては解釈しない。 */}
+          <pre className="mt-2 whitespace-pre-wrap rounded-md border border-solid-gray-300 bg-solid-gray-50 p-4 text-dns-14N-130 text-solid-gray-900">
+            {effectivePrompt}
+          </pre>
+        </details>
       )}
     </section>
   );

@@ -55,6 +55,13 @@ export interface TaskInvocationResult {
   result: unknown;
   usage: Usage;
   /**
+   * モデルへ渡した system prompt の全文（**実効システムプロンプト**。ADR-0020）。
+   *
+   * **`playground.free-prompt` のときだけ。** 他4タブでは `undefined` にする —
+   * 応答に載せると Skill 全文が毎回ネットワークに乗る。
+   */
+  systemPrompt?: string;
+  /**
    * このリクエストが使った Web 検索の回数（#46）。Web 検索を持たないドメインでは 0。
    *
    * 応答本文には載せない。職員に見せる数字ではなく、実測とログのためのもの。
@@ -89,7 +96,11 @@ export async function invokeTask(
   { taskId, prompt, input, sessionId }: TaskInvocation,
   log: InvocationLogger,
 ): Promise<TaskInvocationResult> {
-  const agent = getOrCreateDomainAgent(sessionId, taskId, input);
+  const { agent, systemPrompt } = getOrCreateDomainAgent(
+    sessionId,
+    taskId,
+    input,
+  );
   /*
     実行制限の壁時計をここで1つ作る（#125）。**Web 検索の予算と同じ理由で
     invocation 全体を包む必要がある** — `agent.invoke` ごとに作ると、`limits` の
@@ -151,6 +162,9 @@ export async function invokeTask(
     // 予算の内側で読む。外へ出ると `AsyncLocalStorage` の文脈が切れて空になる。
     return {
       ...invoked,
+      // 他4タブでは載せない。Skill 全文が毎回ネットワークに乗るだけで、職員が
+      // 読む理由も無い（ADR-0020）。
+      systemPrompt: taskId === FREE_PROMPT_TASK_ID ? systemPrompt : undefined,
       webSearches: webSearchesUsed() ?? 0,
       webSearchHits: webSearchHits(),
     };
