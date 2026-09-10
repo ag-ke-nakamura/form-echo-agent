@@ -93,7 +93,7 @@ run = "pnpm run dev"
 # Basic 認証のパスワードは synth 時に context で注入する（#138）。リポジトリに
 # 直書きすると CI の secret scan と正面衝突するので、ここは環境変数を素通しする
 # だけにする。未設定なら空文字が渡り、スタック側が理由の分かるエラーで止める。
-[tasks.deploy]
+[tasks."deploy:infra"]
 description = "フロントエンドをビルドして front door（CloudFront + S3 + BFF Lambda）へデプロイする（要 FORMECHO_BASIC_AUTH_PASSWORD）"
 depends = ["deploy:web"]
 dir = "infra"
@@ -109,3 +109,55 @@ run = "pnpm run build"
 
 [tasks."deploy:web".env]
 NEXT_PUBLIC_API_BASE_URL = ""
+
+# Runtime（AgentCore）のデプロイ。front door の `deploy` とは別系統で、こちらは
+# `agentcore` CLI が全部やる。CLI は「自分のいるフォルダがプロジェクトルート」として
+# 振る舞うので `dir` が要る。
+#
+# デプロイ後、Runtime ARN が変わったら `dev:deployed` の `FORMECHO_RUNTIME_ARN` と
+# `dev:runtime` の `FORMECHO_WEB_SEARCH_GATEWAY_URL` を手で直す（どちらも
+# `agentcore/.cli/deployed-state.json` に出る）。ここから書き換えると mise.toml を
+# 自分で編集するタスクになるので自動化しない。
+[tasks."deploy:agent"]
+description = "AgentCore Runtime をデプロイする"
+dir = "agent-app"
+run = "agentcore deploy"
+
+# Guardrail 許可の CDK スタック（ADR-0010）。Runtime 実行ロールの ARN を
+# `cdk.json` にキャッシュしてから synth する必要があるので、`depends` で束ねる。
+#
+# WHY 分けないか: `deploy` / `deploy:web` と同じ理由。手順書に2つ並べると
+# キャッシュを忘れた回に古い ARN のまま synth が通ってしまう（`context.runtimeRoleArn`
+# が「無い」場合しかスタック側は止められない。「古い」は通る）。
+#
+# `deploy:agent` には依存させない。Runtime を再デプロイするたびに IAM を触る必要は
+# ないため。ロールが変わったときだけこちらを回す。
+[tasks."deploy:agent-infra"]
+description = "Runtime 実行ロールへの Guardrail 許可（agent-app/infra）をデプロイする"
+depends = ["deploy:agent-infra:cache-role-arn"]
+dir = "agent-app/infra"
+run = "npm run cdk -- deploy"
+
+[tasks."deploy:agent-infra:cache-role-arn"]
+description = "Runtime 実行ロールの ARN を agent-app/infra/cdk.json に書き込む"
+dir = "agent-app/infra"
+run = "npm run cache-runtime-role-arn"
+
+# 初回の立ち上げ用に3つを順番に回す。
+#
+# 順序に意味がある。`deploy:agent-infra` は `agentcore status` で Runtime 実行ロールの
+# ARN を引くので Runtime が先に要り、`deploy:infra` の synth は `agentcore deploy` が
+# 書く `deployed-state.json` から Runtime ARN を読む（#139）。
+#
+# 配列で書くと mise が1つずつ順に実行し、途中で落ちればそこで止まる（`dev` の `:::` は
+# 並行実行の区切りで、こちらとは逆）。
+#
+# **2回目からは個別のタスクを使う。** Runtime を直しただけの回に IAM スタックと front door
+# まで回す必要はない。デプロイ後に `FORMECHO_RUNTIME_ARN` 等を手で直す手順は README にある。
+[tasks."deploy:all"]
+description = "初回向け。Runtime → Guardrail 許可 → front door を順にデプロイする"
+run = [
+  "mise run deploy:agent",
+  "mise run deploy:agent-infra",
+  "mise run deploy:infra",
+]
