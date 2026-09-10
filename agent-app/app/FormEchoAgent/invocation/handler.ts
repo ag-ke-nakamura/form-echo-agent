@@ -2,6 +2,7 @@ import {
   type AiErrorResponse,
   type AiTaskSuccessResponse,
   aiTaskRequestSchema,
+  FREE_PROMPT_TASK_ID,
 } from '../contracts/index.js';
 /*
   出典への落とし込みはツール側に置く（#174）。**出典番号の並びを決めるのが
@@ -91,6 +92,19 @@ export async function handleInvocation(
         error: {
           code: 'GUARDRAIL_BLOCKED',
           message: GUARDRAIL_BLOCKED_MESSAGE,
+          /*
+            **他4タブに対してだけ `verdict` を握り潰す**（ADR-0021 が ADR-0009 を
+            この1点で改訂した）。プロンプト検証タブの職員の仕事はプロンプトを直す
+            ことなので、種別だけの二値では直した効果を測れない。他4タブでは職員の
+            取る行動が変わらないので、回避のオラクルになる情報を渡す理由が無い。
+
+            出力側でブロックされても回答本文は載らない — この経路には `result` が
+            そもそも無い（例外が返り値を追い越している）。
+          */
+          guardrail:
+            taskId === FREE_PROMPT_TASK_ID
+              ? { direction: error.direction, findings: error.verdict.findings }
+              : undefined,
         },
       };
     }

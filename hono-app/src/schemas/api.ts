@@ -64,9 +64,53 @@ export interface AiTaskSuccessResponse<TResult = unknown> {
   systemPrompt?: string
 }
 
+/** Guardrail のチェック種別（#43）。 */
+export const guardrailCheckTypeSchema = z.enum([
+  'promptAttack',
+  'sensitiveInformation',
+  'contentFilter',
+])
+
+export type GuardrailCheckType = z.infer<typeof guardrailCheckTypeSchema>
+
+/**
+ * ブロックの findings（ADR-0021）。**`playground.free-prompt` の応答にだけ載る。**
+ *
+ * 職員のこの画面での仕事はプロンプトを直すことなので、種別だけの二値では直した
+ * 効果を測れない。他4タブでは ADR-0009 の固定文言だけが返る。**載せるかどうかを
+ * 決めるのは Runtime で、BFF は通すだけ** — 判断を2箇所に置くと、片方だけが
+ * 他4タブへ広がったときに気付けない。
+ */
+export const guardrailReportSchema = z.object({
+  /** 入力側でブロックされたのか出力側でブロックされたのか。 */
+  direction: z.enum(['INPUT', 'OUTPUT']),
+  findings: z.array(
+    z.object({
+      checkType: guardrailCheckTypeSchema,
+      /**
+       * 反応したカテゴリまたは PII 型と、そのスコア（`JAILBREAK(1)` /
+       * `my_number(regex)`）。`contentFilter` と `promptAttack` は `severityScore`、
+       * `sensitiveInformation` は `confidenceScore`。
+       */
+      detail: z.string(),
+      /** 日本固有 PII の正規表現（`code-regex`）か AWS 側の判定（`strategy`）か。 */
+      source: z.enum(['code-regex', 'strategy']),
+    }),
+  ),
+})
+
+export type GuardrailReport = z.infer<typeof guardrailReportSchema>
+
 export interface AiErrorResponse {
   error: {
     code: AiErrorCode
     message: string
+    /**
+     * `GUARDRAIL_BLOCKED` かつ `playground.free-prompt` のときだけ（ADR-0021）。
+     * **`message` は他4タブと同じ固定文言のまま。**
+     *
+     * この欄も複製せず Hono RPC で `nextjs-app` へ型が届く（ADR-0015）。
+     */
+    guardrail?: GuardrailReport
   }
 }

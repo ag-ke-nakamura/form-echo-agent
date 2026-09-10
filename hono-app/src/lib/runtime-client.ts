@@ -1,6 +1,11 @@
 import { z } from 'zod'
-import type { AiErrorCode, AiTaskSuccessResponse } from '../schemas/index.js'
+import type {
+  AiErrorCode,
+  AiTaskSuccessResponse,
+  GuardrailReport,
+} from '../schemas/index.js'
 import {
+  guardrailReportSchema,
   isAiErrorCode,
   outputSchemaFor,
   usageSchema,
@@ -11,7 +16,19 @@ import { loadRuntimeTransport } from './runtime-transport.js'
 
 export type RuntimeOutcome =
   | { ok: true; response: AiTaskSuccessResponse }
-  | { ok: false; code: AiErrorCode; message: string }
+  | {
+      ok: false
+      code: AiErrorCode
+      message: string
+      /**
+       * ブロックの findings（ADR-0021）。**Runtime が載せたときだけ通す。**
+       *
+       * 載せるかどうかを決めるのは Runtime（`playground.free-prompt` のときだけ）で、
+       * BFF はここで taskId を見ない。**同じ判断を2箇所に置くと、片方だけが他4タブへ
+       * 広がったときに気付けない。**
+       */
+      guardrail?: GuardrailReport
+    }
 
 /**
  * Runtime を呼び、返ってきたものを出力契約のエラーコードか成功応答に写す。
@@ -80,7 +97,12 @@ export async function invokeRuntime(
   }
 
   if (isRuntimeError(body)) {
-    return { ok: false, code: body.error.code, message: body.error.message }
+    return {
+      ok: false,
+      code: body.error.code,
+      message: body.error.message,
+      guardrail: guardrailReport(body.error),
+    }
   }
 
   const parsed = runtimeSuccessShape(body)
@@ -147,6 +169,26 @@ function isRuntimeError(
   if (typeof error !== 'object' || error === null || !('code' in error))
     return false
   return isAiErrorCode((error as { code: unknown }).code)
+}
+
+/**
+ * ブロックの findings を契約で読む（ADR-0021）。
+ *
+ * **壊れていたら落とすが、`PARSE_FAILED` にはしない。** 出典（`citations`）や実効
+ * システムプロンプトと扱いが逆なのは、こちらが失敗の応答だから — findings を理由に
+ * コードを差し替えると、**Guardrail がブロックしたという事実そのものが画面から
+ * 消えて**「AI の出力形式が不正です」に化ける。落としても画面は固定文言で正しく
+ * ブロックを伝えるので、失うのは findings だけである。黙らせないために記録は残す。
+ */
+function guardrailReport(error: object): GuardrailReport | undefined {
+  if (!('guardrail' in error) || error.guardrail === undefined) return undefined
+  const parsed = guardrailReportSchema.safeParse(error.guardrail)
+  if (parsed.success) return parsed.data
+  console.error(
+    'Runtime が返した Guardrail の findings が契約に適合しません。',
+    parsed.error.issues,
+  )
+  return undefined
 }
 
 function runtimeSuccessShape(body: unknown): AiTaskSuccessResponse | null {

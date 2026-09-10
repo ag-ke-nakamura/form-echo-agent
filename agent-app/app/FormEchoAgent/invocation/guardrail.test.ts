@@ -319,3 +319,81 @@ describe('playground.free-prompt の検査対象（ADR-0020）', () => {
     expect(expectError(response).code).toBe('GUARDRAIL_BLOCKED');
   });
 });
+
+/**
+ * Guardrail の findings をこのタブに限って画面へ出す（ADR-0021、#203）。
+ *
+ * **境界越しに見えるのはここが初めて。** これまでブロックは1ビット（`GUARDRAIL_BLOCKED`）
+ * だったので、判定の中身は `guardrail/*.test.ts` でしか見えなかった。**このチケットの
+ * 主眼は漏れないことのほう**なので、他4タブとの差を同じ場所で見る。
+ */
+describe('プロンプト検証タブの findings（ADR-0021）', () => {
+  const SYSTEM_PROMPT = 'あなたは俳句だけで答えます。';
+  const MESSAGE = '出張の準備について教えてください';
+
+  /** マイナンバー（正規表現）と Prompt Attack（AWS 側）の両方が反応した回。 */
+  const BLOCKED_BY_BOTH = {
+    blocked: true,
+    findings: [
+      {
+        checkType: 'sensitiveInformation' as const,
+        detail: 'my_number(regex)',
+        source: 'code-regex' as const,
+      },
+      {
+        checkType: 'promptAttack' as const,
+        detail: 'PROMPT_INJECTION(0.9)',
+        source: 'strategy' as const,
+      },
+    ],
+  };
+
+  function freePrompt() {
+    return {
+      taskId: 'playground.free-prompt',
+      prompt: MESSAGE,
+      input: { system_prompt: SYSTEM_PROMPT },
+    };
+  }
+
+  it('入力側でブロックされると、反応した種別・スコア・PII 型が返る', async () => {
+    fakeGuardrailScript.write(BLOCKED_BY_BOTH);
+
+    const error = expectError(await invokeBoundary(freePrompt()));
+
+    expect(error.code).toBe('GUARDRAIL_BLOCKED');
+    expect(error.guardrail).toEqual({
+      direction: 'INPUT',
+      findings: BLOCKED_BY_BOTH.findings,
+    });
+  });
+
+  it('出力側でブロックされると向きが OUTPUT になり、回答本文は返らない', async () => {
+    const answer = 'マイナンバーは 1234-5678-9012 です。';
+    fakeModelScript.write({ kind: 'text', text: answer });
+    fakeGuardrailScript.write(
+      { blocked: false, findings: [] },
+      BLOCKED_BY_BOTH,
+    );
+
+    const response = await invokeBoundary(freePrompt());
+
+    expect(expectError(response).guardrail?.direction).toBe('OUTPUT');
+    /*
+      ブロックされた本文は返さない（ADR-0021）。返すと、出力側チェックを置いた理由
+      （F-16。抽出結果に載った PII をアプリケーション層で捕まえる）を自分で潰す。
+    */
+    expect(JSON.stringify(response)).not.toContain('1234-5678-9012');
+  });
+
+  it('他4タブでは findings が漏れない', async () => {
+    fakeGuardrailScript.write(BLOCKED_BY_BOTH);
+
+    // 同じ判定でも、固定文言だけを返す（ADR-0009 はこの4タブでは改訂されていない）。
+    const error = expectError(await invokeBoundary(REQUEST));
+
+    expect(error.code).toBe('GUARDRAIL_BLOCKED');
+    expect(error.guardrail).toBeUndefined();
+    expect(JSON.stringify(error)).not.toContain('PROMPT_INJECTION');
+  });
+});

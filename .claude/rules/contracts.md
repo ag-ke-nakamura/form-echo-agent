@@ -129,6 +129,21 @@ F-27）。`sources` はモデルの申告なので、**使ったのに載せな�
 BFF は壊れた出典を**黙って落とさず** `PARSE_FAILED` にする。落とすと、規約に反したまま
 画面が成功として描く。
 
+## Guardrail の findings は1タブだけに載る
+
+`AiErrorResponse.error.guardrail` は **`playground.free-prompt` がブロックされたときだけ**
+載る（ADR-0021 が ADR-0009 をこの1点で改訂した）。反応したチェック種別・スコア・検知した
+PII 型と、入力側か出力側かが入る。**他4タブは固定文言だけ**である。
+
+**載せるかどうかを決めるのは Runtime の `handler.ts` 1箇所で、BFF も画面も taskId を見ない。**
+2箇所に置くと、片方だけが他4タブへ広がったときに気付けない。境界の試験もそこにある
+（`invocation/guardrail.test.ts` の「他4タブでは findings が漏れない」）。
+
+**BFF はこの欄が壊れていても `PARSE_FAILED` にしない。** 出典（`citations`）や実効システム
+プロンプトと扱いが逆になるのは、こちらが失敗の応答だから — findings を理由にコードを差し替え
+ると、**Guardrail がブロックしたという事実そのものが画面から消えて**「AI の出力形式が不正です」
+に化ける。落として `GUARDRAIL_BLOCKED` のまま通し、記録だけ残す。
+
 ## フロントエンドが値として引くファイル
 
 `meeting.ts`・`recommendation.ts`・`prompt-requirement.ts`。この3つには2つの制約が掛かる。

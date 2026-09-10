@@ -904,6 +904,84 @@ describe('実効システムプロンプト（ADR-0020、#201）', () => {
   })
 })
 
+/**
+ * Guardrail の findings（ADR-0021、#203）。**BFF は通すだけ** — 出すかどうかを決めるのは
+ * Runtime（`playground.free-prompt` のときだけ）で、ここに taskId の分岐を置くと
+ * 同じ判断が2箇所に散る。
+ */
+describe('Guardrail の findings（ADR-0021、#203）', () => {
+  const REPORT = {
+    direction: 'OUTPUT',
+    findings: [
+      {
+        checkType: 'sensitiveInformation',
+        detail: 'my_number(regex)',
+        source: 'code-regex',
+      },
+    ],
+  }
+
+  function runtimeBlocks(guardrail?: unknown): void {
+    fakeRuntimeScript.write({
+      kind: 'respond',
+      body: {
+        error: {
+          code: 'GUARDRAIL_BLOCKED',
+          message: '入力内容に問題があります。',
+          guardrail,
+        },
+      },
+    })
+  }
+
+  it('Runtime が載せた findings をそのまま画面へ通す', async () => {
+    runtimeBlocks(REPORT)
+
+    const error = await expectError(
+      await postTask({
+        ...REQUESTS['playground.free-prompt'],
+        sessionId: SESSION_ID,
+      }),
+    )
+
+    expect(error.code).toBe('GUARDRAIL_BLOCKED')
+    expect(error.guardrail).toEqual(REPORT)
+  })
+
+  it('Runtime が載せなかった回には findings が付かない', async () => {
+    runtimeBlocks()
+
+    const error = await expectError(
+      await postTask({
+        ...REQUESTS['ic-card.parse-reservation'],
+        sessionId: SESSION_ID,
+      }),
+    )
+
+    expect(error.code).toBe('GUARDRAIL_BLOCKED')
+    expect(error.guardrail).toBeUndefined()
+  })
+
+  it('契約に適合しない findings は落とすが、ブロックされた事実は返す', async () => {
+    runtimeBlocks({ direction: 'BOTH', findings: [] })
+
+    const error = await expectError(
+      await postTask({
+        ...REQUESTS['playground.free-prompt'],
+        sessionId: SESSION_ID,
+      }),
+    )
+
+    /*
+      出典や実効システムプロンプトと扱いが逆（あちらは PARSE_FAILED にする）。
+      こちらでコードを差し替えると、**ブロックされたこと自体が画面から消えて**
+      「AI の出力形式が不正です」に化ける。落とすのは findings だけで足りる。
+    */
+    expect(error.code).toBe('GUARDRAIL_BLOCKED')
+    expect(error.guardrail).toBeUndefined()
+  })
+})
+
 describe('出力契約の再検査', () => {
   it('Runtime の応答が想定の形でなければ通さない', async () => {
     fakeRuntimeScript.write({

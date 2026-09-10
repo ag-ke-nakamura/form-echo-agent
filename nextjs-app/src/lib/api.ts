@@ -76,6 +76,16 @@ export type AiErrorCode = Extract<
 export type WebSearchCitation = AiTaskSuccessResponse["citations"][number];
 
 /**
+ * Guardrail がブロックしたときの findings（ADR-0021）。**プロンプト検証タブだけ。**
+ *
+ * `AiErrorCode` と同じく `AppType` から導く（ADR-0015）。複製で持つと、BFF が
+ * チェック種別を増やしたときに画面が古い語彙のまま気付かない。
+ */
+export type GuardrailReport = NonNullable<
+  Extract<AiTaskResponse, { error: unknown }>["error"]["guardrail"]
+>;
+
+/**
  * 応答を待つ上限（設計書 8節「実装時の注意事項」）。
  *
  * WHY 画面が持つか: BFF と Runtime にもそれぞれの上限があるが、それが効かない経路が
@@ -138,7 +148,15 @@ export type AiTaskOutcome<TTaskId extends TaskId> =
        */
       systemPrompt?: string;
     }
-  | { ok: false; code: AiErrorCode };
+  | {
+      ok: false;
+      code: AiErrorCode;
+      /**
+       * Guardrail の findings（ADR-0021）。**`GUARDRAIL_BLOCKED` かつプロンプト検証タブの
+       * ときだけ値が入る。** 他4タブの応答には載らない（ADR-0009 の固定文言のまま）。
+       */
+      guardrail?: GuardrailReport;
+    };
 
 export type AiTaskRequestArgs<TTaskId extends TaskId> = {
   taskId: TTaskId;
@@ -228,8 +246,18 @@ export async function requestAiTask<TTaskId extends TaskId>({
     }
 
     if (!response.ok) {
-      const code = body && "error" in body ? body.error.code : undefined;
-      return { ok: false, code: code ?? "INTERNAL_ERROR" };
+      const error = body && "error" in body ? body.error : undefined;
+      /*
+        型は `AppType` から来るが、それが通るのはビルド時だけ。欄を持たない版の BFF を
+        配信済みの静的ファイルが叩く並びは残るので、実行時に受け止める（`citations` と
+        同じ）。**`code` の既定も外さない** — 素通しにすると `AiErrorCode` の欄に
+        undefined が座り、案内の表を引く側の型が嘘になる。
+      */
+      return {
+        ok: false,
+        code: error?.code ?? "INTERNAL_ERROR",
+        guardrail: error?.guardrail,
+      };
     }
 
     // sessionId まで見る。無いまま成功にすると次の指示が sessionId 未指定で飛び、
