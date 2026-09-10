@@ -9,12 +9,17 @@ import {
 import { TabHeading } from "@/components/screen-layout";
 import {
   FREE_PROMPT_TASK_ID,
+  type GuardrailReport,
   requestAiTask,
   type WebSearchCitation,
 } from "@/lib/api";
 import { MAX_PROMPT_LENGTH } from "@/lib/contracts/limits";
 import { isPromptRequired } from "@/lib/contracts/prompt-requirement";
 import { type ErrorGuidance, errorGuidanceFor } from "@/lib/error-guidance";
+import {
+  guardrailDirectionLabel,
+  guardrailFindingLines,
+} from "./guardrail-findings";
 
 /**
  * プロンプト検証タブ（ADR-0020、#198）。
@@ -51,6 +56,12 @@ export function FreePromptPanel() {
   const [citations, setCitations] = useState<readonly WebSearchCitation[]>([]);
   const [failure, setFailure] = useState<ErrorGuidance | null>(null);
   /**
+   * Guardrail の findings（ADR-0021）。**このタブに限って画面へ出す** — ここでの職員の
+   * 仕事はプロンプトを直すことなので、種別だけの二値では直した効果を測れない。
+   * 他4タブは ADR-0009 の固定文言のままで、Runtime がそもそも載せてこない。
+   */
+  const [guardrail, setGuardrail] = useState<GuardrailReport | null>(null);
+  /**
    * 会話の継続（ADR-0020）。**持ち込みシステムプロンプトが変わったかを見るのは
    * Runtime 側**で、画面は同じセッションを渡し続けるだけでよい。変わっていれば
    * 向こうがセッションを捨てて作り直すので、ここで捨てると追い質問が毎回初回になる。
@@ -86,6 +97,7 @@ export function FreePromptPanel() {
     setAnswer(null);
     setEffectivePrompt(null);
     setCitations([]);
+    setGuardrail(null);
 
     const outcome = await requestAiTask({
       taskId: FREE_PROMPT_TASK_ID,
@@ -103,6 +115,7 @@ export function FreePromptPanel() {
     } else {
       // 書いた2欄はどちらも消さない。書き直して送り直すのがこの画面の使い方である。
       setFailure(errorGuidanceFor(outcome.code, { hasNonAiPath: false }));
+      setGuardrail(outcome.guardrail ?? null);
     }
     setPending(false);
   }
@@ -170,6 +183,7 @@ export function FreePromptPanel() {
       {failure !== null && (
         <div className="mt-4">
           <AiErrorNotice guidance={failure} taskId={FREE_PROMPT_TASK_ID} />
+          {guardrail !== null && <GuardrailFindings report={guardrail} />}
         </div>
       )}
 
@@ -209,6 +223,43 @@ export function FreePromptPanel() {
           </pre>
         </details>
       )}
+    </section>
+  );
+}
+
+/**
+ * Guardrail が反応した内容（ADR-0021、#203）。**このタブ専用で、`ai-notice.tsx` には
+ * 置かない。** 共有の置き場所へ出すと他4タブから引けてしまい、ADR-0009 を改訂した
+ * 範囲（`playground.free-prompt` の1点）を超える。
+ *
+ * 見出しは目に見える `<h3>` にする。`AiErrorNotice` の `role="alert"` の**外**にある
+ * ので読み上げには割り込まない — 割り込ませるべきは「ブロックされた」ことのほうで、
+ * 内訳は職員が読みに来る材料である。見出しが無いと辿り着く手掛かりが消える。
+ */
+function GuardrailFindings({ report }: { report: GuardrailReport }) {
+  const headingId = useId();
+
+  return (
+    <section
+      aria-labelledby={headingId}
+      className="mt-3 rounded-md border border-solid-gray-300 bg-solid-gray-50 p-3"
+    >
+      <h3 id={headingId} className="text-dns-14M-130 text-solid-gray-900">
+        Guardrail が反応した内容
+      </h3>
+      <p className="mt-1 text-dns-12N-130 text-solid-gray-600">
+        ブロックした箇所: {guardrailDirectionLabel(report.direction)}
+      </p>
+      <ul className="mt-2 grid gap-1">
+        {guardrailFindingLines(report).map((line) => (
+          <li key={line.key} className="text-dns-14N-130 text-solid-gray-900">
+            <span className="text-dns-14M-130 text-solid-gray-700">
+              {line.label}
+            </span>{" "}
+            {line.detail}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

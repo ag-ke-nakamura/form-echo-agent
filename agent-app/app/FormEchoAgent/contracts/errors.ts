@@ -22,6 +22,10 @@ export const AI_ERROR_CODES = [
    * どのチェック種別が反応したか（プロンプトインジェクション・個人情報等）は
    * 画面に出さない。詳細を出すとブロックの回避方法を教えることになる
    * （参照ドキュメント 10.4節、`docs/adr/0009-guardrail-block-message-wording.md`）。
+   *
+   * **例外は `playground.free-prompt` の1点だけ**（ADR-0021）。あのタブでは職員の
+   * 仕事がプロンプトを直すことなので、二値では直した効果を測れない。応答の
+   * `error.guardrail` に findings が載る。
    */
   'GUARDRAIL_BLOCKED',
   /** 上のどれにも当てはまらない失敗 */

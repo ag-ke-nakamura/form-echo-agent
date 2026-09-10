@@ -9,6 +9,7 @@ import { authenticate } from './middleware/auth.js'
 import type {
   AiErrorCode,
   AiErrorResponse,
+  GuardrailReport,
   TaskInputProblem,
 } from './schemas/index.js'
 import {
@@ -134,7 +135,8 @@ const routes = app.post('/api/ai/tasks', async (c) => {
   })
 
   if (!outcome.ok) {
-    return fail(c, outcome.code, outcome.message)
+    // ブロックの findings は Runtime が載せた回だけ通す（ADR-0021）。
+    return fail(c, outcome.code, outcome.message, outcome.guardrail)
   }
   return c.json(outcome.response)
 })
@@ -146,8 +148,13 @@ const INPUT_PROBLEM_MESSAGES: Record<TaskInputProblem['kind'], string> = {
   INPUT_INVALID: '構造化入力が入力契約に適合しません。',
 }
 
-function fail(c: Context, code: AiErrorCode, message: string) {
-  const payload: AiErrorResponse = { error: { code, message } }
+function fail(
+  c: Context,
+  code: AiErrorCode,
+  message: string,
+  guardrail?: GuardrailReport,
+) {
+  const payload: AiErrorResponse = { error: { code, message, guardrail } }
   return c.json(payload, STATUS_BY_CODE[code])
 }
 

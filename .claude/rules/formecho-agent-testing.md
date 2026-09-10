@@ -51,6 +51,11 @@ SDK クライアントそのもの（`invokeGuardrailChecks`）は Bedrock を�
 `checkJapanesePii` / `checkGuardrail` を直接叩く。合成した後の1ビット（`blocked`）だけでは、
 正規表現が効いたのか AWS 側の判定が効いたのかを境界越しに区別できない。
 
+**`playground.free-prompt` だけは findings が境界の出力に出る**（ADR-0021、#203）ので、そこは
+境界越しに見る — `invocation/guardrail.test.ts` が入力側・出力側それぞれのブロックと、**他4タブに
+漏れないこと**を見ている。しきい値の効き方は相変わらず見えない（境界のテストでは fake が判定を
+丸ごと差し替えるので、findings は台本が書いたものである）。
+
 境界越しの配線テスト（ブロックが `GUARDRAIL_BLOCKED` になる・セッションを破棄する・入力側と
 出力側の両方で効く）は `invocation/guardrail.test.ts` が見る。`FORMECHO_GUARDRAIL_STRATEGY=fake`
 （`guardrail/fake.ts` の `fakeGuardrailScript`）で `InvokeGuardrailChecks` の呼び先を

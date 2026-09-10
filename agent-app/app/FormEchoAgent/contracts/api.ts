@@ -154,9 +154,57 @@ export interface AiTaskSuccessResponse<TResult = unknown> {
   systemPrompt?: string;
 }
 
+/** Guardrail のチェック種別（#43）。 */
+export type GuardrailCheckType =
+  | 'promptAttack'
+  | 'sensitiveInformation'
+  | 'contentFilter';
+
+/** どちらを検査していて反応したか。 */
+export type GuardrailDirection = 'INPUT' | 'OUTPUT';
+
+/**
+ * 反応したチェック1件（#43）。
+ *
+ * **画面へ出るのは `playground.free-prompt` のときだけ**（ADR-0021）。他4タブでは
+ * ログにしか出さない（ADR-0009。文言の違いが検知を回避する言い回しを探すオラクルに
+ * なる）。ここを他4タブへ広げるなら ADR-0009 を先に改訂すること。
+ */
+export interface GuardrailFinding {
+  checkType: GuardrailCheckType;
+  /**
+   * 反応したカテゴリまたは PII 型と、そのスコア（`JAILBREAK(1)` /
+   * `US_PASSPORT_NUMBER(0.9)` / `my_number(regex)`）。`contentFilter` と
+   * `promptAttack` は `severityScore`、`sensitiveInformation` は `confidenceScore`。
+   */
+  detail: string;
+  /**
+   * どの層が検知したか。`'code-regex'` は日本固有 PII の正規表現（マイナンバー）、
+   * `'strategy'` は AWS 側の判定（`InvokeGuardrailChecks`）。
+   */
+  source: 'code-regex' | 'strategy';
+}
+
+/**
+ * ブロックの findings（ADR-0021）。**`playground.free-prompt` の応答にだけ載る。**
+ *
+ * 職員のこの画面での仕事はプロンプトを直すことなので、種別だけの二値では直した
+ * 効果を測れない。他4タブでは職員の取る行動が変わらないので載せない（ADR-0009）。
+ */
+export interface GuardrailReport {
+  direction: GuardrailDirection;
+  findings: GuardrailFinding[];
+}
+
 export interface AiErrorResponse {
   error: {
     code: AiErrorCode;
     message: string;
+    /**
+     * `GUARDRAIL_BLOCKED` かつ `playground.free-prompt` のときだけ（ADR-0021）。
+     * **`message` は他4タブと同じ固定文言のまま** — 改訂したのは詳細を添えるか
+     * どうかだけで、9.3節の文言そのものではない。
+     */
+    guardrail?: GuardrailReport;
   };
 }

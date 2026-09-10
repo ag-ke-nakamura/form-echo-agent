@@ -273,5 +273,5 @@ async function blockOrPass(
     'Guardrail がブロックしました',
   );
   discardSession(sessionId);
-  throw new GuardrailBlockedError(verdict);
+  throw new GuardrailBlockedError(verdict, direction);
 }
