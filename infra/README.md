@@ -22,7 +22,7 @@
 ## デプロイ
 
 ```sh
-FORMECHO_BASIC_AUTH_PASSWORD=... mise run deploy   # nextjs-app のビルド → cdk deploy
+FORMECHO_BASIC_AUTH_PASSWORD=... mise run deploy:infra   # nextjs-app のビルド → cdk deploy
 ```
 
 **`cdk deploy` を単体で打たない。** フロントエンドの成果物をアセットとして貼るので、

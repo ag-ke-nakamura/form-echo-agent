@@ -13,6 +13,10 @@
 | **AI agent** | プロンプトとモデルと、出力を契約に届かせること | HTTP と画面の言葉 |
 | **各チームの入出力契約の複製** | 自分の層に要る**判断の表**（ADR-0011。3チームがそれぞれ持つ） | 表示のための文言 |
 
+**プロンプト検証タブ（`playground.free-prompt`）はこの表の例外の側に立つ。** system prompt を
+書くのは職員で（ADR-0020）、AI agent チームが持つのは「持ち込んだ文をそのまま渡す経路」と
+「足した基準時刻を隠さないこと」だけになる。この taskId に固有の約束は §7 にまとめてある。
+
 **入出力契約は3チームがそれぞれ自己完結の複製として持つ**（共有ディレクトリは無い。ADR-0011）。
 形（フィールド名・型・許容値）を変える変更は複製先すべてに手で反映する必要がある（§5）。
 
@@ -21,7 +25,7 @@
 ```mermaid
 graph TB
     subgraph fe["frontend チーム"]
-        F1["nextjs-app/src/app/**<br/>nextjs-app/src/features/**"]
+        F1["nextjs-app/src/app/**<br/>nextjs-app/src/features/**<br/>（ic-card / meeting / playground）"]
         F2["nextjs-app/src/components/**<br/>nextjs-app/src/lib/**"]
     end
 
@@ -35,7 +39,8 @@ graph TB
         A1["agent-app/app/FormEchoAgent/invocation/**"]
         A2["agent-app/app/FormEchoAgent/model/**"]
         A3["agent-app/app/FormEchoAgent/skills/**/*.ts"]
-        A4["agent-app/agentcore/agentcore.json"]
+        A4["agent-app/app/FormEchoAgent/tools/**<br/>agent-app/app/FormEchoAgent/guardrail/**"]
+        A6["agent-app/agentcore/agentcore.json"]
     end
 
     F3["nextjs-app/src/lib/contracts/**"]
@@ -69,6 +74,12 @@ graph TB
 | sessionId | ◎ タブごとに保持し、次の指示に添える | ◎ 発行と UUID 検証 | ◎ 会話履歴の帰属先にする |
 | 認証・認可 | — | ◎ `middleware/auth.ts`（現状素通し） | — |
 | プロンプト（`SKILL.md`・system prompt） | ✕ | ✕ | ◎ 単独所有 |
+| **持ち込みシステムプロンプト**（プロンプト検証タブ） | ◎ 職員に書かせて `input` に載せる | ○ 素通し（タグ除去を掛けない） | ○ そのまま system prompt にする（足すのは基準時刻だけ） |
+| **実効システムプロンプト**を返すか | ○ 受け取って出すだけ | ○ 契約で通す | ◎ この taskId のときだけ載せる（ADR-0020） |
+| 会話履歴を続けるか捨てるか | — | — | ◎ 素材（Skill／持ち込み文）が変われば作り直す（#204） |
+| Guardrail の findings を画面に出すか | ○ 受け取って描く | ○ 契約で通す | ◎ この taskId のときだけ載せる（ADR-0021） |
+| 出典の表示（`citations`） | ◎ 出典・リンクを並べる（利用条件。F-27） | ○ 契約で検査して通す | ◎ 取得した実物を載せる |
+| 経路候補と出典の対応 | ○ 出典番号で引く | — | ◎ 番号を振る（ADR-0019。URL は書かせない） |
 | モデル選択・リージョン | ✕ | ✕ | ◎ `FORMECHO_MODEL` / `jp.` 推論プロファイル固定 |
 | Structured Output と作り直し | ✕ | ✕ | ◎ 最大2回・履歴の巻き戻し |
 | 出力が契約に適合するかの検査 | ✕ | ◎ もう一度検査する | ◎ 作り直しの判定に使う |
@@ -77,7 +88,7 @@ graph TB
 | 画面に出す**文言** | ◎ 単独所有 | ✕ | ✕ |
 | プレビューと反映 | ◎ ADR-0006 | — | — |
 | 手入力の保護・「AIが生成」バッジ | ◎ | — | — |
-| 非AI経路 | ◎ | — | — |
+| 非AI経路 | ◎ 持つ（プロンプト検証タブを除く。ADR-0020） | — | — |
 | トークン数の計上 | ○ 受け取って出すだけ | ○ 契約で検査して通す | ◎ 1回分だけを返す |
 
 ◎ = 決める / ○ = 引く・通す / ✕ = やってはいけない / — = 関係しない
@@ -93,6 +104,7 @@ graph TB
 - **`input` に自由文字列を置かない。** 構造化入力はサニタイズも Guardrail チェックも通らない。識別子は `/^candidate-\d{1,6}$/`、参加者は `/^参加者[A-Z]$/`（ADR-0004 / ADR-0008）
 - **`prompt` に与件を埋め込まない。** 「所要時間は60分です。以下の文から…」と連結すると、入力サニタイズと Guardrail チェックが何を検査しているのか曖昧になる。与件は `input` に載せる
 - **応答が来てもフォームを書き換えない。** 職員が反映を押すまでフォームは変わらない（ADR-0006）
+- **出典のリンクを `sources` から作らない。** 表示の正典は Runtime が取得した `citations` で、`sources` はモデルの申告（F-27）。経路候補が根拠を指すのは `citation_number` で、URL ではない（ADR-0019）
 - **BFF を飛ばして Runtime を叩かない**
 
 ### BFF
@@ -102,6 +114,7 @@ graph TB
 - **画面の文言を持たない。** 返すのはエラーコードと開発者向けの `message` だけ。職員に見せる案内は `nextjs-app/src/lib/error-guidance.ts`
 - **未知のエラーコードを素通ししない。** `isAiErrorCode` で照合する。照合を飛ばすと `STATUS_BY_CODE[code]` が undefined になり、**エラー本文の入った 200** がブラウザへ届く
 - **Runtime の失敗を握り潰さない。** タイムアウト・接続不能・4xx・5xx はそれぞれ別のコードに写す（職員に出る案内が違う）
+- **タグ除去を全 taskId に一律で掛けない。** `playground.free-prompt` には掛けない（ADR-0020）。持ち込みシステムプロンプトは `input` 経由でサニタイズを通らないので、掛けたままだと検証メッセージからだけタグが消え、職員が挙動の違いと誤読する。判断は `stripsPromptTags` が持つ（長さの上限は5タブとも掛かる）
 
 ### AI agent
 
@@ -110,6 +123,9 @@ graph TB
 - **既知のコードに丸めない。** モデル呼び出しそのものの失敗（Bedrock に届かない・スロットリング）を `PARSE_FAILED` にしない — 職員に出る案内が「読み取れませんでした」に化け、同じ入力を打ち直させる
 - **`jp.` 以外の推論プロファイルを使わない。** `apac.` / `global.` は国外へ推論を振る（データ主権）
 - **画面の都合を Skill に書かない。** 「入力欄が空のときは」のような画面の状態は Skill の関心事ではない
+- **持ち込みシステムプロンプトに我々の指示を混ぜない。** 足してよいのは基準時刻の付記1つだけで、足したものは実効システムプロンプトとして全文を返す（ADR-0020）。隠すと、職員は自分の書いた文の効きを測れない
+- **findings を他4タブへ広げない。** 画面へ出すのは `playground.free-prompt` のときだけ（ADR-0021）。広げるなら ADR-0009 を先に改訂する
+- **`discardSession` で履歴を捨てない。** 前置一致で同じ `sessionId` の全タブ分を消すので（#43、F-14）、他4タブの履歴まで巻き添えになる。作り直すのは `sessionId::taskId` の1つだけ（#204）
 
 ## 4. リクエスト1回の中の境界
 
@@ -152,12 +168,14 @@ sequenceDiagram
 | `errors.ts` | エラーコードの語彙 | 3プロジェクト全部 |
 | `meeting.ts` | 会議ロジの値域（zod なし） | frontend（値として引く）・契約内部 |
 | `recommendation.ts` | 候補日提案の導出・集計 | frontend のみ（他プロジェクトは使っていない） |
+| `limits.ts` | 自然文の長さの上限（zod なし） | frontend のみ（`<textarea maxLength>` に渡す） |
+| `prompt-sanitization.ts` | 自然文にタグ除去を掛けるか（ADR-0020） | BFF のみ（サニタイズを持つのが BFF だけ） |
 
 ### 変更のルール
 
 1. **入出力の形（フィールド名・型・許容値）を変える変更は、影響する複製先すべてに手で反映する。** 自動で伝播しないので、片方だけ直すと BFF は通すのに Runtime が弾く（またはその逆の）状態になる — これは自動検知されず、実運用の `PARSE_FAILED` で初めて顕在化する（意図的にドリフト検知テストは作らない。ADR-0011）
 2. **文言を置かない。** 表示は UI 側の関心事。`describe()` に書くモデル向けの説明は文言ではなく指示なので置いてよい
-3. **`meeting.ts` と `prompt-requirement.ts` に zod を import しない。** frontend がこの2つだけを値として引く
+3. **`meeting.ts` / `prompt-requirement.ts` / `limits.ts` / `recommendation.ts` に zod を import しない。** frontend がこの4つだけを値として引く
 4. **表を1つ足すときは、対称に置く。** `INPUT_SCHEMAS` / `OUTPUT_SCHEMAS` / `PROMPT_REQUIREMENT` / `HEADINGS` は同じ形をしている。片方だけ別の形にすると taskId を足すときの編集箇所が読めなくなる
 5. **taskId を1つ足す変更は3チーム同時。** 許可リスト・入出力スキーマ（3複製すべて）・`SKILL.md`・タブ・文言がすべて要る。縦に割って1チームずつ進めない
 
@@ -175,7 +193,9 @@ sequenceDiagram
 | 認証を入れる | BFF | frontend（トークンの付与） |
 | Guardrail の判定を変える | AI agent | 契約（`GUARDRAIL_BLOCKED` は既にある）→ BFF → frontend |
 | デプロイ済み Runtime を叩く | BFF（`deployed` transport） | AI agent（`aws-targets.json`） |
-| Websearch を足す | AI agent | 契約（`sources` は既にある） |
+| Websearch を足す | AI agent | 契約（`sources` は既にある）。**ドメインの表**（`tools/load.ts`）に足す |
+| 検証タブのプロンプトを試す | frontend（画面から書く） | — （AI agent も BFF も関与しない。それがこのタブの値打ち） |
+| findings の出し方を変える | AI agent | 契約（`GuardrailReport`）→ BFF → frontend。他4タブへ広げるなら ADR-0009 の改訂が先 |
 | タブを1つ足す | 3チーム同時 | — |
 
 ## 7. チーム間の約束（破ると相手が黙って壊れる）
@@ -186,6 +206,9 @@ sequenceDiagram
 - **抜けの扱いが taskId ごとに逆。** 参加可否は抜けを許して重複だけ弾く（答えられなかったことは事実）、候補日提案は過不足なく対応することを要求する（評点の無い候補日程は画面に無印で並ぶ）
 - **未定 ≠ 未回答。** 未定は参加者が答えた結果、未回答は回答の不在（参加可否表のセルが存在しないこと）。3チームとも同じ区別で書く
 - **BFF の `message` は開発者向け。** 職員に見せる文言ではない。frontend はコードだけを見て文言を引く
+- **検証メッセージは必須で、空白だけは「書かれなかった」として扱う**（ADR-0022 が ADR-0020 を改訂した）。空だと user message が空の text ブロック1つとしてモデルへ飛び、Bedrock の Converse が `ValidationException` で弾く — 職員には原因の分からない失敗にしか見えない。空白の正規化は5タスクすべてに掛かり、**BFF と Runtime の両方が持つ**（この Runtime は curl で直接叩かれる）
+- **持ち込みシステムプロンプトを変えたら、その会話は続かない。** 素材が変われば `sessionId::taskId` の Agent を作り直す（#204）。残すと職員は「同じ検証メッセージで違う答え」が持ち込み文の効きなのか前の往復の残りなのか切り分けられない。**他4タブの履歴は巻き添えにしない**
+- **出力側でブロックされたら回答本文を見せない**（ADR-0021）。ブロックされた事実と findings だけを返す
 
 ## 8. テストの分担
 
@@ -205,3 +228,4 @@ CI で回すコマンドは `CLAUDE.md`「変更を出す前の確認」の表�
 
 - **監査ログ** — 参照アーキは BFF の責務としている（職員ID・taskID・入力・出力・トークン数）。現状どのチームも実装していない
 - **認証** — `middleware/auth.ts` は素通し。JWT を入れると frontend にトークン付与の責務が生まれる
+- **プロンプト検証タブを渡すか** — findings を画面に出す判断（ADR-0021）は「この画面は職員向けの業務機能ではなく検証の道具」という前提に乗っている。業務利用者へ開くなら ADR-0009 と ADR-0021 のどちらを採るかを決め直す

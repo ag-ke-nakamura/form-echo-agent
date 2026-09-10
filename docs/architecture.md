@@ -22,12 +22,30 @@ graph LR
 
     subgraph aws["AWS"]
         BR["Bedrock<br/>jp.anthropic.claude-*"]
+        GR["Bedrock Guardrail<br/>InvokeGuardrailChecks"]
+        GW["AgentCore Gateway<br/>→ Web Search Tool"]
     end
 
     UI -->|"POST /api/ai/tasks<br/>{taskId, prompt, sessionId, input}"| BFF
     BFF -->|"POST /invocations<br/>+ X-Amzn-Bedrock-AgentCore-Runtime-Session-Id"| RT
     RT -->|"Converse (stream: false)"| BR
+    RT -->|"入力側・出力側"| GR
+    RT -->|"交通IC・検証ドメインのみ"| GW
 ```
+
+応答の封筒（`AiTaskSuccessResponse`）は `result` のほかに3つ運ぶ。**どれも AI の出力ではなく
+Runtime が事実として載せるもの**で、`result` の中の値とは別物である。
+
+| 欄 | 中身 | いつ入るか |
+| --- | --- | --- |
+| `citations` | Runtime が実際に取得した Search Result の出典（`{title, url, publishedDate?}`） | Web 検索を使った回。使わなければ空配列 |
+| `systemPrompt` | モデルへ渡した system prompt の全文（**実効システムプロンプト**） | `playground.free-prompt` のときだけ（ADR-0020） |
+| `error.guardrail` | ブロックに反応したチェック種別とスコア（**findings**） | `GUARDRAIL_BLOCKED` かつ `playground.free-prompt` のときだけ（ADR-0021） |
+
+**`citations` と `result.sources` は別物。** 前者は Runtime が取得した実物で表示の正典、後者は
+モデルが「根拠にした」と申告した URL（申告漏れも混入も起こりうる）。Web Search Tool の
+利用条件が表示を義務づけているのは前者で満たす（F-27）。経路候補が根拠を指すのは URL では
+なく**出典番号**（`citation_number`。ADR-0019）。
 
 宛先はすべて環境変数で切り替わる。
 
@@ -38,10 +56,18 @@ graph LR
 | `FORMECHO_RUNTIME_CLIENT` | hono-app | `local` / `deployed` / `fake` |
 | `FORMECHO_RUNTIME_ARN` | hono-app | デプロイ済み Runtime の ARN（`deployed` のときだけ要る） |
 | `FORMECHO_MODEL` | agent-app | `sonnet` / `haiku` / `fake` |
+| `FORMECHO_WEB_SEARCH_GATEWAY_URL` | agent-app | AgentCore Gateway の URL。**未設定なら Web 検索を持たない**（#46） |
+
+デプロイの手順（どのアカウントに出るか・順番）は `README.md`「AWS へのデプロイ」。
 
 ## 2. リクエスト1回の流れ
 
 各層が何を判断するか。**判断は各プロジェクト内の契約側の関数に置き、同じ判断をプロジェクト内の2箇所に書かない**（ADR-0011）。
+
+**出力の経路は2本ある。** 他4タスクは Structured Output を通って契約に届くまで作り直すが、
+`playground.free-prompt` は通らず**回答本文**をそのまま返す（ADR-0020）。素の system prompt の
+効きを見るのがこのタブの目的で、Structured Output はスキーマをツール仕様に変換してツール
+呼び出しを強制するため、目的そのものを歪めるからである。
 
 ```mermaid
 sequenceDiagram
@@ -62,18 +88,29 @@ sequenceDiagram
     Note over H: aiTaskRequestSchema で再検査
 
     H->>IT: {taskId, prompt, input, sessionId}
-    Note over IT: getOrCreateDomainAgent<br/>（sessionId::taskId で LRU 128）<br/>buildSystemPrompt → SKILL.md 注入<br/>buildUserMessage
+    Note over IT: getOrCreateDomainAgent<br/>（sessionId::taskId で LRU 128）<br/>buildSystemPrompt → SKILL.md 注入<br/>（playground は職員の持ち込み文がそのまま）<br/>素材が変われば履歴ごと作り直す（#204）
+    Note over IT: Guardrail 入力側<br/>（人が書いた文字列だけを1本にして1回）
+    Note over IT: buildUserMessage
 
-    loop 最大2回（invokeWithSchemaRetry）
-        IT->>AG: invoke(structuredOutputSchema)
+    alt 他4タスク（Structured Output）
+        loop 最大2回（invokeWithSchemaRetry）
+            IT->>AG: invoke(structuredOutputSchema)
+            AG->>BR: Converse
+            BR-->>AG: Structured Output
+            AG-->>IT: 結果
+            Note over IT: outputSchemaFor(taskId, input) で検査<br/>落ちたら履歴を巻き戻して作り直し
+        end
+    else playground.free-prompt（回答本文）
+        IT->>AG: invoke(prompt)
         AG->>BR: Converse
-        BR-->>AG: Structured Output
-        AG-->>IT: 結果
-        Note over IT: outputSchemaFor(taskId, input) で検査<br/>落ちたら履歴を巻き戻して作り直し
+        BR-->>AG: テキスト
+        AG-->>IT: 回答本文（作り直しは無い）
     end
 
-    IT-->>H: {result, usage}
-    H-->>BFF: {sessionId, result, usage}
+    Note over IT: Guardrail 出力側<br/>（回答本文はそのまま／他4つは JSON 化して）
+
+    IT-->>H: {result, usage, citations, systemPrompt?}
+    H-->>BFF: {sessionId, result, usage, citations, systemPrompt?}
     Note over BFF: 出力契約でもう一度検査<br/>（BFF は自分の複製したスキーマで独立に見る）
     BFF-->>UI: 200 / エラーコード
     Note over UI: プレビュー表示（ADR-0006）
@@ -90,19 +127,29 @@ graph TD
     T2["meeting.parse-candidates"] --> D2
     T3["meeting.parse-availability"] --> D2
     T4["meeting.recommend-schedule"] --> D2
+    T5["playground.free-prompt"] --> D3
 
-    D1["交通ICドメインエージェント<br/>tools: []"]
+    D1["交通ICドメインエージェント<br/>tools: web_search"]
     D2["会議ロジドメインエージェント<br/>tools: []"]
+    D3["検証ドメインエージェント<br/>tools: web_search"]
 
     T1 -.-> S1["skills/ic-card/parse-reservation.ts"]
     T2 -.-> S2["skills/meeting/parse-candidates.ts"]
     T3 -.-> S3["skills/meeting/parse-availability.ts"]
     T4 -.-> S4["skills/meeting/recommend-schedule.ts"]
+    T5 -.-> S5["Skill を持たない<br/>input.system_prompt がそのまま"]
 
-    S1 & S2 & S3 & S4 --> SP["buildSystemPrompt<br/>（基準時刻を付けて注入）"]
+    S1 & S2 & S3 & S4 & S5 --> SP["buildSystemPrompt<br/>（基準時刻を付けて注入）"]
 ```
 
-ドメイン間で協調しないので、Strands の Graph / Swarm / agent-as-tool は使わない。会議ロジは Websearch を持たない（F-22）。
+ドメイン間で協調しないので、Strands の Graph / Swarm / agent-as-tool は使わない。**Web 検索を
+持つのは交通ICと検証の2ドメイン**で、会議ロジは持たない（F-22。表は `tools/load.ts`）。上限は
+どちらも同じでリクエストあたり3回。
+
+`playground.free-prompt` だけが例外の側に立つ（ADR-0020）— Skill を持たず、Structured Output を
+通らず、非AI経路も持たない。**`FREE_PROMPT_TASK_ID` として定数に名前が付いている**のは、分岐
+する箇所（Skill の解決・user message の組み立て・出力の経路・出力側 Guardrail の平文化）が
+綴り違いで黙って既存の側へ落ちないようにするため。
 
 ## 4. 各プロジェクトの契約定義
 
@@ -114,7 +161,7 @@ graph TD
 graph TD
     A["Runtime<br/>agent-app/app/FormEchoAgent/contracts/"] --> AU["Zod で検査する<br/>（リクエスト・Structured Output）"]
     B["BFF<br/>hono-app/src/schemas/"] --> BU["Zod で検査する<br/>（門・応答の再検査）"]
-    N["フロントエンド<br/>nextjs-app/src/lib/contracts/"] --> NU["ほぼ import type。値で引くのは<br/>zod を持たない meeting.ts /<br/>recommendation.ts / prompt-requirement.ts だけ<br/>（SSG のバンドルに zod を乗せない）"]
+    N["フロントエンド<br/>nextjs-app/src/lib/contracts/"] --> NU["ほぼ import type。値で引くのは<br/>zod を持たない meeting.ts / recommendation.ts /<br/>prompt-requirement.ts / limits.ts だけ<br/>（SSG のバンドルに zod を乗せない）"]
 ```
 
 3プロジェクトとも自分自身の `node_modules` から `zod` を通常どおり解決する（symlink も
@@ -130,15 +177,21 @@ nextjs-app だけが持つ — 他プロジェクトは使っていないため�
 | `INPUT_SCHEMAS` | 構造化入力の形（ADR-0005：画面の状態を Runtime へ渡す） |
 | `OUTPUT_SCHEMAS` / `outputSchemaFor` | 出力契約。入力を見ないと言えない不変条件も載る |
 | `AiErrorCode` | エラーコードの語彙 |
+| `PROMPT_TAG_HANDLING` / `stripsPromptTags` | 自然文にタグ除去を掛けるか（BFF のみ。ADR-0020） |
+
+**タグ除去は `playground.free-prompt` にだけ掛からない**（長さの上限は全 taskId に掛かる）。
+持ち込みシステムプロンプトは `input` 経由でサニタイズを通らないので、掛けたままだと検証
+メッセージからだけ `<thinking>` の類が消え、職員はそれを挙動の違いと誤読する。
 
 `input`（構造化入力）が taskId ごとに運ぶもの。**システムが組み立てた与件は Guardrail チェックを通さないので、そこに自由文字列を置かない** — 識別子は正規表現で縛り、参加者の実名はブラウザから出さない（ADR-0008）。職員がフォームに打った自由文字列を載せるなら Guardrail チェックに通す（ADR-0017。何を検査するかは `.claude/rules/contracts.md`）。
 
 | taskId | `input` |
 | --- | --- |
 | `ic-card.parse-reservation` | 出発地・目的地・往復区分（いずれも値と `is_manual` の組。ADR-0017 / ADR-0018）。**出発地・目的地は職員が打った自由文字列なので Guardrail チェックに通す**（#170。`prompt` と連結して1回） |
-| `meeting.parse-candidates` | 所要時間のみ |
+| `meeting.parse-candidates` | 所要時間と、カレンダーの表示範囲（`calendar_start` / `calendar_end`。#69） |
 | `meeting.parse-availability` | 参加形式・所要時間・候補日程の一覧 |
 | `meeting.recommend-schedule` | 参加形式・所要時間・参加者の名簿・参加可否表 |
+| `playground.free-prompt` | **持ち込みシステムプロンプト1つだけ**（ADR-0020。職員が書いた文そのもの → Guardrail チェックに通す） |
 
 識別子はフロントエンドが発番し、AI は自分では作らない。**追加の指示のときも `input` を毎回そのまま送り直す** — Runtime 側の会話履歴はコールドスタートで消えるため、初回だけ送ると2回目が与件の無いリクエストになる（ADR-0004）。
 
@@ -167,22 +220,35 @@ graph LR
     subgraph rt["Runtime"]
         E1["リクエストが契約に不適合"] --> C1["INVALID_INPUT"]
         E2["StructuredOutputError<br/>（2回とも契約に届かず）"] --> C2["PARSE_FAILED"]
-        E3["想定外の失敗"] --> C3["throw → 500"]
+        E4["Guardrail がブロック<br/>（入力側・出力側）"] --> C4["GUARDRAIL_BLOCKED"]
+        E3["想定外の失敗<br/>（実行制限での打ち切りを含む）"] --> C3["throw → 500"]
     end
 
     subgraph bff["BFF"]
         C1 --> B1["400"]
         C2 --> B2["502"]
+        C4 --> B6["400"]
         C3 --> B3["RUNTIME_UNAVAILABLE / 503"]
         T["TimeoutError（60s）"] --> B4["TIMEOUT / 504"]
         X["接続不能"] --> B3
         Y["Runtime が 4xx"] --> B5["INTERNAL_ERROR / 500"]
     end
 
-    B1 & B2 & B3 & B4 & B5 --> UI["画面の案内<br/>（再入力を促す / 非AI経路へ移す）"]
+    B1 & B2 & B3 & B4 & B5 & B6 --> UI["画面の案内<br/>（再入力を促す / 非AI経路へ移す）"]
 ```
 
-すべての AI 機能に**非AI経路**が確保されているので、どのエラーでも職員はフォームを埋めきれる。
+**`playground.free-prompt` を除く**すべての AI 機能に**非AI経路**が確保されているので、どの
+エラーでも職員はフォームを埋めきれる。プロンプト検証タブは業務のフォームを持たない検証の
+道具なので非AI経路を持たない（ADR-0020）。
+
+`GUARDRAIL_BLOCKED` の `message` は5タブとも同じ固定文言（ADR-0009）。**プロンプト検証タブの
+ときだけ `error.guardrail` に findings（反応したチェック種別とスコア）が付く**（ADR-0021）—
+この画面の職員の仕事はプロンプトを直すことで、種別だけの二値では直した効果を測れないため。
+出力側でブロックされた回は**回答本文を見せない**。
+
+`playground.free-prompt` は実行制限で打ち切られた回を `PARSE_FAILED` にしない。あのコードが
+表すのは「出力契約に届かなかった」で、`{ text }` 1欄のこの経路には届かない出力が存在しない
+（投げて 500 → `RUNTIME_UNAVAILABLE`）。
 
 ## 7. 本番想定（参照アーキテクチャ・未実装）
 
@@ -219,7 +285,7 @@ graph LR
     BFF -->|"SigV4<br/>InvokeAgentRuntime"| RT["AgentCore Runtime<br/>microVM"]
     RT --> BR["Bedrock Claude<br/>ap-northeast-1（jp. 推論プロファイル）"]
     RT --> GR["Bedrock Guardrail"]
-    RT -->|"第3段・交通ICのみ"| GW["AgentCore Gateway → Websearch"]
+    RT -->|"交通IC・検証ドメイン"| GW["AgentCore Gateway → Websearch"]
     BFF --> CW["CloudWatch Logs"]
     RT --> CW
 ```
@@ -242,3 +308,8 @@ graph LR
 ```
 
 ルートの `package.json` は pnpm workspace の宣言専用でスクリプトを持たない（ADR-0015）ため、この定義は `mise.toml` の `[tasks.*]` に置く。
+
+デプロイも同じ場所にある。`deploy:agent`（Runtime）・`deploy:agent-infra`（Guardrail 許可の
+CDK。ロール ARN のキャッシュを `depends` で先に回す）・`deploy:infra`（front door。フロントエンドの
+ビルドを `depends` に持つ）の3つで、**どのアカウントに出るか・どの順で回すかは `README.md`
+「AWS へのデプロイ」**にある。`dev:deployed` は BFF だけデプロイ済み Runtime を向ける。
