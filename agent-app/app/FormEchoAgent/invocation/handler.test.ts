@@ -1,5 +1,5 @@
 import { ModelError } from '@strands-agents/sdk';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { z } from 'zod';
 import { resolveAgentLoopTimeoutMs, resolveModelName } from '../config.js';
 import {
@@ -1263,6 +1263,59 @@ describe('セッションと会話履歴', () => {
     expect(messages[1]).toContain('往路は16日でした');
   });
 
+  it('会話履歴を引き継ぐ2回目にも基準時刻が貼り直される', async () => {
+    /*
+      system prompt は Agent の生成時に固定されるので、貼り直さないと追加の指示が
+      初回の時刻から数えられる（`domain-agent.ts`）。**#204 でこの貼り直しが
+      「素材が前回と同じなら」の内側に移った**ので、他4タブが巻き添えで貼り直され
+      なくなっていないことをここで見る。
+
+      `Date` だけを差し替える。`setTimeout` まで止めると台本の `delayMs` が進まない。
+    */
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const sessionId = newSessionId();
+      fakeModelScript.write(
+        {
+          kind: 'structuredOutput',
+          output: VALID_OUTPUTS['ic-card.parse-reservation'],
+        },
+        {
+          kind: 'structuredOutput',
+          output: VALID_OUTPUTS['ic-card.parse-reservation'],
+        },
+      );
+
+      vi.setSystemTime(new Date('2026-10-15T01:00:00Z'));
+      expectSuccess(
+        await invokeBoundary(REQUESTS['ic-card.parse-reservation'], sessionId),
+      );
+      vi.setSystemTime(new Date('2026-10-15T04:00:00Z'));
+      expectSuccess(
+        await invokeBoundary(
+          {
+            taskId: 'ic-card.parse-reservation',
+            prompt: '往路は16日でした',
+            input: RESERVATION_INPUT,
+          },
+          sessionId,
+        ),
+      );
+
+      // JST は UTC+9。2回目は3時間進んだ時刻になっている。
+      expect(systemPromptOf(fakeModelScript.calls[0])).toContain(
+        '2026-10-15 10:00',
+      );
+      expect(systemPromptOf(fakeModelScript.calls[1])).toContain(
+        '2026-10-15 13:00',
+      );
+      // 貼り直しは履歴を捨てずに行う（作り直しでも時刻は新しくなってしまう）。
+      expect(userMessagesOf(fakeModelScript.calls[1])).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('異なる sessionId の間で履歴が交ざらない', async () => {
     fakeModelScript.write(
       {
@@ -1694,5 +1747,47 @@ describe('playground.free-prompt（ADR-0020）', () => {
         input: { system_prompt: 'あ'.repeat(MAX_PROMPT_LENGTH) },
       }),
     );
+  });
+
+  it('会話履歴は持ち込みシステムプロンプトが同じ間だけ続き、変えると切れる', async () => {
+    /*
+      再現性のため（ADR-0020）。履歴が残ると「同じ入力で違う答え」が履歴のせいか
+      モデルのゆらぎか切り分けられない。**元に戻した3回目も切れていること**まで見る
+      — キャッシュキーに持ち込みシステムプロンプトのハッシュを足す実装だと、ここで
+      古い履歴が蘇る。
+    */
+    const sessionId = newSessionId();
+    fakeModelScript.write(
+      { kind: 'text', text: '1回目' },
+      { kind: 'text', text: '2回目' },
+      { kind: 'text', text: '3回目' },
+      { kind: 'text', text: '4回目' },
+    );
+    const send = (systemPrompt: string, prompt: string) =>
+      invokeBoundary(
+        {
+          taskId: FREE_PROMPT_TASK_ID,
+          prompt,
+          input: { system_prompt: systemPrompt },
+        },
+        sessionId,
+      );
+
+    expectSuccess(await send(SYSTEM_PROMPT, FREE_PROMPT_MESSAGE));
+
+    // 同じなら追い質問として続く。
+    expectSuccess(await send(SYSTEM_PROMPT, 'もう少し詳しく'));
+    expect(userMessagesOf(fakeModelScript.calls[1])).toEqual([
+      FREE_PROMPT_MESSAGE,
+      'もう少し詳しく',
+    ]);
+
+    // 変えれば切れる。
+    expectSuccess(await send('あなたは短歌だけで答えます。', '同じ質問です'));
+    expect(userMessagesOf(fakeModelScript.calls[2])).toEqual(['同じ質問です']);
+
+    // 元に戻しても蘇らない。
+    expectSuccess(await send(SYSTEM_PROMPT, '戻しました'));
+    expect(userMessagesOf(fakeModelScript.calls[3])).toEqual(['戻しました']);
   });
 });

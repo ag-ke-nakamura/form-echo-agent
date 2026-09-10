@@ -48,11 +48,22 @@ function systemPromptSource(taskId: TaskId, input: unknown): string {
 }
 
 /**
- * モデルへ渡す system prompt の全文（**実効システムプロンプト**）。
+ * モデルへ渡す system prompt の全文（**実効システムプロンプト**）と、その素材。
  *
  * 基準時刻の付記はどの taskId にも足す。プロンプト検証でも足すのは、他タブとの比較で
  * 「基準時刻がある状態のモデル」を揃えるため（ADR-0020）。足したことは隠さない。
+ *
+ * **素材を別に返すのは、会話履歴を続けてよいかの判定に使うため**（ADR-0020、#204）。
+ * 全文どうしを比べると基準時刻が分単位で動くので、同じ Skill・同じ持ち込みシステム
+ * プロンプトのまま数分後に送った追い質問まで履歴が切れる。
  */
-export function buildSystemPrompt(taskId: TaskId, input: unknown): string {
-  return `${systemPromptSource(taskId, input)}\n\n## 基準時刻\n\n現在は ${nowInJst()}（JST）です。相対的な日付・時刻表現はこの時点を基準に解決してください。`;
+export function buildSystemPrompt(
+  taskId: TaskId,
+  input: unknown,
+): { promptSource: string; systemPrompt: string } {
+  const promptSource = systemPromptSource(taskId, input);
+  return {
+    promptSource,
+    systemPrompt: `${promptSource}\n\n## 基準時刻\n\n現在は ${nowInJst()}（JST）です。相対的な日付・時刻表現はこの時点を基準に解決してください。`,
+  };
 }
