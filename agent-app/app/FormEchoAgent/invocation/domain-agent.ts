@@ -30,8 +30,12 @@ const AGENT_CACHE_LIMIT = 128;
  * taskId までをキーに含めるのは、system prompt が taskId ごとに変わり、Agent の
  * 生成時に固定されるため。同じセッションでタブを切り替えても前のタブの Skill が
  * 混ざらない。
+ *
+ * **キーではなく値の側に system prompt の素材を持つ**（ADR-0020、#204）。キーに
+ * 持ち込みシステムプロンプトのハッシュを足す形だと、編集して元に戻したときに古い
+ * 履歴が蘇る。
  */
-const agentCache = new Map<string, Agent>();
+const agentCache = new Map<string, { agent: Agent; promptSource: string }>();
 
 /**
  * `input` を受け取るのは、`playground.free-prompt` の system prompt が職員の持ち込んだ
@@ -47,17 +51,27 @@ export function getOrCreateDomainAgent(
   taskId: TaskId,
   input: unknown,
 ): { agent: Agent; systemPrompt: string } {
-  const systemPrompt = buildSystemPrompt(taskId, input);
+  const { promptSource, systemPrompt } = buildSystemPrompt(taskId, input);
   const key = `${sessionId}::${taskId}`;
   const existing = agentCache.get(key);
   if (existing) {
     agentCache.delete(key);
-    agentCache.set(key, existing);
-    // 基準時刻を貼り直す。system prompt は Agent の生成時に固定されるので、
-    // 追加の指示を1時間後に送ると「今から3時間後」が初回の時刻から数えられる。
-    // 会話履歴は messages 側に残るため、ここを差し替えても続きとして通る。
-    existing.systemPrompt = systemPrompt;
-    return { agent: existing, systemPrompt };
+    /*
+      **素材が変わっていたら履歴ごと捨てる**（ADR-0020、#204）。実際に変わるのは
+      `playground.free-prompt` だけ（他4タスクの素材は taskId が決める Skill 全文で
+      不変）だが、判定に taskId の分岐は要らない。
+
+      履歴を残すと、職員は「同じ検証メッセージで違う答え」が持ち込みシステム
+      プロンプトの効きなのか前の往復の残りなのか切り分けられない。
+    */
+    if (existing.promptSource === promptSource) {
+      agentCache.set(key, existing);
+      // 基準時刻を貼り直す。system prompt は Agent の生成時に固定されるので、
+      // 追加の指示を1時間後に送ると「今から3時間後」が初回の時刻から数えられる。
+      // 会話履歴は messages 側に残るため、ここを差し替えても続きとして通る。
+      existing.agent.systemPrompt = systemPrompt;
+      return { agent: existing.agent, systemPrompt };
+    }
   }
   if (agentCache.size >= AGENT_CACHE_LIMIT) {
     const oldest = agentCache.keys().next().value;
@@ -77,7 +91,7 @@ export function getOrCreateDomainAgent(
     // 出す JSON のログと交ざり、行単位で読めなくなる。
     printer: false,
   });
-  agentCache.set(key, agent);
+  agentCache.set(key, { agent, promptSource });
   return { agent, systemPrompt };
 }
 
