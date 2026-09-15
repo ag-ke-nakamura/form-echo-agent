@@ -193,6 +193,33 @@ Skill が1つも混ざらないことは同ファイルの「playground.free-pro
   動かせない。** どちらもスキャフォールド由来の `{"prompt": "…"}` しか送らず、`taskId` を
   付けられないため。プロンプトを試すときはフロントエンド（localhost:3000）か curl を使う。
   UI には `INVALID_INPUT` と理由が表示される
+- **`agentcore.json` の `instrumentation.enableOtel` は Node では効かない**（#213）。
+  `@aws/agentcore-cdk` が `enableOtel && !isNode` で判定しており、entrypoint を
+  `opentelemetry-instrument` で包むのは Python のときだけ（alpha.50・alpha.53 とも同じ。
+  **上げても直らない**）。したがって AWS のドキュメントが案内する Node の手順
+  （vendoring + `entryPoint: ["opentelemetry-instrument", "app.js"]`）はこの構成では使えない
+  — CLI のパッケージングは esbuild の単一 CJS バンドル固定で `node_modules` を同梱しない
+
+## トレース（#213）
+
+`main.ts` の先頭で `@aws/aws-distro-opentelemetry-node-autoinstrumentation/register` を読む。
+**グローバルの TracerProvider をここで登録し、Strands はそれを黙って使う**ので
+`setupTracer()` は呼ばない。
+
+- **`@langchain/core` は使っていないが依存から外せない。** ADOT の `register` が LangChain 計装を
+  静的に require しており、無いと **esbuild の解決が失敗して `agentcore deploy` ごと落ちる**
+  （バンドル時エラーなので、実行時には一度も通らないコードでも要る）。不足していたのはこの1つだけ
+- **送信先の切り替えは `AGENT_OBSERVABILITY_ENABLED`。** 未設定なら AWS 向けの設定
+  （X-Ray の OTLP エンドポイント・サンプラー・GenAI 本文の取得）が一切入らないので、
+  ローカルの `agentcore dev` は素のまま動く。有効側は `agentcore.json` の `envVars` が持つ
+- **`OTEL_LOGS_EXPORTER=none` を明示している。** 有効時の既定は `otlp` だが、ログの送信には
+  agent id を含む `x-aws-log-group` ヘッダが要り、設定しないと起動のたびにエラー行が出る。
+  ログは stdout 経由で既に CloudWatch に入っているので、この経路は使わない
+- **デプロイ前の確認は手元でできる。** パッケージャ（`@aws/agentcore-cdk` の
+  `NodeCodeZipPackagerSync`）と同じ esbuild オプションで束ね、`AGENT_OBSERVABILITY_ENABLED=true`
+  と `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4318/v1/traces` を与えて偽の
+  コレクタへ向ければ、`invoke_agent` / `execute_agent_loop_cycle` / `chat` の span が出ることまで
+  AWS に触らずに見える
 
 ## テスト
 
