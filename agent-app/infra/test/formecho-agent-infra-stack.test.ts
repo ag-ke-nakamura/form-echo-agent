@@ -30,21 +30,6 @@ test('Runtime 実行ロールに bedrock:InvokeGuardrailChecks を許可する�
   });
 });
 
-test('Runtime 実行ロールに X-Ray への送信を許可するインラインポリシーが付く（#213）', () => {
-  synth().hasResourceProperties('AWS::IAM::Policy', {
-    PolicyDocument: Match.objectLike({
-      Statement: Match.arrayWith([
-        Match.objectLike({
-          Effect: 'Allow',
-          Action: ['xray:PutTraceSegments', 'xray:PutTelemetryRecords', 'cloudwatch:PutMetricData'],
-          Resource: '*',
-        }),
-      ]),
-    }),
-    Roles: [TEST_RUNTIME_ROLE_ARN.split('/').pop()],
-  });
-});
-
 // 案A（`InvokeGuardrailChecks`）はリソースレスAPIなので、このスタックが Guardrail
 // リソースを持つのは案Bを復活させたときだけ。
 test('案Bの Guardrail リソースを復活させない（ADR-0013）', () => {

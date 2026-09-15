@@ -1,15 +1,10 @@
 /*
   トレースの配線（#213）。**この import は他のどれよりも先に置く** — グローバルの
-  TracerProvider をここで登録し、Strands はそれを黙って使う（自前で `setupTracer()` は
-  呼ばない）。後ろに置くと Agent 生成が provider 登録より先に走りうる。
+  TracerProvider をここで登録し、Strands はそれを黙って使う（`setupTracer()` は呼ばない）。
+  後ろに置くと Agent の生成が provider の登録より先に走りうる。
 
-  `agentcore.json` の `instrumentation.enableOtel` ではこれを代替できない。あのフラグは
-  entrypoint を `opentelemetry-instrument` で包むためのもので、@aws/agentcore-cdk が
-  Python にしか適用しない（alpha.53 時点で `enableOtel && !isNode`）。
-
-  送信先・サンプラー・GenAI の本文取得は全て `AGENT_OBSERVABILITY_ENABLED` で切り替わる。
-  **未設定なら何も送らない**ので、ローカルの `agentcore dev` は素のまま動く。有効側は
-  `agentcore.json` の envVars が持つ。
+  なぜ `agentcore.json` の `instrumentation.enableOtel` で代替できないのか、送信先が
+  何で切り替わるのかは `.claude/rules/agent-app.md`。
 */
 import '@aws/aws-distro-opentelemetry-node-autoinstrumentation/register';
 import { BedrockAgentCoreApp } from 'bedrock-agentcore/runtime';

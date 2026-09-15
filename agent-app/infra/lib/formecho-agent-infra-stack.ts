@@ -30,18 +30,5 @@ export class FormEchoAgentInfraStack extends Stack {
       roles: [runtimeRole],
       statements: [new PolicyStatement({ actions: ['bedrock:InvokeGuardrailChecks'], resources: ['*'] })],
     });
-    // ADOT が X-Ray の OTLP エンドポイントへ SigV4 で直接送るため（#213）。
-    // どれもリソースレスAPIなので Guardrail 側と同じく Resource: "*"。
-    // メトリクスは EMF（CloudWatch Logs 経由）で出るが、ADOT が
-    // PutMetricData 経路へ倒れる余地があるので併せて付ける。
-    new Policy(this, 'AgentObservabilityPolicy', {
-      roles: [runtimeRole],
-      statements: [
-        new PolicyStatement({
-          actions: ['xray:PutTraceSegments', 'xray:PutTelemetryRecords', 'cloudwatch:PutMetricData'],
-          resources: ['*'],
-        }),
-      ],
-    });
   }
 }

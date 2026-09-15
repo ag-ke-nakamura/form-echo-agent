@@ -141,7 +141,8 @@ Skill が1つも混ざらないことは同ファイルの「playground.free-pro
   `agent-app/infra` に残るのは Runtime 実行ロールへの権限付与だけ。**実リソースの破棄
   （`npx cdk deploy` による削除の反映）は人が実行する** — 共用アカウントの実リソースを
   作る・消す操作なので、`npx cdk deploy` / `cdk destroy` は自動実行しない
-- **Runtime 実行ロールに必要な IAM 権限**（cdk は生成物のため手で編集しない —
+- **Guardrail のために Runtime 実行ロールへ足す IAM 権限**（トレースのぶんは別で、
+  「トレース（#213）」を参照。cdk は生成物のため手で編集しない —
   `agent-app/infra` の `FormEchoAgentInfraStack` が `cdk.json` にキャッシュされた ARN
   （`scripts/cache-runtime-role-arn.ts` が `agentcore status --json` の `roleArn` から
   書き込む）で agentcore 管理のロールを参照する。ADR-0010 の Consequences 参照）:
@@ -210,11 +211,25 @@ Skill が1つも混ざらないことは同ファイルの「playground.free-pro
   静的に require しており、無いと **esbuild の解決が失敗して `agentcore deploy` ごと落ちる**
   （バンドル時エラーなので、実行時には一度も通らないコードでも要る）。不足していたのはこの1つだけ
 - **送信先の切り替えは `AGENT_OBSERVABILITY_ENABLED`。** 未設定なら AWS 向けの設定
-  （X-Ray の OTLP エンドポイント・サンプラー・GenAI 本文の取得）が一切入らないので、
-  ローカルの `agentcore dev` は素のまま動く。有効側は `agentcore.json` の `envVars` が持つ
-- **`OTEL_LOGS_EXPORTER=none` を明示している。** 有効時の既定は `otlp` だが、ログの送信には
-  agent id を含む `x-aws-log-group` ヘッダが要り、設定しないと起動のたびにエラー行が出る。
-  ログは stdout 経由で既に CloudWatch に入っているので、この経路は使わない
+  （X-Ray の OTLP エンドポイント・サンプラー・GenAI 本文の取得）が一切入らない。
+  有効側は `agentcore.json` の `envVars` が持つ
+- **`agentcore dev` はこの `envVars` を読まないので、ローカルは送信しない。** CLI の
+  `loadDevEnv` が注入するのは Gateway・Memory・Payment の env と `.env.local` だけで、
+  `agentcore.json` の `envVars` は入らない（CLI 0.28.1 で確認）。**ローカルでも送りたく
+  なったら、シェルか `mise.toml` で明示的に渡す**
+- **IAM 権限は足さない。** CLI が作る Runtime 実行ロールが `xray:PutTraceSegments` と
+  `xray:PutTelemetryRecords` を `Resource: "*"` で**既に持っている**
+  （`agentcore/.cli/logs/deploy/` のデプロイログの IAM Statement Changes で確認できる）。
+  Guardrail と同じ調子で `agent-app/infra` に足しかけたが、重複するだけなので入れていない
+- **`OTEL_RESOURCE_ATTRIBUTES` も設定しない。** service 名を入れたくなるが、あの欄は
+  AgentCore がホスト時に入れる `aws.log.group.names` と `cloud.resource_id`（GenAI
+  Observability への紐付けそのもの）を**丸ごと上書きする**。足すならその2つを含めた形で、
+  かつ agent id が要るのでデプロイ後にしか書けない
+- **`AGENT_OBSERVABILITY_ENABLED` 以外の `OTEL_*` を足す前に、AgentCore が同じ変数を
+  注入していないかを疑う。** ADOT の既定はどれも「未設定のときだけ入れる」形なので、
+  こちらが書くと AgentCore 側の値が消える
+- **アカウント単位の CloudWatch Transaction Search の有効化は別途人が行う。** これをしないと
+  span は1つも見えない（共用アカウントの設定を変える操作なので自動実行しない）
 - **デプロイ前の確認は手元でできる。** パッケージャ（`@aws/agentcore-cdk` の
   `NodeCodeZipPackagerSync`）と同じ esbuild オプションで束ね、`AGENT_OBSERVABILITY_ENABLED=true`
   と `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4318/v1/traces` を与えて偽の

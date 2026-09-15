@@ -16,11 +16,7 @@
       "runtimeVersion": "NODE_22",
       "networkMode": "PUBLIC",
       "protocol": "HTTP",
-      "envVars": [
-        { "name": "AGENT_OBSERVABILITY_ENABLED", "value": "true" },
-        { "name": "OTEL_RESOURCE_ATTRIBUTES", "value": "service.name=FormEchoAgent" },
-        { "name": "OTEL_LOGS_EXPORTER", "value": "none" }
-      ]
+      "envVars": [{ "name": "AGENT_OBSERVABILITY_ENABLED", "value": "true" }]
     }
   ],
   "memories": [],
