@@ -135,6 +135,30 @@ export function resolveWebSearchGatewayUrl(): string | null {
   return url;
 }
 
+/**
+ * トレース（span）の送り先（#213）。
+ *
+ * **未設定なら一切送らない。** Web 検索の Gateway と同じ形にしてあり、切り替え口は
+ * この1つだけである。デプロイ先の値は `agentcore.json` の `envVars` が持ち、ローカルの
+ * `agentcore dev` は CLI が `envVars` を読まないので自動的に無効側になる。
+ *
+ * AWS の宛先は `https://xray.{リージョン}.amazonaws.com/v1/traces` で、**SigV4 の署名が
+ * 要る**（素の OTLP エクスポータでは 403 になる）。導出せず URL をそのまま受け取るのは、
+ * 手元の検証で偽のコレクタへ向けられるようにするため。
+ */
+export function resolveTracesEndpoint(): string | null {
+  const url = process.env.FORMECHO_TRACES_ENDPOINT?.trim();
+  if (url === undefined || url === '') return null;
+  try {
+    new URL(url);
+  } catch {
+    throw new Error(
+      `FORMECHO_TRACES_ENDPOINT が URL として読めません（受け取った値: ${url}）`,
+    );
+  }
+  return url;
+}
+
 /** Bedrock に接続しないブロック判定（テスト用）。`FAKE_MODEL_NAME` と同じ考え方。 */
 export const FAKE_GUARDRAIL_STRATEGY_NAME = 'fake';
 

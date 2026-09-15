@@ -16,7 +16,12 @@
       "runtimeVersion": "NODE_22",
       "networkMode": "PUBLIC",
       "protocol": "HTTP",
-      "envVars": [{ "name": "AGENT_OBSERVABILITY_ENABLED", "value": "true" }]
+      "envVars": [
+        {
+          "name": "FORMECHO_TRACES_ENDPOINT",
+          "value": "https://xray.ap-northeast-1.amazonaws.com/v1/traces"
+        }
+      ]
     }
   ],
   "memories": [],

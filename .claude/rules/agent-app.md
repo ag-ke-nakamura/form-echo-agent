@@ -203,38 +203,41 @@ Skill が1つも混ざらないことは同ファイルの「playground.free-pro
 
 ## トレース（#213）
 
-`main.ts` の先頭で `@aws/aws-distro-opentelemetry-node-autoinstrumentation/register` を読む。
-**グローバルの TracerProvider をここで登録し、Strands はそれを黙って使う**ので
-`setupTracer()` は呼ばない。
+`telemetry/` が TracerProvider を1つ組んでグローバルに登録し、**Strands はそれを黙って使う**
+（ドキュメントの Option 1）。`main.ts` が `setupTracing()` を呼ぶだけで、Agent 側の設定も
+`setupTracer()` の呼び出しも要らない。span を X-Ray の OTLP エンドポイントへ送るのは
+`telemetry/xray-exporter.ts`。
 
-- **`@langchain/core` は使っていないが依存から外せない。** ADOT の `register` が LangChain 計装を
-  静的に require しており、無いと **esbuild の解決が失敗して `agentcore deploy` ごと落ちる**
-  （バンドル時エラーなので、実行時には一度も通らないコードでも要る）。不足していたのはこの1つだけ
-- **送信先の切り替えは `AGENT_OBSERVABILITY_ENABLED`。** 未設定なら AWS 向けの設定
-  （X-Ray の OTLP エンドポイント・サンプラー・GenAI 本文の取得）が一切入らない。
-  有効側は `agentcore.json` の `envVars` が持つ
-- **`agentcore dev` はこの `envVars` を読まないので、ローカルは送信しない。** CLI の
-  `loadDevEnv` が注入するのは Gateway・Memory・Payment の env と `.env.local` だけで、
-  `agentcore.json` の `envVars` は入らない（CLI 0.28.1 で確認）。**ローカルでも送りたく
-  なったら、シェルか `mise.toml` で明示的に渡す**
+- **素の OTLP エクスポータでは届かない。** Strands のドキュメントにある
+  `setupTracer({ exporters: { otlp: true } })` は署名しないので、**SigV4 必須の AWS の宛先には
+  403 になる**（あれが想定しているのは Jaeger のような認証の無い宛先）。署名は
+  `aws/signed-fetch.ts` が Gateway（#46）と共有で持ち、サービス名だけ引数で変える
+- **本文は JSON で送る。** エンドポイントは binary（protobuf）と json の両方を受けるので、
+  文字列で送れる JSON を選び、既存の署名経路にそのまま乗せている
+- **AWS 配布の ADOT（`@aws/aws-distro-opentelemetry-node-autoinstrumentation`）は採らなかった。**
+  `exports` が `./register` 1つに絞られていて署名付きエクスポータだけを import できず、
+  丸ごと読むと**使わない LangChain 計装が静的 require で入り、`@langchain/core` が無いと
+  esbuild ごと落ちる**。バンドル下では require パッチ方式の自動計装がそもそも効かないため、
+  348 パッケージ・+3.1MB を払って得られるのは実質この署名だけだった
+- **`AWSXRayIdGenerator` が要る。** X-Ray は trace ID の先頭4バイトに epoch 秒を要求する。
+  標準の乱数 ID でも送信自体は通るので、**間違えると「送れているのに画面に出ない」**になる
+- **送信先の切り替えは `FORMECHO_TRACES_ENDPOINT` 1つだけ**（Web 検索の Gateway と同じ形）。
+  未設定なら provider を作らない。デプロイ先の値は `agentcore.json` の `envVars` が持つ
+- **`agentcore dev` はこの `envVars` を読まないので、ローカルは自動的に無効側になる。** CLI の
+  `loadDevEnv` が注入するのは Gateway・Memory・Payment の env と `.env.local` だけ（CLI 0.28.1
+  で確認）。**ローカルでも送りたいならシェルか `mise.toml` で明示的に渡す**
 - **IAM 権限は足さない。** CLI が作る Runtime 実行ロールが `xray:PutTraceSegments` と
   `xray:PutTelemetryRecords` を `Resource: "*"` で**既に持っている**
-  （`agentcore/.cli/logs/deploy/` のデプロイログの IAM Statement Changes で確認できる）。
-  Guardrail と同じ調子で `agent-app/infra` に足しかけたが、重複するだけなので入れていない
-- **`OTEL_RESOURCE_ATTRIBUTES` も設定しない。** service 名を入れたくなるが、あの欄は
-  AgentCore がホスト時に入れる `aws.log.group.names` と `cloud.resource_id`（GenAI
-  Observability への紐付けそのもの）を**丸ごと上書きする**。足すならその2つを含めた形で、
-  かつ agent id が要るのでデプロイ後にしか書けない
-- **`AGENT_OBSERVABILITY_ENABLED` 以外の `OTEL_*` を足す前に、AgentCore が同じ変数を
-  注入していないかを疑う。** ADOT の既定はどれも「未設定のときだけ入れる」形なので、
-  こちらが書くと AgentCore 側の値が消える
+  （`agentcore/.cli/logs/deploy/` のデプロイログの IAM Statement Changes で確認できる）
+- **`OTEL_RESOURCE_ATTRIBUTES` は設定しない。** service 名はコード側（`telemetry/load.ts`）で
+  resource に入れる。あの環境変数は AgentCore がホスト時に入れる `aws.log.group.names` と
+  `cloud.resource_id`（GenAI Observability への紐付けそのもの）を**丸ごと上書きする**
 - **アカウント単位の CloudWatch Transaction Search の有効化は別途人が行う。** これをしないと
   span は1つも見えない（共用アカウントの設定を変える操作なので自動実行しない）
 - **デプロイ前の確認は手元でできる。** パッケージャ（`@aws/agentcore-cdk` の
-  `NodeCodeZipPackagerSync`）と同じ esbuild オプションで束ね、`AGENT_OBSERVABILITY_ENABLED=true`
-  と `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4318/v1/traces` を与えて偽の
-  コレクタへ向ければ、`invoke_agent` / `execute_agent_loop_cycle` / `chat` の span が出ることまで
-  AWS に触らずに見える
+  `NodeCodeZipPackagerSync`）と同じ esbuild オプションで束ね、`FORMECHO_TRACES_ENDPOINT` を
+  ローカルの偽コレクタへ向ければ、`invoke_agent` / `execute_agent_loop_cycle` / `chat` の span が
+  出ること・trace ID が X-Ray 形式（先頭4バイトが開始時刻）であることまで AWS に触らずに見える
 
 ## テスト
 
