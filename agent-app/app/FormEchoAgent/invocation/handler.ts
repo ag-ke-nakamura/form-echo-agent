@@ -35,14 +35,6 @@ const GUARDRAIL_BLOCKED_MESSAGE =
 export interface InvocationContext {
   /** AgentCore が確定させたセッション ID。会話履歴の帰属先になる。 */
   sessionId: string;
-  /**
-   * AgentCore が振ったリクエスト ID（#213）。
-   *
-   * サービス側の span が `aws.request.id` として持つ値と同じなので、span に貼ると
-   * 「サービス側のトレース」と「こちらのトレース」がターン単位で対応づく。
-   * `RequestContext` では任意なのでこちらも任意にしてある。
-   */
-  requestId?: string | undefined;
   log: InvocationLogger;
 }
 
@@ -82,12 +74,12 @@ export async function handleInvocation(
   const { taskId, prompt, input } = parsedRequest.data;
 
   /*
-    ここから先で張られる span に `session.id` / `taskId` / `aws.request.id` が
-    貼られる（#213）。**検査に落ちた回は包まない** — `INVALID_INPUT` はモデルに
-    届く前に返るので span が1つも生まれず、包んでも貼る相手がいない。
+    ここから先で張られる span に `session.id` と `taskId` が貼られる（#213）。
+    **検査に落ちた回は包まない** — `INVALID_INPUT` はモデルに届く前に返るので
+    span が1つも生まれず、包んでも貼る相手がいない。
   */
   return withInvocationAttributes(
-    { sessionId: context.sessionId, requestId: context.requestId, taskId },
+    { sessionId: context.sessionId, taskId },
     async () => {
       try {
         const { result, usage, webSearchHits, systemPrompt } = await invokeTask(

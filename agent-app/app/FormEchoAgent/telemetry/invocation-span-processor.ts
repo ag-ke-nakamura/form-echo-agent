@@ -19,11 +19,16 @@ export const invocationSpanProcessor = {
     if (attributes === undefined) return;
     span.setAttribute('session.id', attributes.sessionId);
     span.setAttribute('formecho.task_id', attributes.taskId);
-    if (attributes.requestId !== undefined) {
-      // AgentCore サービス側の span と同じ値。1回の呼び出しが2トレースに分かれる
-      // （どちらも LOCAL_ROOT で、AWS 側がそういう設計）ので、対応付けはこれで取る。
-      span.setAttribute('aws.request.id', attributes.requestId);
-    }
+    /*
+      **`aws.request.id` は貼らない**（#213）。AgentCore サービス側の span が持つ
+      あの値と揃えてターン単位で対応づけたかったが、**揃わない**ことを実機で確認した。
+      `bedrock-agentcore` は `x-amzn-bedrock-agentcore-runtime-request-id` が
+      無ければランダム UUID を入れる実装で、そのヘッダは届いていない。
+      無関係な値を AWS の予約キーに入れると、後で結合しようとした人を誤らせる。
+
+      対応づけたいなら `session.id` と時刻で辿る。1回の呼び出しが2トレースに
+      分かれること自体は AWS 側の設計（どちらの span も LOCAL_ROOT）。
+    */
   },
   onEnd(): void {},
   forceFlush(): Promise<void> {

@@ -18,8 +18,6 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 export interface InvocationAttributes {
   /** 会話の帰属先。GenAI Observability のセッション画面がこれで span を束ねる。 */
   sessionId: string;
-  /** AgentCore サービス側の span が持つ `aws.request.id` と同じ値。ターンの対応が決まる。 */
-  requestId?: string | undefined;
   /** どのタブの処理か。ドメイン名より細かく、会議ドメインの3タスクを区別できる。 */
   taskId: string;
 }

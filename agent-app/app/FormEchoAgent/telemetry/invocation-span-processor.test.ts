@@ -24,15 +24,11 @@ function recordingSpan(): Span & { recorded: Record<string, unknown> } {
 }
 
 describe('invocation の値を span に貼る', () => {
-  it('セッション・taskId・リクエスト ID を貼る', async () => {
+  it('セッションと taskId を貼る', async () => {
     const span = recordingSpan();
 
     await withInvocationAttributes(
-      {
-        sessionId: 'session-1',
-        requestId: 'request-1',
-        taskId: 'ic-card.parse-reservation',
-      },
+      { sessionId: 'session-1', taskId: 'ic-card.parse-reservation' },
       async () => {
         invocationSpanProcessor.onStart(span);
       },
@@ -41,11 +37,15 @@ describe('invocation の値を span に貼る', () => {
     expect(span.recorded).toEqual({
       'session.id': 'session-1',
       'formecho.task_id': 'ic-card.parse-reservation',
-      'aws.request.id': 'request-1',
     });
   });
 
-  it('リクエスト ID が無ければその欄だけ貼らない', async () => {
+  /*
+    AgentCore サービス側の span が持つ `aws.request.id` とは**揃わない**ことを
+    実機で確認している（ヘッダが届かず SDK がランダム UUID を入れる）。無関係な値を
+    予約キーに入れると後で結合しようとした人を誤らせるので、貼らないことを固定する。
+  */
+  it('aws.request.id は貼らない', async () => {
     const span = recordingSpan();
 
     await withInvocationAttributes(
@@ -56,7 +56,6 @@ describe('invocation の値を span に貼る', () => {
     );
 
     expect(span.recorded).not.toHaveProperty('aws.request.id');
-    expect(span.recorded['session.id']).toBe('session-1');
   });
 
   /*
