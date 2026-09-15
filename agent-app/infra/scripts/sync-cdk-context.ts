@@ -3,7 +3,19 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 
 /**
- * `npm run cache-runtime-role-arn` から実行する前提（npm run はこの package.json の
+ * `agentcore` が作ったリソースの ARN を `cdk.json` の `context` へ同期する。
+ *
+ * このスタックは隣のスタック（`agentcore/cdk`。CLI の生成物）が作ったリソースを
+ * 参照するが、**あちらは生成物で export を持たないため cross-stack 参照が使えない**
+ * （ADR-0010）。代わりに `agentcore status --json` から ARN を取り出してここへ書き、
+ * スタックは `node.tryGetContext()` で読む。
+ *
+ * 同期であって一度きりではない。**Runtime を作り直すと ARN ごと変わる**ので、
+ * その都度これを実行して合わせ直す運用になっている。synth のたびに `agentcore status`
+ * を叩かないのは、CDK 自身が `cdk.context.json` で context provider の解決結果を
+ * 持つのと同じ考え方。
+ *
+ * `npm run sync-cdk-context` から実行する前提（npm run はこの package.json の
  * ディレクトリを cwd にする）。`agentcore status` は agent-app/ 内でしか実行できない
  * （CLI がカレントディレクトリをプロジェクトルートとして扱うため）。
  *

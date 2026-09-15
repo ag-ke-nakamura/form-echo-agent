@@ -10,7 +10,7 @@
     "clean": "rm -rf dist",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "cache-runtime-role-arn": "npm run build && node dist/scripts/cache-runtime-role-arn.js"
+    "sync-cdk-context": "npm run build && node dist/scripts/sync-cdk-context.js"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",

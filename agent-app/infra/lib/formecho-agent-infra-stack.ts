@@ -20,7 +20,7 @@ export class FormEchoAgentInfraStack extends Stack {
     const runtimeRoleArn = this.node.tryGetContext('runtimeRoleArn') as string | undefined;
     if (!runtimeRoleArn) {
       throw new Error(
-        'context.runtimeRoleArn が cdk.json に無い。`npm run cache-runtime-role-arn` を実行してから再実行すること（ADR-0010）。'
+        'context.runtimeRoleArn が cdk.json に無い。`npm run sync-cdk-context` を実行してから再実行すること（ADR-0010）。'
       );
     }
     const runtimeRole = Role.fromRoleArn(this, 'RuntimeRole', runtimeRoleArn, { mutable: true });
@@ -50,7 +50,7 @@ export class FormEchoAgentInfraStack extends Stack {
     const runtimeArn = this.node.tryGetContext('runtimeArn') as string | undefined;
     if (!runtimeArn) {
       throw new Error(
-        'context.runtimeArn が cdk.json に無い。`npm run cache-runtime-role-arn` を実行してから再実行すること（ADR-0010）。'
+        'context.runtimeArn が cdk.json に無い。`npm run sync-cdk-context` を実行してから再実行すること（ADR-0010）。'
       );
     }
 

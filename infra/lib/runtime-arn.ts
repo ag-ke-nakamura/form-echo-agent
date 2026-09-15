@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
  * 「デプロイ済み環境からは古い Runtime が答える」という形で表に出る。`agentcore deploy`
  * の結果としてコミットされているファイルを唯一の出所にする。
  *
- * `agent-app/infra` の `cache-runtime-role-arn` とは経路が違う。あちらは `agentcore status`
+ * `agent-app/infra` の `sync-cdk-context` とは経路が違う。あちらは `agentcore status`
  * を叩いて cdk.json へ焼き付ける（Guardrail を張る相手の role ARN が要るのはデプロイ時
  * だけで、synth を CI で回すのに AWS 資格情報を要求したくない）。こちらは同じ状態ファイルを
  * 直接読むので、CLI も資格情報も要らない。

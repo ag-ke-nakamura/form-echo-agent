@@ -15,6 +15,6 @@ Guardrail（案B）は `agentcore.json` の `AgentCoreProjectSpec` にリソー�
 
 ## Consequences
 
-- Runtime 実行ロールへの権限付与は「`agentcore status --json` の `roleArn` を動的解決する」方式で解決した（#116）。cross-stack export は使わない — `agentcore/cdk` は生成物で export を持たないため。`agent-app/infra/scripts/cache-runtime-role-arn.ts` が `agentcore status --json` を叩いて ARN を取り出し、`cdk.json` の `context.runtimeRoleArn` にキャッシュする（synth のたびに叩かない。CDK 自身が `cdk.context.json` で context provider の解決結果をキャッシュするのと同じ発想）。Runtime 再デプロイでロールが変わったら人がこのスクリプトを再実行する運用にする
+- Runtime 実行ロールへの権限付与は「`agentcore status --json` の `roleArn` を動的解決する」方式で解決した（#116）。cross-stack export は使わない — `agentcore/cdk` は生成物で export を持たないため。`agent-app/infra/scripts/sync-cdk-context.ts` が `agentcore status --json` を叩いて ARN を取り出し、`cdk.json` の `context.runtimeRoleArn` にキャッシュする（synth のたびに叩かない。CDK 自身が `cdk.context.json` で context provider の解決結果をキャッシュするのと同じ発想）。Runtime 再デプロイでロールが変わったら人がこのスクリプトを再実行する運用にする
 - 対象は案A（`bedrock:InvokeGuardrailChecks`、リソースレスAPIのため `Resource: "*"`）のみ。案B（`bedrock:ApplyGuardrail`）は参照先の Guardrail が未デプロイ（`FORMECHO_GUARDRAIL_APPLY_GUARDRAIL` は既定 OFF）なため対象外 — 存在しないリソースへの権限を先取りしない。Guardrail を実際にデプロイする回でまとめて追加する
 - 既存2つの Guardrail はこの CDK では一切 import・参照しない

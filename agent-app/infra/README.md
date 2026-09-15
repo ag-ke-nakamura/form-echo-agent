@@ -10,29 +10,35 @@ agentcore CLI の生成物で `agentcore deploy` のたびに作り直される�
 
 - `bin/infra.ts` — エントリポイント。`FormEchoAgentInfraStack` を1つ作る。
 - `lib/formecho-agent-infra-stack.ts` — スタック本体。
-- `scripts/cache-runtime-role-arn.ts` — Runtime 実行ロールの ARN を `cdk.json` の
-  `context.runtimeRoleArn` にキャッシュするスクリプト。
+- `scripts/sync-cdk-context.ts` — `agentcore` 側の ARN を `cdk.json` の `context` に
+  キャッシュするスクリプト（実行ロールとRuntime 本体の2つ）。
 - `test/` — スタックの synth 結果を検証する単体テスト。
 
 ## コマンド
 
 - `npm run build` — TypeScript をコンパイル
 - `npm run test` — 単体テスト
-- `npm run cache-runtime-role-arn` — Runtime 実行ロールの ARN を `cdk.json` に書き込む
+- `npm run sync-cdk-context` — `agentcore` 側の ARN を `cdk.json` に書き込む
 - `npx cdk diff` — デプロイ済みスタックとの差分
 - `npx cdk deploy` — デプロイ
 
-## Runtime 実行ロールの ARN キャッシュ
+## ARN のキャッシュ
 
-`FormEchoAgentInfraStack` は Runtime 実行ロール（`agentcore` が管理し、この CDK からは
-生成しない）に IAM 権限を付与するため、`iam.Role.fromRoleArn()` でそのロールを参照する。
-ARN は synth のたびに解決するのではなく `cdk.json` の `context.runtimeRoleArn` に
-キャッシュしておき、CDK はそこから読む。
+このスタックは `agentcore` が作ったリソースを2つ参照する。**どちらもデプロイして初めて
+決まる**ので、値を埋め込まず `cdk.json` の `context` 越しに読む。
 
-**Runtime を再デプロイしてロールが変わったら `npm run cache-runtime-role-arn` を
-再実行すること。**（agent-app/ で `agentcore status --json` を叩いて `roleArn` を取り出し、
-`cdk.json` を書き換える。）`context.runtimeRoleArn` が無い状態で synth すると、このスクリプトの
-実行を促すエラーで止まる。
+| context          | 参照先             | 用途                               |
+| ---------------- | ------------------ | ---------------------------------- |
+| `runtimeRoleArn` | Runtime 実行ロール | Guardrail 用の IAM 権限を付与する  |
+| `runtimeArn`     | Runtime 本体       | トレースの配送元として指す（#213） |
+
+`agentcore/cdk` は生成物で export を持たないため cross-stack 参照は使えない（ADR-0010）。
+代わりに `agentcore status --json` の出力から取り出してキャッシュする。synth のたびに
+叩かないのは、CDK 自身が `cdk.context.json` で context provider の解決結果をキャッシュする
+のと同じ発想。
+
+**Runtime を再デプロイして ARN が変わったら `npm run sync-cdk-context` を再実行すること。**
+どちらかが欠けた状態で synth すると、このスクリプトの実行を促すエラーで止まる。
 
 ## デプロイ前に必ず確認する
 

@@ -144,7 +144,7 @@ Skill が1つも混ざらないことは同ファイルの「playground.free-pro
 - **Guardrail のために Runtime 実行ロールへ足す IAM 権限**（トレースのぶんは別で、
   「トレース（#213）」を参照。cdk は生成物のため手で編集しない —
   `agent-app/infra` の `FormEchoAgentInfraStack` が `cdk.json` にキャッシュされた ARN
-  （`scripts/cache-runtime-role-arn.ts` が `agentcore status --json` の `roleArn` から
+  （`scripts/sync-cdk-context.ts` が `agentcore status --json` の `roleArn` から
   書き込む）で agentcore 管理のロールを参照する。ADR-0010 の Consequences 参照）:
   ```json
   [{ "Effect": "Allow", "Action": "bedrock:InvokeGuardrailChecks", "Resource": "*" }]
