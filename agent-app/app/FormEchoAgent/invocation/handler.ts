@@ -9,6 +9,7 @@ import {
   `toCitations` なので、モデルへ番号を渡す側と応答に載せる側が同じ関数を引く必要が
   ある** — 2箇所で並べると、モデルが指した番号と職員が見る一覧の番号が食い違う。
 */
+import { withInvocationAttributes } from '../telemetry/invocation-attributes.js';
 import { toCitations } from '../tools/web-search.js';
 import {
   GuardrailBlockedError,
@@ -73,10 +74,21 @@ export async function handleInvocation(
   const { taskId, prompt, input } = parsedRequest.data;
 
   try {
-    const { result, usage, webSearchHits, systemPrompt } = await invokeTask(
-      { taskId, prompt, input, sessionId: context.sessionId },
-      context.log,
-    );
+    /*
+      span に `session.id` と `taskId` を貼るための文脈（#213）。**包むのは
+      `invokeTask` だけでよい** — span を張るのは Guardrail の検査から
+      `agent.invoke` までの内側で、応答を組み立てる処理は span を作らない。
+      `INVALID_INPUT` で先に返る回も同じ理由で対象外（span が1つも生まれない）。
+    */
+    const { result, usage, webSearchHits, systemPrompt } =
+      await withInvocationAttributes(
+        { sessionId: context.sessionId, taskId },
+        () =>
+          invokeTask(
+            { taskId, prompt, input, sessionId: context.sessionId },
+            context.log,
+          ),
+      );
     return {
       sessionId: context.sessionId,
       result,

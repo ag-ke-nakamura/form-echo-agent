@@ -90,6 +90,14 @@ export function getOrCreateDomainAgent(
     // テキストが存在せず、残るのはツール名の1行だけ。それが fastify の pino が
     // 出す JSON のログと交ざり、行単位で読めなくなる。
     printer: false,
+    /*
+      **`traceAttributes` はここで渡さない**（#213）。Strands がこれを付けるのは
+      親 span（`invoke_agent`）だけで、`chat` やツール実行の span には付かない。
+      加えて Agent はセッション単位でキャッシュされるため、リクエストごとに変わる値
+      （`aws.request.id`）を載せると2ターン目以降も初回の値が残る。
+      貼るのは `telemetry/invocation-span-processor.ts` の役目で、あちらは全ての
+      span に、その時点の invocation の値を貼る。
+    */
   });
   agentCache.set(key, { agent, promptSource });
   return { agent, systemPrompt };

@@ -84,6 +84,7 @@
     "@aws-cdk/aws-lambda:useCdkManagedLogGroup": true,
     "@aws-cdk/aws-elasticloadbalancingv2:networkLoadBalancerWithSecurityGroupByDefault": true,
     "@aws-cdk/aws-ecs-patterns:uniqueTargetGroupId": true,
-    "runtimeRoleArn": "arn:aws:iam::122664578519:role/AgentCore-FormEcho-defaul-ApplicationAgentFormEchoA-0lN6LVXEiBWj"
+    "runtimeRoleArn": "arn:aws:iam::122664578519:role/AgentCore-FormEcho-defaul-ApplicationAgentFormEchoA-0lN6LVXEiBWj",
+    "runtimeArn": "arn:aws:bedrock-agentcore:ap-northeast-1:122664578519:runtime/FormEcho_FormEchoAgent-b7lxcgCRfb"
   }
 }

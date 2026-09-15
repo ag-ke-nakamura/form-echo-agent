@@ -141,9 +141,10 @@ Skill が1つも混ざらないことは同ファイルの「playground.free-pro
   `agent-app/infra` に残るのは Runtime 実行ロールへの権限付与だけ。**実リソースの破棄
   （`npx cdk deploy` による削除の反映）は人が実行する** — 共用アカウントの実リソースを
   作る・消す操作なので、`npx cdk deploy` / `cdk destroy` は自動実行しない
-- **Runtime 実行ロールに必要な IAM 権限**（cdk は生成物のため手で編集しない —
+- **Guardrail のために Runtime 実行ロールへ足す IAM 権限**（トレースのぶんは別で、
+  「トレース（#213）」を参照。cdk は生成物のため手で編集しない —
   `agent-app/infra` の `FormEchoAgentInfraStack` が `cdk.json` にキャッシュされた ARN
-  （`scripts/cache-runtime-role-arn.ts` が `agentcore status --json` の `roleArn` から
+  （`scripts/sync-cdk-context.ts` が `agentcore status --json` の `roleArn` から
   書き込む）で agentcore 管理のロールを参照する。ADR-0010 の Consequences 参照）:
   ```json
   [{ "Effect": "Allow", "Action": "bedrock:InvokeGuardrailChecks", "Resource": "*" }]
@@ -193,6 +194,50 @@ Skill が1つも混ざらないことは同ファイルの「playground.free-pro
   動かせない。** どちらもスキャフォールド由来の `{"prompt": "…"}` しか送らず、`taskId` を
   付けられないため。プロンプトを試すときはフロントエンド（localhost:3000）か curl を使う。
   UI には `INVALID_INPUT` と理由が表示される
+- **`agentcore.json` の `instrumentation.enableOtel` は Node では効かない**（#213）。
+  `@aws/agentcore-cdk` が `enableOtel && !isNode` で判定しており、entrypoint を
+  `opentelemetry-instrument` で包むのは Python のときだけ（alpha.50・alpha.53 とも同じ。
+  **上げても直らない**）。したがって AWS のドキュメントが案内する Node の手順
+  （vendoring + `entryPoint: ["opentelemetry-instrument", "app.js"]`）はこの構成では使えない
+  — CLI のパッケージングは esbuild の単一 CJS バンドル固定で `node_modules` を同梱しない
+
+## トレース（#213）
+
+`telemetry/` が TracerProvider を1つ組んでグローバルに登録し、**Strands はそれを黙って使う**
+（ドキュメントの Option 1）。`main.ts` が `setupTracing()` を呼ぶだけで、Agent 側の設定も
+`setupTracer()` の呼び出しも要らない。span を X-Ray の OTLP エンドポイントへ送るのは
+`telemetry/xray-exporter.ts`。
+
+- **素の OTLP エクスポータでは届かない。** Strands のドキュメントにある
+  `setupTracer({ exporters: { otlp: true } })` は署名しないので、**SigV4 必須の AWS の宛先には
+  403 になる**（あれが想定しているのは Jaeger のような認証の無い宛先）。署名は
+  `aws/signed-fetch.ts` が Gateway（#46）と共有で持ち、サービス名だけ引数で変える
+- **本文は JSON で送る。** エンドポイントは binary（protobuf）と json の両方を受けるので、
+  文字列で送れる JSON を選び、既存の署名経路にそのまま乗せている
+- **AWS 配布の ADOT（`@aws/aws-distro-opentelemetry-node-autoinstrumentation`）は採らなかった。**
+  `exports` が `./register` 1つに絞られていて署名付きエクスポータだけを import できず、
+  丸ごと読むと**使わない LangChain 計装が静的 require で入り、`@langchain/core` が無いと
+  esbuild ごと落ちる**。バンドル下では require パッチ方式の自動計装がそもそも効かないため、
+  348 パッケージ・+3.1MB を払って得られるのは実質この署名だけだった
+- **`AWSXRayIdGenerator` が要る。** X-Ray は trace ID の先頭4バイトに epoch 秒を要求する。
+  標準の乱数 ID でも送信自体は通るので、**間違えると「送れているのに画面に出ない」**になる
+- **送信先の切り替えは `FORMECHO_TRACES_ENDPOINT` 1つだけ**（Web 検索の Gateway と同じ形）。
+  未設定なら provider を作らない。デプロイ先の値は `agentcore.json` の `envVars` が持つ
+- **`agentcore dev` はこの `envVars` を読まないので、ローカルは自動的に無効側になる。** CLI の
+  `loadDevEnv` が注入するのは Gateway・Memory・Payment の env と `.env.local` だけ（CLI 0.28.1
+  で確認）。**ローカルでも送りたいならシェルか `mise.toml` で明示的に渡す**
+- **IAM 権限は足さない。** CLI が作る Runtime 実行ロールが `xray:PutTraceSegments` と
+  `xray:PutTelemetryRecords` を `Resource: "*"` で**既に持っている**
+  （`agentcore/.cli/logs/deploy/` のデプロイログの IAM Statement Changes で確認できる）
+- **`OTEL_RESOURCE_ATTRIBUTES` は設定しない。** service 名はコード側（`telemetry/load.ts`）で
+  resource に入れる。あの環境変数は AgentCore がホスト時に入れる `aws.log.group.names` と
+  `cloud.resource_id`（GenAI Observability への紐付けそのもの）を**丸ごと上書きする**
+- **アカウント単位の CloudWatch Transaction Search の有効化は別途人が行う。** これをしないと
+  span は1つも見えない（共用アカウントの設定を変える操作なので自動実行しない）
+- **デプロイ前の確認は手元でできる。** パッケージャ（`@aws/agentcore-cdk` の
+  `NodeCodeZipPackagerSync`）と同じ esbuild オプションで束ね、`FORMECHO_TRACES_ENDPOINT` を
+  ローカルの偽コレクタへ向ければ、`invoke_agent` / `execute_agent_loop_cycle` / `chat` の span が
+  出ること・trace ID が X-Ray 形式（先頭4バイトが開始時刻）であることまで AWS に触らずに見える
 
 ## テスト
 

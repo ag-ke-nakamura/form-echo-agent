@@ -1,10 +1,6 @@
-import { Sha256 } from '@aws-crypto/sha256-js';
-import { defaultProvider } from '@aws-sdk/credential-provider-node';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { HttpRequest } from '@smithy/protocol-http';
-import { SignatureV4 } from '@smithy/signature-v4';
-import { AWS_REGION } from '../config.js';
+import { signedFetch } from '../aws/signed-fetch.js';
 import type { WebSearchBackend, WebSearchHit } from './web-search.js';
 
 /**
@@ -30,65 +26,6 @@ const GATEWAY_TOOL_NAME = 'WebSearch___WebSearch';
 
 /** 1回の検索で受け取る件数。裏取りには上位数件で足り、多いほど本文が積み上がる。 */
 const MAX_RESULTS = 5;
-
-function signedFetch(): typeof fetch {
-  const signer = new SignatureV4({
-    service: 'bedrock-agentcore',
-    region: AWS_REGION,
-    credentials: defaultProvider(),
-    sha256: Sha256,
-  });
-
-  return async (input, init) => {
-    const url = new URL(
-      typeof input === 'string' ? input : (input as Request | URL).toString(),
-    );
-    /*
-      `host` を自分で入れる。SigV4 は署名対象に host を含めるが、`fetch` が付ける
-      分は署名の時点ではまだ存在しない — 入れないと署名の中身と実際に飛ぶ
-      リクエストがずれて 403 になる。
-    */
-    const headers: Record<string, string> = { host: url.host };
-    new Headers(init?.headers).forEach((value, key) => {
-      headers[key] = value;
-    });
-
-    /*
-      クエリは同じキーが複数回現れうるので配列で渡す。`Object.fromEntries` だと
-      最後の1つに潰れ、署名が実際に飛ぶ URL と 食い違って 403 になる。
-    */
-    const query: Record<string, string | string[]> = {};
-    for (const key of new Set(url.searchParams.keys())) {
-      const values = url.searchParams.getAll(key);
-      query[key] = values.length === 1 ? (values[0] as string) : values;
-    }
-
-    /*
-      本文は文字列のときだけ署名対象にする。`String(body)` で丸めると
-      `[object Object]` を署名して実物と食い違う（MCP のトランスポートは JSON の
-      文字列を送るので現状は通るが、丸める形だと壊れたときに 403 としてしか出ない）。
-    */
-    const { body } = init ?? {};
-    if (body !== undefined && body !== null && typeof body !== 'string') {
-      throw new TypeError(
-        `SigV4 で署名できない本文の型です: ${Object.prototype.toString.call(body)}`,
-      );
-    }
-
-    const signed = await signer.sign(
-      new HttpRequest({
-        method: init?.method ?? 'GET',
-        protocol: url.protocol,
-        hostname: url.hostname,
-        path: url.pathname,
-        query,
-        headers,
-        body: body ?? undefined,
-      }),
-    );
-    return fetch(url, { ...init, headers: signed.headers });
-  };
-}
 
 /** Gateway が返す本文（JSON 文字列）から、必要なフィールドだけを取る。 */
 function parseHits(payload: unknown): WebSearchHit[] {
@@ -135,7 +72,7 @@ function parseHits(payload: unknown): WebSearchHit[] {
  * 使い回して得られるものより、寿命を呼び出しの中に閉じ込められる利点が勝つ。
  */
 export function gatewayWebSearch(gatewayUrl: string): WebSearchBackend {
-  const fetchImpl = signedFetch();
+  const fetchImpl = signedFetch('bedrock-agentcore');
 
   return async (query) => {
     const client = new Client({ name: 'FormEchoAgent', version: '0.1.0' });
