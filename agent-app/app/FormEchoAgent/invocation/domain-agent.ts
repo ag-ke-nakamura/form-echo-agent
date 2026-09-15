@@ -91,16 +91,13 @@ export function getOrCreateDomainAgent(
     // 出す JSON のログと交ざり、行単位で読めなくなる。
     printer: false,
     /*
-      トレースをセッションに束ねる（#213）。**この1欄が無いと GenAI Observability の
-      セッション画面が空になる** — AgentCore サービス側の span はセッションを持つが、
-      こちらの span（思考の各周・モデル呼び出し・ツール実行）が `session.id` を持たない
-      ため、セッションを開いても中身が1つも紐付かない。
-
-      Strands の Tracer はこれを**自分が作る全ての span** に付けるので、ここで1回
-      渡せばツール実行の span まで届く。Agent はセッションごとにキャッシュされるので、
-      生成時に固定してよい。
+      **`traceAttributes` はここで渡さない**（#213）。Strands がこれを付けるのは
+      親 span（`invoke_agent`）だけで、`chat` やツール実行の span には付かない。
+      加えて Agent はセッション単位でキャッシュされるため、リクエストごとに変わる値
+      （`aws.request.id`）を載せると2ターン目以降も初回の値が残る。
+      貼るのは `telemetry/invocation-span-processor.ts` の役目で、あちらは全ての
+      span に、その時点の invocation の値を貼る。
     */
-    traceAttributes: { 'session.id': sessionId },
   });
   agentCache.set(key, { agent, promptSource });
   return { agent, systemPrompt };

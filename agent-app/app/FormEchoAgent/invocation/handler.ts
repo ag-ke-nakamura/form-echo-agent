@@ -9,6 +9,7 @@ import {
   `toCitations` なので、モデルへ番号を渡す側と応答に載せる側が同じ関数を引く必要が
   ある** — 2箇所で並べると、モデルが指した番号と職員が見る一覧の番号が食い違う。
 */
+import { withInvocationAttributes } from '../telemetry/invocation-attributes.js';
 import { toCitations } from '../tools/web-search.js';
 import {
   GuardrailBlockedError,
@@ -34,6 +35,14 @@ const GUARDRAIL_BLOCKED_MESSAGE =
 export interface InvocationContext {
   /** AgentCore が確定させたセッション ID。会話履歴の帰属先になる。 */
   sessionId: string;
+  /**
+   * AgentCore が振ったリクエスト ID（#213）。
+   *
+   * サービス側の span が `aws.request.id` として持つ値と同じなので、span に貼ると
+   * 「サービス側のトレース」と「こちらのトレース」がターン単位で対応づく。
+   * `RequestContext` では任意なのでこちらも任意にしてある。
+   */
+  requestId?: string | undefined;
   log: InvocationLogger;
 }
 
@@ -72,49 +81,62 @@ export async function handleInvocation(
 
   const { taskId, prompt, input } = parsedRequest.data;
 
-  try {
-    const { result, usage, webSearchHits, systemPrompt } = await invokeTask(
-      { taskId, prompt, input, sessionId: context.sessionId },
-      context.log,
-    );
-    return {
-      sessionId: context.sessionId,
-      result,
-      usage,
-      citations: toCitations(webSearchHits),
-      // 他4タブでは undefined。JSON 化の時点で欄ごと消える（ADR-0020）。
-      systemPrompt,
-    };
-  } catch (error) {
-    context.log.error({ err: error }, 'invocation に失敗しました');
-    if (error instanceof GuardrailBlockedError) {
-      return {
-        error: {
-          code: 'GUARDRAIL_BLOCKED',
-          message: GUARDRAIL_BLOCKED_MESSAGE,
-          /*
-            **他4タブに対してだけ `verdict` を握り潰す**（ADR-0021 が ADR-0009 を
-            この1点で改訂した）。プロンプト検証タブの職員の仕事はプロンプトを直す
-            ことなので、種別だけの二値では直した効果を測れない。他4タブでは職員の
-            取る行動が変わらないので、回避のオラクルになる情報を渡す理由が無い。
+  /*
+    ここから先で張られる span に `session.id` / `taskId` / `aws.request.id` が
+    貼られる（#213）。**検査に落ちた回は包まない** — `INVALID_INPUT` はモデルに
+    届く前に返るので span が1つも生まれず、包んでも貼る相手がいない。
+  */
+  return withInvocationAttributes(
+    { sessionId: context.sessionId, requestId: context.requestId, taskId },
+    async () => {
+      try {
+        const { result, usage, webSearchHits, systemPrompt } = await invokeTask(
+          { taskId, prompt, input, sessionId: context.sessionId },
+          context.log,
+        );
+        return {
+          sessionId: context.sessionId,
+          result,
+          usage,
+          citations: toCitations(webSearchHits),
+          // 他4タブでは undefined。JSON 化の時点で欄ごと消える（ADR-0020）。
+          systemPrompt,
+        };
+      } catch (error) {
+        context.log.error({ err: error }, 'invocation に失敗しました');
+        if (error instanceof GuardrailBlockedError) {
+          return {
+            error: {
+              code: 'GUARDRAIL_BLOCKED',
+              message: GUARDRAIL_BLOCKED_MESSAGE,
+              /*
+                **他4タブに対してだけ `verdict` を握り潰す**（ADR-0021 が ADR-0009 を
+                この1点で改訂した）。プロンプト検証タブの職員の仕事はプロンプトを直す
+                ことなので、種別だけの二値では直した効果を測れない。他4タブでは職員の
+                取る行動が変わらないので、回避のオラクルになる情報を渡す理由が無い。
 
-            出力側でブロックされても回答本文は載らない — この経路には `result` が
-            そもそも無い（例外が返り値を追い越している）。
-          */
-          guardrail:
-            taskId === FREE_PROMPT_TASK_ID
-              ? { direction: error.direction, findings: error.verdict.findings }
-              : undefined,
-        },
-      };
-    }
-    if (error instanceof StructuredOutputError) {
-      return {
-        error: { code: 'PARSE_FAILED', message: error.message },
-      };
-    }
-    // 想定外の失敗は握り潰さず 500 にして、BFF に RUNTIME_UNAVAILABLE を
-    // 出させる。ここで既知のコードに丸めると原因が消える。
-    throw error;
-  }
+                出力側でブロックされても回答本文は載らない — この経路には `result` が
+                そもそも無い（例外が返り値を追い越している）。
+              */
+              guardrail:
+                taskId === FREE_PROMPT_TASK_ID
+                  ? {
+                      direction: error.direction,
+                      findings: error.verdict.findings,
+                    }
+                  : undefined,
+            },
+          };
+        }
+        if (error instanceof StructuredOutputError) {
+          return {
+            error: { code: 'PARSE_FAILED', message: error.message },
+          };
+        }
+        // 想定外の失敗は握り潰さず 500 にして、BFF に RUNTIME_UNAVAILABLE を
+        // 出させる。ここで既知のコードに丸めると原因が消える。
+        throw error;
+      }
+    },
+  );
 }

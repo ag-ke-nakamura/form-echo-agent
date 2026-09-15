@@ -3,6 +3,7 @@ import { resourceFromAttributes } from '@opentelemetry/resources';
 import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { resolveTracesEndpoint } from '../config.js';
+import { invocationSpanProcessor } from './invocation-span-processor.js';
 import { xraySpanExporter } from './xray-exporter.js';
 
 /**
@@ -37,7 +38,11 @@ export function setupTracing(): void {
   const provider = new NodeTracerProvider({
     idGenerator: new AWSXRayIdGenerator(),
     resource: resourceFromAttributes({ 'service.name': SERVICE_NAME }),
-    spanProcessors: [new BatchSpanProcessor(xraySpanExporter(endpoint))],
+    // 順番に意味がある。属性を貼る側を先に置く（`onStart` は登録順に呼ばれる）。
+    spanProcessors: [
+      invocationSpanProcessor,
+      new BatchSpanProcessor(xraySpanExporter(endpoint)),
+    ],
   });
   provider.register();
 
