@@ -1,4 +1,5 @@
 import { Policy, PolicyStatement, Role } from 'aws-cdk-lib/aws-iam';
+import { CfnDelivery, CfnDeliveryDestination, CfnDeliverySource } from 'aws-cdk-lib/aws-logs';
 import { Stack, type StackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
@@ -30,5 +31,48 @@ export class FormEchoAgentInfraStack extends Stack {
       roles: [runtimeRole],
       statements: [new PolicyStatement({ actions: ['bedrock:InvokeGuardrailChecks'], resources: ['*'] })],
     });
+
+    this.enableTraceDelivery();
+  }
+
+  /**
+   * AgentCore コンソールの「Tracing」トグルに当たるもの（#213）。
+   *
+   * **`agentcore.json` では表現できず、agentcore CLI にも該当のコマンドが無い**
+   * （CLI は配送の API を一度も呼ばない）。コンソールで押すと CloudWatch の
+   * vended log delivery が3つ作られるので、それを我々の手で持つ。
+   *
+   * これで届くのは **AgentCore サービス自身が出す span**（呼び出し単位のレイテンシ・
+   * 成否）である。モデル・ツール・トークン数といったエージェント内部の span は
+   * Runtime のコード側（`telemetry/`）が別途 X-Ray へ送っており、**両者は補い合う**。
+   */
+  private enableTraceDelivery(): void {
+    const runtimeArn = this.node.tryGetContext('runtimeArn') as string | undefined;
+    if (!runtimeArn) {
+      throw new Error(
+        'context.runtimeArn が cdk.json に無い。`npm run cache-runtime-role-arn` を実行してから再実行すること（ADR-0010）。'
+      );
+    }
+
+    const source = new CfnDeliverySource(this, 'TracesDeliverySource', {
+      name: 'FormEchoAgentTraces',
+      resourceArn: runtimeArn,
+      logType: 'TRACES',
+    });
+
+    /*
+      X-Ray 宛ての配送先には `deliveryDestinationConfiguration` を渡さない。
+      ログ宛て（CWL / S3 / Firehose）と違い、宛先の ARN を持たず
+      `deliveryDestinationType` だけで決まる。渡すと検証で落ちる。
+    */
+    const destination = new CfnDeliveryDestination(this, 'TracesDeliveryDestination', {
+      name: 'FormEchoAgentTracesXRay',
+      deliveryDestinationType: 'XRAY',
+    });
+
+    new CfnDelivery(this, 'TracesDelivery', {
+      deliverySourceName: source.name,
+      deliveryDestinationArn: destination.attrArn,
+    }).addDependency(source);
   }
 }

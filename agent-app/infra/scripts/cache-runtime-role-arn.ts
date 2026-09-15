@@ -17,7 +17,14 @@ const CDK_JSON_PATH = path.join(INFRA_DIR, 'cdk.json');
 const envWithoutInitCwd = { ...process.env };
 delete envWithoutInitCwd.INIT_CWD;
 
-function fetchRuntimeRoleArn(): string {
+/**
+ * 実行ロールと Runtime 本体、2つの ARN を取る。
+ *
+ * **どちらもデプロイして初めて決まる**（Runtime を作り直すと ID ごと変わる）ので、
+ * このスタックは値を埋め込まずキャッシュ越しに参照する。トレースの配送（#213）は
+ * Runtime の ARN を配送元として指すため、ロールだけでは足りない。
+ */
+function fetchRuntimeArns(): { roleArn: string; runtimeArn: string } {
   const output = execFileSync('agentcore', ['status', '--json'], {
     cwd: AGENT_APP_DIR,
     encoding: 'utf-8',
@@ -25,22 +32,25 @@ function fetchRuntimeRoleArn(): string {
   });
   const status = JSON.parse(output);
   const runtimes = status?.deployedState?.targets?.default?.resources?.runtimes;
-  const roleArn = runtimes?.FormEchoAgent?.roleArn;
-  if (typeof roleArn !== 'string' || roleArn.length === 0) {
-    throw new Error(
-      `agentcore status --json の deployedState.targets.default.resources.runtimes.FormEchoAgent.roleArn が見つからない: ${output}`
-    );
+  const found = runtimes?.FormEchoAgent;
+  for (const key of ['roleArn', 'runtimeArn'] as const) {
+    if (typeof found?.[key] !== 'string' || found[key].length === 0) {
+      throw new Error(
+        `agentcore status --json の deployedState.targets.default.resources.runtimes.FormEchoAgent.${key} が見つからない: ${output}`
+      );
+    }
   }
-  return roleArn;
+  return { roleArn: found.roleArn, runtimeArn: found.runtimeArn };
 }
 
-function writeToCdkJson(roleArn: string): void {
+function writeToCdkJson(arns: { roleArn: string; runtimeArn: string }): void {
   const cdkJson = JSON.parse(readFileSync(CDK_JSON_PATH, 'utf-8'));
-  cdkJson.context.runtimeRoleArn = roleArn;
+  cdkJson.context.runtimeRoleArn = arns.roleArn;
+  cdkJson.context.runtimeArn = arns.runtimeArn;
   writeFileSync(CDK_JSON_PATH, JSON.stringify(cdkJson, null, 2) + '\n');
   execFileSync('npm', ['exec', '--', 'prettier', '--write', 'cdk.json'], { cwd: INFRA_DIR });
 }
 
-const roleArn = fetchRuntimeRoleArn();
-writeToCdkJson(roleArn);
-console.log(`cdk.json の context.runtimeRoleArn を更新した: ${roleArn}`);
+const arns = fetchRuntimeArns();
+writeToCdkJson(arns);
+console.log(`cdk.json の context を更新した: ${arns.roleArn} / ${arns.runtimeArn}`);
